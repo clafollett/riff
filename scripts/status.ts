@@ -11,6 +11,9 @@ import { World } from '../src/worldfs/world.ts';
 import { resolveConfig } from '../src/core/config.ts';
 import { constitutionFor } from '../src/policy/rules.ts';
 import { systemClock } from '../src/core/clock.ts';
+import { takeCompanyFlag } from '../src/core/cli.ts';
+
+takeCompanyFlag();
 
 const cfg = resolveConfig();
 const ledger = new Ledger(cfg.ledgerPath, systemClock);

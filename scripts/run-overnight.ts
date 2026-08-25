@@ -14,6 +14,9 @@ import { constitutionFor } from '../src/policy/rules.ts';
 import { Scheduler } from '../src/runtime/scheduler.ts';
 import { resolveConfig } from '../src/core/config.ts';
 import { systemClock } from '../src/core/clock.ts';
+import { takeCompanyFlag } from '../src/core/cli.ts';
+
+takeCompanyFlag();
 
 // The container entrypoint passes through unset variables as empty strings,
 // and Number('') is 0 — an unattended run that stops the instant it starts.

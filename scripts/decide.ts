@@ -4,6 +4,9 @@ import { Gate } from '../src/policy/gate.ts';
 import { constitutionFor } from '../src/policy/rules.ts';
 import { resolveConfig } from '../src/core/config.ts';
 import { systemClock } from '../src/core/clock.ts';
+import { takeCompanyFlag } from '../src/core/cli.ts';
+
+takeCompanyFlag();
 
 const [id, verdict, ...rest] = process.argv.slice(2);
 const cfg = resolveConfig();

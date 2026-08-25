@@ -1,38 +1,52 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { Gate } from '../policy/gate.ts';
-import { constitutionFor } from '../policy/rules.ts';
-import { Scheduler } from '../runtime/scheduler.ts';
 import { systemClock } from '../core/clock.ts';
-import { resolveConfig } from '../core/config.ts';
-import { found } from '../company/genesis.ts';
+import {
+  guessKeeperName, listCompanies, migrateLegacyLayout, resolveSlug,
+} from '../core/config.ts';
+import { Registry, type Company } from '../company/registry.ts';
 import { readFile } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 
 const PORT = Number(process.env['PORT'] ?? 4173);
-const cfg = resolveConfig();
 const clock = systemClock;
 
-// Bootstrap on first boot: a fresh checkout on any machine becomes a working
-// company with no setup step.
-const { ledger, world, firstRun } = found(cfg, clock);
-const constitution = constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) });
-const gate = new Gate(ledger, constitution, {
-  count: () => world.commonsCount(),
-  exists: (p) => world.exists(p),
-});
-const scheduler = new Scheduler({ ledger, gate, world, clock, connectors: cfg.connectors });
+// The first layout put one company flat in ~/.helmsted. Move it before
+// anything opens it, so an existing world is never stranded by an upgrade.
+const migrated = migrateLegacyLayout();
+
+const registry = new Registry(clock);
+
+// A fresh checkout on any machine becomes a working installation with no setup
+// step — one company, named from the environment or given a placeholder the
+// operator renames from the console.
+if (!listCompanies().length) {
+  registry.found({
+    name: process.env['HELMSTED_COMPANY']?.trim() || 'Untitled Company',
+    business: process.env['HELMSTED_BUSINESS']?.trim() || '',
+    ceo: process.env['HELMSTED_CEO']?.trim() || 'CEO',
+    chair: process.env['HELMSTED_CHAIR']?.trim() || guessKeeperName(),
+  });
+}
 
 // ---------------------------------------------------------------- SSE fan-out
-const watchers = new Set<ServerResponse>();
-let lastSeq = ledger.latestSeq();
+// Per company. A watcher on one company must never receive another's events —
+// that would leak one company's activity into a different company's console.
+const watchers = new Map<string, Set<ServerResponse>>();
+const lastSeq = new Map<string, number>();
 
 setInterval(() => {
-  const fresh = ledger.eventsSince(lastSeq, 200);
-  if (!fresh.length) return;
-  lastSeq = fresh[fresh.length - 1]!.seq;
-  const payload = JSON.stringify({ events: fresh });
-  for (const w of watchers) {
-    try { w.write(`event: tick\ndata: ${payload}\n\n`); } catch { watchers.delete(w); }
+  for (const [slug, set] of watchers) {
+    if (!set.size) continue;
+    const c = registry.get(slug);
+    if (!c) continue;
+    const from = lastSeq.get(slug) ?? c.ledger.latestSeq();
+    const fresh = c.ledger.eventsSince(from, 200);
+    if (!fresh.length) continue;
+    lastSeq.set(slug, fresh[fresh.length - 1]!.seq);
+    const payload = JSON.stringify({ events: fresh });
+    for (const w of set) {
+      try { w.write(`event: tick\ndata: ${payload}\n\n`); } catch { set.delete(w); }
+    }
   }
 }, 700).unref();
 
@@ -58,26 +72,28 @@ const readBody = async (req: IncomingMessage): Promise<Record<string, unknown>> 
 const DESK = resolve(import.meta.dirname, '../../desk/dist');
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2',
-  '.json': 'application/json', '.ico': 'image/x-icon',
+  '.css': 'text/css; charset=utf-8', '.json': 'application/json',
+  '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.ico': 'image/x-icon',
 };
 
-/** Static files for the console. Single-page app: unknown paths fall to index. */
 const serveDesk = async (res: ServerResponse, urlPath: string): Promise<void> => {
   const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
-  let abs = resolve(DESK, rel);
-  if (abs !== DESK && !abs.startsWith(DESK + sep)) { res.writeHead(403).end('forbidden'); return; }
+  const abs = resolve(DESK, rel);
+  // A built asset path is ours; anything climbing out of it is not.
+  const target = abs === DESK || abs.startsWith(DESK + sep) ? abs : join(DESK, 'index.html');
   try {
-    const buf = await readFile(abs);
-    res.writeHead(200, { 'content-type': MIME[extname(abs)] ?? 'application/octet-stream' });
-    res.end(buf);
+    const body = await readFile(target);
+    res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' });
+    res.end(body);
   } catch {
     try {
-      const buf = await readFile(join(DESK, 'index.html'));
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(buf);
+      // Unknown paths fall through to the SPA so client routes survive reload.
+      const body = await readFile(join(DESK, 'index.html'));
+      res.writeHead(200, { 'content-type': MIME['.html']! });
+      res.end(body);
     } catch {
-      res.writeHead(404).end('the Desk has not been built — run: npm run desk:build');
+      res.writeHead(404, { 'content-type': 'text/plain' });
+      res.end('The Desk has not been built. Run: npm run desk:build');
     }
   }
 };
@@ -88,124 +104,188 @@ const server = createServer(async (req, res) => {
   const method = req.method ?? 'GET';
 
   try {
-    if (p === '/api/state' && method === 'GET') {
-      const agents = ledger.listAgents();
-      return json(res, {
-        company: cfg.company,
-        board: cfg.board,
-        ceo: cfg.ceo,
-        agents,
-        headcount: agents.filter((a) => a.tier !== 'board').length,
-        pending: ledger.listApprovals('pending').length,
-        pendingBoard: ledger.listApprovals('pending', 'board').length,
-        notes: ledger.countNotes(),
-        commons: { held: world.commonsCount(), ceiling: constitution.commonsCeiling },
-        tasks: ledger.listTasks().length,
-        seq: ledger.latestSeq(),
-        running: scheduler.running,
-        rateLimit: scheduler.rateLimit,
+    // ------------------------------------------------- the installation
+    if (p === '/api/companies' && method === 'GET') {
+      return json(res, { companies: registry.list(), active: resolveSlug() });
+    }
+
+    if (p === '/api/companies' && method === 'POST') {
+      const b = await readBody(req);
+      const r = registry.found({
+        name: String(b['name'] ?? ''),
+        business: String(b['business'] ?? ''),
+        ceo: String(b['ceo'] ?? ''),
+        chair: String(b['chair'] ?? guessKeeperName()),
       });
-    }
-
-    if (p === '/api/stream' && method === 'GET') {
-      res.writeHead(200, {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-cache, no-transform',
-        connection: 'keep-alive',
-      });
-      res.write('retry: 2000\n\n');
-      watchers.add(res);
-      const ka = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* gone */ } }, 20_000);
-      req.on('close', () => { clearInterval(ka); watchers.delete(res); });
-      return;
-    }
-
-    if (p === '/api/approvals' && method === 'GET') return json(res, ledger.listApprovals('pending'));
-
-    if (p.startsWith('/api/approvals/') && method === 'POST') {
-      const id = p.slice('/api/approvals/'.length);
-      const body = await readBody(req);
-      const who = typeof body['as'] === 'string' ? body['as'] : (cfg.board[0]?.id ?? '');
-      const ok = gate.decide(id, who, body['approved'] === true,
-        typeof body['reason'] === 'string' ? body['reason'] : '');
-      return json(res, { ok }, ok ? 200 : 409);
-    }
-
-    if (p === '/api/commons' && method === 'GET') {
+      if (!r.ok) return json(res, { error: r.reason }, 409);
       return json(res, {
-        held: world.commonsCount(), ceiling: constitution.commonsCeiling,
-        // The title an author chose beats anything derivable from a filename.
-        documents: world.listCommons().map((path) => {
-          const doc = world.readDoc(path);
-          return {
-            path,
-            title: String(doc?.data['title'] ?? path.split('/').pop()?.replace(/\.md$/, '') ?? path),
+        slug: r.company.slug,
+        company: r.company.cfg.company,
+        ceo: r.company.cfg.ceo,
+      }, 201);
+    }
+
+    if (p.startsWith('/api/companies/') && (method === 'PATCH' || method === 'DELETE')) {
+      const target = p.slice('/api/companies/'.length);
+
+      if (method === 'DELETE') {
+        // Archived, never deleted. A company is a git repository with real
+        // history in it, and the console is not the right place to destroy one.
+        const r = await registry.archive(target);
+        watchers.delete(target);
+        lastSeq.delete(target);
+        return r.ok ? json(res, { archived: target, at: r.at }) : json(res, { error: r.reason }, 404);
+      }
+
+      const b = await readBody(req);
+      const r = await registry.update(target, {
+        ...(typeof b['name'] === 'string' ? { name: b['name'] } : {}),
+        ...(typeof b['business'] === 'string' ? { business: b['business'] } : {}),
+        ...(typeof b['slug'] === 'string' ? { slug: b['slug'] } : {}),
+      });
+      if (!r.ok) return json(res, { error: r.reason }, 409);
+      if (r.slug !== target) { watchers.delete(target); lastSeq.delete(target); }
+      return json(res, { slug: r.slug });
+    }
+
+    // ------------------------------------------------- one company
+    // Every route below acts on exactly one company, named by ?c=. Refusing an
+    // unknown slug matters more than it looks: without it a typo would silently
+    // fall back to some other company and write to it.
+    const slug = url.searchParams.get('c') ?? resolveSlug();
+    const co: Company | null = slug ? registry.get(slug) : null;
+    if (p.startsWith('/api/') && !co) {
+      return json(res, {
+        error: slug ? `no company '${slug}'` : 'name a company with ?c=<slug>',
+        companies: registry.list().map((c) => c.slug),
+      }, 404);
+    }
+    if (co) {
+      const { cfg, ledger, world, gate, constitution, scheduler } = co;
+
+      if (p === '/api/state' && method === 'GET') {
+        const agents = ledger.listAgents();
+        return json(res, {
+          slug: co.slug,
+          company: cfg.company,
+          board: cfg.board,
+          ceo: cfg.ceo,
+          agents,
+          headcount: agents.filter((a) => a.tier !== 'board').length,
+          pending: ledger.listApprovals('pending').length,
+          pendingBoard: ledger.listApprovals('pending', 'board').length,
+          notes: ledger.countNotes(),
+          commons: { held: world.commonsCount(), ceiling: constitution.commonsCeiling },
+          tasks: ledger.listTasks().length,
+          seq: ledger.latestSeq(),
+          running: scheduler.running,
+          rateLimit: scheduler.rateLimit,
+        });
+      }
+
+      if (p === '/api/stream' && method === 'GET') {
+        res.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache, no-transform',
+          connection: 'keep-alive',
+        });
+        res.write('retry: 2000\n\n');
+        let set = watchers.get(co.slug);
+        if (!set) { set = new Set(); watchers.set(co.slug, set); }
+        if (!lastSeq.has(co.slug)) lastSeq.set(co.slug, ledger.latestSeq());
+        set.add(res);
+        const ka = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* gone */ } }, 20_000);
+        req.on('close', () => { clearInterval(ka); set.delete(res); });
+        return;
+      }
+
+      if (p === '/api/approvals' && method === 'GET') return json(res, ledger.listApprovals('pending'));
+
+      if (p.startsWith('/api/approvals/') && method === 'POST') {
+        const id = p.slice('/api/approvals/'.length);
+        const body = await readBody(req);
+        const who = typeof body['as'] === 'string' ? body['as'] : (cfg.board[0]?.id ?? '');
+        const ok = gate.decide(id, who, body['approved'] === true,
+          typeof body['reason'] === 'string' ? body['reason'] : '');
+        return json(res, { ok }, ok ? 200 : 409);
+      }
+
+      if (p === '/api/commons' && method === 'GET') {
+        return json(res, {
+          held: world.commonsCount(), ceiling: constitution.commonsCeiling,
+          // The title an author chose beats anything derivable from a filename.
+          documents: world.listCommons().map((path) => {
+            const doc = world.readDoc(path);
+            return {
+              path,
+              title: String(doc?.data['title'] ?? path.split('/').pop()?.replace(/\.md$/, '') ?? path),
+              author: doc?.data['author'] == null ? null : String(doc.data['author']),
+              updated: doc?.data['updated'] == null ? null : String(doc.data['updated']),
+            };
+          }),
+        });
+      }
+
+      // Work in flight, and the two health checks that used to need a terminal.
+      if (p === '/api/work' && method === 'GET') {
+        const agents = ledger.listAgents();
+        return json(res, {
+          tasks: ledger.listTasks(),
+          notes: ledger.countNotes(),
+          // A reporting line pointing at nobody is the shape a bad rename leaves.
+          orphans: agents
+            .filter((a) => a.reportsTo && !ledger.getAgent(a.reportsTo))
+            .map((a) => ({ id: a.id, name: a.name, reportsTo: a.reportsTo })),
+        });
+      }
+
+      // Read any document in the world. The board could not review what it
+      // could not open — the whole point of the Desk.
+      if (p === '/api/doc' && method === 'GET') {
+        const rel = url.searchParams.get('path') ?? '';
+        try {
+          const raw = world.readText(rel);
+          if (raw == null) return json(res, { error: 'not found', path: rel }, 404);
+          // Frontmatter is bookkeeping. Hand back the prose and the keys apart,
+          // so no reader has to skim past a metadata block to reach the writing.
+          const doc = rel.endsWith('.md') ? world.readDoc(rel) : null;
+          return json(res, {
+            path: rel,
+            body: doc?.body ?? raw,
+            title: doc?.data['title'] == null ? null : String(doc.data['title']),
             author: doc?.data['author'] == null ? null : String(doc.data['author']),
             updated: doc?.data['updated'] == null ? null : String(doc.data['updated']),
-          };
-        }),
-      });
-    }
-
-    // Work in flight, and the two health checks that used to need a terminal.
-    if (p === '/api/work' && method === 'GET') {
-      const agents = ledger.listAgents();
-      return json(res, {
-        tasks: ledger.listTasks(),
-        notes: ledger.countNotes(),
-        // A reporting line pointing at nobody is the shape a bad rename leaves.
-        orphans: agents
-          .filter((a) => a.reportsTo && !ledger.getAgent(a.reportsTo))
-          .map((a) => ({ id: a.id, name: a.name, reportsTo: a.reportsTo })),
-      });
-    }
-
-    // Read any document in the world. The board could not review what it
-    // could not open — the whole point of the Desk.
-    if (p === '/api/doc' && method === 'GET') {
-      const rel = url.searchParams.get('path') ?? '';
-      try {
-        const raw = world.readText(rel);
-        if (raw == null) return json(res, { error: 'not found', path: rel }, 404);
-        // Frontmatter is bookkeeping. Hand back the prose and the keys apart,
-        // so no reader has to skim past a metadata block to reach the writing.
-        const doc = rel.endsWith('.md') ? world.readDoc(rel) : null;
-        return json(res, {
-          path: rel,
-          body: doc?.body ?? raw,
-          title: doc?.data['title'] == null ? null : String(doc.data['title']),
-          author: doc?.data['author'] == null ? null : String(doc.data['author']),
-          updated: doc?.data['updated'] == null ? null : String(doc.data['updated']),
-        });
-      } catch {
-        // world.path() throws on anything escaping the world root.
-        return json(res, { error: 'forbidden' }, 403);
+          });
+        } catch {
+          // world.path() throws on anything escaping the world root.
+          return json(res, { error: 'forbidden' }, 403);
+        }
       }
-    }
 
-    if (p === '/api/whathappened' && method === 'GET') {
-      const since = url.searchParams.get('since') ?? '3.days';
-      return json(res, {
-        commits: world.git.since(since),
-        contributions: world.git.contributionsSince(since),
-      });
-    }
+      if (p === '/api/whathappened' && method === 'GET') {
+        const since = url.searchParams.get('since') ?? '3.days';
+        return json(res, {
+          commits: world.git.since(since),
+          contributions: world.git.contributionsSince(since),
+        });
+      }
 
-    if (p === '/api/say' && method === 'POST') {
-      const body = await readBody(req);
-      const to = typeof body['to'] === 'string' ? body['to'] : null;
-      const text = String(body['text'] ?? '').slice(0, 4000);
-      if (!text) return json(res, { error: 'nothing to say' }, 400);
-      const from = cfg.board[0]?.id ?? 'board';
-      const n = ledger.sendMessage(from, to, text);
-      ledger.emit(from, 'message.sent', to, { recipients: n, text });
-      if (to) scheduler.nudge(to);
-      else for (const a of ledger.listAgents()) scheduler.nudge(a.id);
-      return json(res, { delivered: n });
-    }
+      if (p === '/api/say' && method === 'POST') {
+        const body = await readBody(req);
+        const to = typeof body['to'] === 'string' ? body['to'] : null;
+        const text = String(body['text'] ?? '').slice(0, 4000);
+        if (!text) return json(res, { error: 'nothing to say' }, 400);
+        const from = cfg.board[0]?.id ?? 'board';
+        const n = ledger.sendMessage(from, to, text);
+        ledger.emit(from, 'message.sent', to, { recipients: n, text });
+        if (to) scheduler.nudge(to);
+        else for (const a of ledger.listAgents()) scheduler.nudge(a.id);
+        return json(res, { delivered: n });
+      }
 
-    if (p === '/api/open' && method === 'POST') { scheduler.start(); return json(res, { running: true }); }
-    if (p === '/api/close' && method === 'POST') { await scheduler.stop(); return json(res, { running: false }); }
+      if (p === '/api/open' && method === 'POST') { scheduler.start(); return json(res, { running: true }); }
+      if (p === '/api/close' && method === 'POST') { await scheduler.stop(); return json(res, { running: false }); }
+    }
 
     if (p.startsWith('/api/')) return json(res, { error: 'no such route' }, 404);
     return await serveDesk(res, p);
@@ -215,17 +295,22 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  if (firstRun) console.log(`\n  Founded ${cfg.company.name} at ${cfg.home}`);
-  console.log(`\n  ${cfg.company.name}${cfg.company.business ? ` — ${cfg.company.business}` : ''}`);
-  console.log(`  board: ${cfg.board.map((b) => b.name).join(', ')}  ·  CEO: ${cfg.ceo.name}`);
-  console.log(`  http://localhost:${PORT}\n`);
-  console.log(`  Nobody is working yet. POST /api/open to start.\n`);
+  if (migrated) console.log(`\n  Moved ${migrated.moved} into companies/`);
+  const all = registry.list();
+  console.log(`\n  Helmsted · ${all.length} compan${all.length === 1 ? 'y' : 'ies'}`);
+  for (const c of all) {
+    console.log(`    ${c.slug.padEnd(24)} ${c.name}${c.business ? ` — ${c.business}` : ''}`);
+  }
+  console.log(`\n  http://localhost:${PORT}\n`);
 });
 
 const shutdown = async () => {
-  await scheduler.stop();
-  for (const w of watchers) { try { w.end(); } catch { /* gone */ } }
-  server.close(() => { ledger.close(); process.exit(0); });
+  for (const c of registry.opened()) { await c.scheduler.stop(); }
+  for (const set of watchers.values()) for (const w of set) { try { w.end(); } catch { /* gone */ } }
+  server.close(() => {
+    for (const c of registry.opened()) c.ledger.close();
+    process.exit(0);
+  });
   setTimeout(() => process.exit(0), 3000).unref();
 };
 process.on('SIGINT', shutdown);

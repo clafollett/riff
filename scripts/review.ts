@@ -8,6 +8,9 @@ import { Ledger } from '../src/ledger/ledger.ts';
 import { World } from '../src/worldfs/world.ts';
 import { resolveConfig } from '../src/core/config.ts';
 import { systemClock } from '../src/core/clock.ts';
+import { takeCompanyFlag } from '../src/core/cli.ts';
+
+takeCompanyFlag();
 
 const want = process.argv[2];
 const cfg = resolveConfig();

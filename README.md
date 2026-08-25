@@ -66,13 +66,27 @@ silent.
 ## Two kinds of storage, one rule
 
 ```
-~/.helmsted/                 outside this repo — it is data, not source
-  world/                     a git repo of its own
-    staff/<id>/              persona · memory · journal · notes · drafts
-    commons/                 shared ground, no schema
-  ledger.db                  node:sqlite
-  config.json                who the company is, where things live, connectors
+~/.helmsted/                     outside this repo — it is data, not source
+  companies/<slug>/              one company, entirely self-contained
+    world/                       a git repo of its own
+      staff/<id>/                persona · memory · journal · notes · drafts
+      commons/                   shared ground, no schema
+    ledger.db                    node:sqlite
+    config.json                  who this company is, and its connectors
+  archive/<slug>-<stamp>/        removed companies, moved not deleted
 ```
+
+One installation holds many companies. Nothing about one reaches into another —
+separate ledgers, separate git repositories, separate schedulers — so founding
+a second cannot disturb the first. Found, rename and archive them from the
+console, or name one on the command line:
+
+```bash
+node scripts/status.ts --company lafollett-labs-llc
+```
+
+With one company, nothing needs naming. With several and no name given, every
+script refuses rather than guessing which world to write to.
 
 **If an agent invents it, it is a file. If breaking it breaks a rule or a
 render, it is a row.**
@@ -124,9 +138,13 @@ notice.
 Location resolves, never hardcoded:
 
 ```
-HELMSTED_WORLD / HELMSTED_LEDGER  →  HELMSTED_HOME  →  ./helmsted.config.json
-                                  →  ~/.helmsted/config.json  →  built-in defaults
+HELMSTED_WORLD / HELMSTED_LEDGER  →  HELMSTED_HOME  →  HELMSTED_COMPANY_ID
+                                  →  ./helmsted.config.json  →  the only company
+                                  →  built-in defaults
 ```
+
+`HELMSTED_ROOT` moves the whole installation, which is how the test suite keeps
+its hands off yours.
 
 Identity — `HELMSTED_COMPANY`, `HELMSTED_BUSINESS`, `HELMSTED_CHAIR`,
 `HELMSTED_CEO` — overrides the stored config on every read, which is what makes
@@ -168,10 +186,11 @@ it and says so.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 62 unit tests |
-| `npm run test:ui` | 12 Playwright tests against a throwaway company |
+| `npm test` | 77 unit tests |
+| `npm run test:ui` | 21 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |
+| `--company <slug>` | any script, when more than one company exists |
 | `node scripts/tick.ts <who> [turns]` | wake one person, once, and trace the shift |
 | `node scripts/status.ts` | headcount, tasks, commons, what is pending |
 | `node scripts/review.ts [id]` | read what is waiting on the board, in full |

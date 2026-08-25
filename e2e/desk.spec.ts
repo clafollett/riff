@@ -12,9 +12,26 @@ const go = async (page: Page, view: string) => {
   await expect(page.getByRole('heading', { level: 1 })).toContainText(new RegExp(view, 'i'));
 };
 
+/**
+ * Select a company by name through the switcher. The console remembers the
+ * last one across reloads, so tests state which company they mean rather than
+ * inheriting whatever the previous test left open.
+ */
+const useCompany = async (page: Page, name: string) => {
+  if ((await page.locator('.co').innerText()).trim() === name) return;
+  // The switcher is a toggle, so clicking blind can close a menu a previous
+  // step left open. Open it deliberately.
+  const menu = page.locator('.menu');
+  if (!(await menu.isVisible())) await page.locator('.switcher').click();
+  await expect(menu).toBeVisible();
+  await menu.locator('.menuitem').filter({ hasText: name }).first().click();
+  await expect(page.locator('.co')).toHaveText(name);
+};
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Testwright Co' })).toBeVisible();
+  await expect(page.locator('.co')).not.toBeEmpty();
+  await useCompany(page, 'Testwright Co');
 });
 
 test('the rail names the company and counts what is waiting', async ({ page }) => {
@@ -211,4 +228,81 @@ test('the console holds together on a narrow window', async ({ page }) => {
   const overflow = await page.evaluate(() =>
     document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test.describe('many companies, one console', () => {
+  // These run last and in order: each builds on the previous one's state, and
+  // the console remembers which company was open, so the shared beforeEach
+  // that expects Testwright does not apply here.
+  test.describe.configure({ mode: 'serial' });
+
+  test('a company can be founded from the console and becomes active', async ({ page }) => {
+    await page.locator('.switcher').click();
+    await page.getByRole('button', { name: 'Manage companies…' }).click();
+    await expect(page.getByRole('heading', { name: 'Companies' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Found a company' }).click();
+    await page.getByLabel('Company name').fill('Kestrel Provisioning');
+    await page.getByLabel('Line of business').fill('field logistics');
+    await page.getByLabel("CEO's name").fill('Rook');
+    await page.getByLabel('Chairman').fill('Tester');
+    await page.getByRole('button', { name: 'Found it' }).click();
+
+    // The new company becomes active, and lands in the switcher — it once did
+    // the first without the second, because switching unmounted the view whose
+    // event refreshed the list.
+    await expect(page.locator('.co')).toHaveText('Kestrel Provisioning');
+    await page.locator('.switcher').click();
+    await expect(page.locator('.menuitem').filter({ hasText: 'Kestrel' })).toHaveCount(1);
+    await expect(page.locator('.menuitem').filter({ hasText: 'Testwright' })).toHaveCount(1);
+  });
+
+  test('a founded company starts with a CEO and nothing else', async ({ page }) => {
+    await useCompany(page, 'Kestrel Provisioning');
+    // One agent, no commons, no roster. The CEO builds the rest.
+    await expect(page.locator('.status')).toContainText('1 staff');
+    await expect(page.locator('.status')).toContainText('commons 0/40');
+  });
+
+  test('switching companies does not leak one world into another', async ({ page }) => {
+    const read = async () => (await page.locator('.status').innerText()).replace(/\s+/g, ' ');
+
+    await useCompany(page, 'Testwright Co');
+    const testwright = await read();
+
+    await useCompany(page, 'Kestrel Provisioning');
+    const kestrel = await read();
+
+    expect(testwright).not.toEqual(kestrel);
+    // Testwright has a CEO and a lead; a company founded a moment ago has only
+    // its CEO. Board members are not counted as staff.
+    expect(testwright).toContain('2 staff');
+    expect(testwright).toContain('commons 2/40');
+    expect(kestrel).toContain('1 staff');
+    expect(kestrel).toContain('commons 0/40');
+
+    // The commons of one must not be readable while the other is selected.
+    await go(page, 'Commons');
+    await expect(page.locator('.doc')).toHaveCount(0);
+  });
+
+  test('archiving asks for the name, then removes it from the list', async ({ page }) => {
+    await page.locator('.switcher').click();
+    await page.getByRole('button', { name: 'Manage companies…' }).click();
+
+    await page.locator('.card', { hasText: 'Kestrel' }).getByRole('button', { name: 'Archive' }).click();
+    const confirm = page.getByRole('button', { name: 'Archive it' });
+
+    // Armed only by typing the name — the same friction any tool asks for
+    // before it moves a repository.
+    await expect(confirm).toBeDisabled();
+    await page.locator('.dialog input').fill('Wrong Name');
+    await expect(confirm).toBeDisabled();
+    await page.locator('.dialog input').fill('Kestrel Provisioning');
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+
+    await expect(page.locator('.card')).toHaveCount(1);
+    await expect(page.locator('.card')).toContainText('Testwright Co');
+  });
 });

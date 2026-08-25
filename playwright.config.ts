@@ -22,7 +22,11 @@ export const PORT = 4174;
  * which is also exactly how the container is configured.
  */
 export const COMPANY = {
-  HELMSTED_HOME: TEST_HOME,
+  // The INSTALLATION root, not just one company's home. Without this the
+  // server lists — and can open — the operator's real companies, because the
+  // companies directory is derived from the home directory.
+  HELMSTED_ROOT: TEST_HOME,
+  HELMSTED_HOME: join(TEST_HOME, 'companies', 'testwright-co'),
   HELMSTED_COMPANY: 'Testwright Co',
   HELMSTED_BUSINESS: 'proving the console renders',
   HELMSTED_CHAIR: 'Tester',

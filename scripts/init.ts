@@ -10,6 +10,9 @@ import { stdin, stdout } from 'node:process';
 import { resolveConfig, scaffoldConfig, isInitialised, slugId, type HelmstedConfig } from '../src/core/config.ts';
 import { found } from '../src/company/genesis.ts';
 import { systemClock } from '../src/core/clock.ts';
+import { takeCompanyFlag } from '../src/core/cli.ts';
+
+takeCompanyFlag();
 
 let cfg: HelmstedConfig = resolveConfig();
 

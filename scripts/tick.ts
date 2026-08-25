@@ -13,6 +13,9 @@ import { Gate } from '../src/policy/gate.ts';
 import { constitutionFor } from '../src/policy/rules.ts';
 import { systemClock } from '../src/core/clock.ts';
 import { tick } from '../src/runtime/staff.ts';
+import { takeCompanyFlag } from '../src/core/cli.ts';
+
+takeCompanyFlag();
 
 const maxTurns = Number(process.argv[3] ?? 8);
 

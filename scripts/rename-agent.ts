@@ -13,6 +13,9 @@ import { Ledger } from '../src/ledger/ledger.ts';
 import { World } from '../src/worldfs/world.ts';
 import { resolveConfig, slugId } from '../src/core/config.ts';
 import { systemClock } from '../src/core/clock.ts';
+import { takeCompanyFlag } from '../src/core/cli.ts';
+
+takeCompanyFlag();
 
 const [oldId, newName] = process.argv.slice(2);
 if (!oldId || !newName) {
