@@ -4,38 +4,77 @@
 #   docker/up.sh [--build] [any other compose arguments]
 #   docker/up.sh down
 #
-# The problem this solves: compose needs CLAUDE_CODE_OAUTH_TOKEN, and the
-# obvious way to give it one is to write the token into docker/.env. That file
-# is gitignored, but it is still a long-lived credential sitting in plaintext
-# inside a source tree — swept up by backups, by editor crash recovery, by
-# whatever syncs your home directory, and by the next person who tars the repo
-# to send it somewhere.
+# WHERE THE TOKEN LIVES: in your password manager, and nowhere else. Not in
+# this repository, not in a dotfile, not in your shell profile. What the
+# configuration holds is a COMMAND that prints it:
 #
-# So docker/.env holds a COMMAND instead. This runs it, captures what it
-# prints, and hands that to compose through the environment. Nothing is
-# written to disk, the token is never an argument so it stays out of `ps`, and
-# it is never typed so it stays out of shell history.
+#   HELMSTED_TOKEN_CMD="security find-generic-password -s helmsted -a claude -w"
 #
-# What this does NOT do, and it matters: once the container is running, the
+# That line is not a secret, which is the point — it can sit in a config file
+# without the file needing to be protected, backed up carefully, or kept out of
+# a directory you might one day zip up and send to someone.
+#
+# WHERE THAT LINE LIVES, in increasing precedence:
+#
+#   docker/.env                repo-local and gitignored. Fine, because it
+#                              holds a pointer rather than a credential.
+#   $HELMSTED_ENV              any path you like, outside the checkout. Set it
+#                              in your shell profile and the repository holds
+#                              no configuration of yours at all.
+#   the environment            CLAUDE_CODE_OAUTH_TOKEN or HELMSTED_TOKEN_CMD
+#                              already exported wins over both files.
+#
+# Both files are handed to compose, later winning, so ordinary settings like
+# HELMSTED_DATA can live in either.
+#
+# WHAT THIS DOES NOT DO, and it matters: once the container is running the
 # token is in its environment, and the staff have a shell. Anything in that box
-# can read it. The thing that stops it leaving is not secrecy — it is that the
-# factory sits on an internal network with no route to the internet except an
-# allowlisted proxy. See SECURITY.md.
+# can read it, and so can `docker inspect` on the host. Secrecy is not the
+# control. The control is that the factory sits on a network with no route to
+# the internet except an allowlisted proxy. See SECURITY.md.
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-env_file="$here/.env"
+local_env="$here/.env"
+outside_env=${HELMSTED_ENV:-}
 
-# Read one key out of .env without sourcing it. Sourcing would execute
+if [ -n "$outside_env" ] && [ ! -f "$outside_env" ]; then
+  echo "helmsted: HELMSTED_ENV points at $outside_env, which does not exist." >&2
+  exit 1
+fi
+
+# Read one key out of a config file without sourcing it. Sourcing would execute
 # whatever else is in there, and a config file should not be a program.
-from_env_file() {
-  [ -f "$env_file" ] || return 0
-  sed -n "s/^[[:space:]]*$1=//p" "$env_file" | tail -n 1 \
+from_file() {
+  [ -f "$1" ] || return 0
+  sed -n "s/^[[:space:]]*$2=//p" "$1" | tail -n 1 \
     | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/"
 }
 
-if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-  cmd=${HELMSTED_TOKEN_CMD:-$(from_env_file HELMSTED_TOKEN_CMD)}
+# Only the subcommands that actually START something need a real token. Asking
+# a password manager to unlock so you can read `logs`, or `down` a stack that
+# is already running, trains you to unlock it without reading the prompt —
+# which is the habit the password manager exists to prevent. Compose still
+# interpolates the variable for every subcommand, so the others get a
+# placeholder that never reaches a running container.
+needs_token=no
+for a in "$@"; do
+  case $a in
+    -*) continue ;;
+    up|run|start|restart|create) needs_token=yes ;;
+  esac
+  break
+done
+
+if [ "$needs_token" = no ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  CLAUDE_CODE_OAUTH_TOKEN=not-needed-for-this-command
+  export CLAUDE_CODE_OAUTH_TOKEN
+fi
+
+if [ "$needs_token" = yes ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  cmd=${HELMSTED_TOKEN_CMD:-}
+  [ -n "$cmd" ] || { [ -n "$outside_env" ] && cmd=$(from_file "$outside_env" HELMSTED_TOKEN_CMD); }
+  [ -n "$cmd" ] || cmd=$(from_file "$local_env" HELMSTED_TOKEN_CMD)
 
   if [ -n "$cmd" ]; then
     # Runs with your shell and your tty, so a vault that wants a passphrase can
@@ -62,6 +101,18 @@ if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
 fi
 
 # Anything still unset is left to compose, which has its own message pointing
-# at `claude setup-token`. A literal CLAUDE_CODE_OAUTH_TOKEN in docker/.env
-# still works — this is a better default, not the only way.
-exec docker compose -f "$here/compose.yaml" "$@"
+# at `claude setup-token`. A literal CLAUDE_CODE_OAUTH_TOKEN in either file
+# still works — a command is a better default, not the only way.
+#
+# Naming any --env-file replaces the automatic docker/.env, so when both exist
+# both are named. Spelling the three cases out keeps every path quoted, which
+# matters the moment someone's home directory has a space in it.
+compose() { exec docker compose -f "$here/compose.yaml" "$@"; }
+
+if [ -n "$outside_env" ] && [ -f "$local_env" ]; then
+  compose --env-file "$local_env" --env-file "$outside_env" "$@"
+elif [ -n "$outside_env" ]; then
+  compose --env-file "$outside_env" "$@"
+else
+  compose "$@"
+fi

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 /**
  * The container's environment is a contract with src/core/config.ts, and
@@ -210,26 +210,31 @@ describe('the example env file describes this container, not an imagined one', (
    * prints nothing. Guessing at intent from a regex is the wrong tool: run it,
    * and look at what actually came out.
    */
-  const launch = (): { out: string; argv: string; env: string } => {
+  const launch = (args: string[] = ['up']): { out: string; argv: string; env: string; asked: boolean } => {
     const dir = mkdtempSync(join(tmpdir(), 'helmsted-launch-'));
     // A stub `docker` that records how it was called, so the test can prove
     // the token was passed by environment and never as an argument.
     writeFileSync(join(dir, 'docker'),
       `#!/bin/sh\nprintf '%s\\n' "$*" > ${dir}/argv\nenv > ${dir}/env\n`, { mode: 0o755 });
-    const out = execFileSync('sh', ['docker/up.sh', 'up'], {
+    // The stub vault announces itself, so a test can tell whether the password
+    // manager was asked to open at all.
+    const r = spawnSync('sh', ['docker/up.sh', ...args], {
       encoding: 'utf8',
       env: {
         ...process.env,
         PATH: `${dir}:${process.env['PATH'] ?? ''}`,
-        HELMSTED_TOKEN_CMD: `printf %s ${SENTINEL}`,
+        HELMSTED_TOKEN_CMD: `sh -c 'echo VAULT-OPENED >&2; printf %s ${SENTINEL}'`,
         CLAUDE_CODE_OAUTH_TOKEN: '',
+        HELMSTED_ENV: '',
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    assert.equal(r.status, 0, `up.sh ${args.join(' ')} failed: ${r.stderr}`);
     return {
-      out,
+      out: r.stdout,
       argv: readFileSync(join(dir, 'argv'), 'utf8'),
       env: readFileSync(join(dir, 'env'), 'utf8'),
+      // The stub vault announces itself on stderr when it is opened.
+      asked: r.stderr.includes('VAULT-OPENED'),
     };
   };
 
@@ -246,6 +251,18 @@ describe('the example env file describes this container, not an imagined one', (
     const { argv, env } = launch();
     assert.ok(!argv.includes(SENTINEL), `the token was passed on the command line: ${argv}`);
     assert.match(env, new RegExp(`^CLAUDE_CODE_OAUTH_TOKEN=${SENTINEL}$`, 'm'));
+  });
+
+  test('only the subcommands that start something open the password manager', () => {
+    // Unlocking a vault to read `logs`, or to `down` a stack already running,
+    // teaches you to approve the prompt without reading it — which is the
+    // habit the vault exists to prevent.
+    for (const quiet of [['logs'], ['down'], ['ps'], ['config'], ['--profile', 'x', 'ps']]) {
+      assert.equal(launch(quiet).asked, false, `${quiet.join(' ')} should not need the token`);
+    }
+    for (const loud of [['up'], ['up', '--build'], ['restart'], ['run', 'x', 'sh']]) {
+      assert.equal(launch(loud).asked, true, `${loud.join(' ')} starts something and needs a real token`);
+    }
   });
 
   test('the launcher writes nothing to disk', () => {
