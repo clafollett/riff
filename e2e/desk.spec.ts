@@ -92,6 +92,42 @@ test('a commons document opens as prose, with no frontmatter to skim past', asyn
   await expect(page.locator('.reader .body')).not.toContainText('---');
 });
 
+test('prose reads as paragraphs, not as one block per source line', async ({ page }) => {
+  // The reader carried white-space: pre-wrap from before the markdown pass
+  // existed, so the newline BETWEEN two rendered blocks survived as a real
+  // blank line — every paragraph sat two lines apart and it read as broken
+  // line spacing. Measured, because it looks plausible in a screenshot.
+  await go(page, 'Commons');
+  await page.locator('.doc', { hasText: 'What we are for' }).click();
+  await expect(page.locator('.reader .body p').first()).toBeVisible();
+
+  const metrics = await page.locator('.reader .body').evaluate((el) => {
+    const line = Number.parseFloat(getComputedStyle(el).lineHeight);
+    const kids = [...el.children];
+    const gaps: number[] = [];
+    for (let i = 1; i < kids.length; i++) {
+      if (kids[i - 1]!.tagName === 'P' && kids[i]!.tagName === 'P') {
+        gaps.push(kids[i]!.getBoundingClientRect().top - kids[i - 1]!.getBoundingClientRect().bottom);
+      }
+    }
+    return { line, gaps, preWrap: getComputedStyle(el).whiteSpace };
+  });
+
+  expect(metrics.preWrap).not.toMatch(/pre/);
+  // A paragraph break should be a fraction of a line, never a whole one.
+  for (const gap of metrics.gaps) expect(gap).toBeLessThan(metrics.line);
+});
+
+test('a wrapped sentence is one paragraph, not one per source line', async ({ page }) => {
+  await go(page, 'Commons');
+  await page.locator('.doc', { hasText: 'What we are for' }).click();
+  // The fixture writes this as a single line; the real documents wrap at ~80
+  // columns, and the renderer must join those back before the CSS sees them.
+  const text = await page.locator('.reader .body p').first().innerText();
+  expect(text).toContain('testable');
+  expect(await page.locator('.reader .body p').count()).toBeLessThan(4);
+});
+
 test('a doubled commons prefix still resolves to one document', async ({ page }) => {
   // Written as commons/records/scores.md by an author who had already typed
   // the prefix. It must appear once, on the right shelf.

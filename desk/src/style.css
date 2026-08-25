@@ -34,7 +34,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 600; margin: 0; }
 .faint { color: var(--faint); }
 
 /* ------------------------------------------------- rendered prose (.body) */
-.body { font-family: var(--serif); line-height: 1.8; color: var(--ink-2); }
+.body { font-family: var(--serif); line-height: 1.7; color: var(--ink-2); }
 .body > * + * { margin-top: 0.85em; }
 .body h1, .body h2, .body h3, .body h4 { font-family: var(--serif); color: var(--ink); line-height: 1.3; }
 .body h1 { font-size: 1.5em; }

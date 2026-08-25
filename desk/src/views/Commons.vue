@@ -58,6 +58,13 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
 
 <style scoped>
 .wrap { display: grid; grid-template-columns: minmax(230px, 280px) 1fr; height: 100%; }
+/* Below this the reader gets squeezed to a word per line, which is worse than
+   no reader at all. Stack the index above it and let the page scroll. */
+@media (max-width: 780px) {
+  .wrap { grid-template-columns: 1fr; height: auto; }
+  .list { border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+  .reader { padding: 24px 22px 50px; }
+}
 .list { border-right: 1px solid var(--line); padding: 30px 0 20px; overflow-y: auto; }
 .list header { padding: 0 22px 16px; }
 h1 { font-size: 24px; }
@@ -75,7 +82,10 @@ h1 { font-size: 24px; }
 .reader { overflow-y: auto; padding: 34px 46px 60px; }
 h2 { font-size: 26px; }
 .meta { font-size: 11px; margin: 8px 0 22px; }
-.body { white-space: pre-wrap; font-family: var(--serif); font-size: 16px; line-height: 1.85;
-  color: var(--ink-2); max-width: 74ch; }
+/* Only the measure and size are local. Everything else comes from the shared
+   .body rules — this used to carry white-space: pre-wrap from before the
+   markdown renderer existed, which preserved the newline BETWEEN every pair of
+   rendered blocks as a real blank line. */
+.body { font-size: 16px; max-width: 74ch; }
 .center { margin-top: 60px; text-align: center; }
 </style>

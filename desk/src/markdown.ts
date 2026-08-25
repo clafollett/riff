@@ -22,8 +22,38 @@ export const render = (src: string): string => {
   let fence = false;
   let code: string[] = [];
 
-  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
-  const openList = (kind: 'ul' | 'ol') => { if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; } };
+  /**
+   * Everyone here hard-wraps their prose at about eighty columns, so a single
+   * paragraph arrives as five or six source lines. Emitting one <p> per line
+   * turned every sentence into a stack of fragments separated by paragraph
+   * gaps — which reads as absurdly tall line spacing, because that is exactly
+   * what it is. Consecutive lines accumulate here and flush as one block.
+   */
+  let buf: string[] = [];
+  let mode: 'p' | 'li' | 'quote' | null = null;
+
+  const flush = () => {
+    if (!buf.length) { mode = null; return; }
+    const text = buf.join(' ').trim();
+    const single = buf.length === 1;
+    buf = [];
+    const m = mode;
+    mode = null;
+    if (!text) return;
+    if (m === 'li') { out.push(`<li>${inline(text)}</li>`); return; }
+    if (m === 'quote') { out.push(`<blockquote>${inline(text)}</blockquote>`); return; }
+    // A line that is only a `key: value` pair reads as a field, not a sentence
+    // — but only when it stood alone, never when it opened a wrapped paragraph.
+    const kv = single ? /^([A-Za-z][\w .-]{0,40}):\s+(.+)$/.exec(text) : null;
+    if (kv) { out.push(`<p class="kv"><b>${kv[1]!}</b> ${inline(kv[2]!)}</p>`); return; }
+    out.push(`<p>${inline(text)}</p>`);
+  };
+
+  const closeList = () => { flush(); if (list) { out.push(`</${list}>`); list = null; } };
+  const openList = (kind: 'ul' | 'ol') => {
+    flush();
+    if (list !== kind) { if (list) out.push(`</${list}>`); out.push(`<${kind}>`); list = kind; }
+  };
 
   for (const line of esc(src).split('\n')) {
     if (/^\s*```/.test(line)) {
@@ -40,21 +70,24 @@ export const render = (src: string): string => {
     if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { closeList(); out.push('<hr>'); continue; }
 
     const ul = /^\s*[-*+]\s+(.*)$/.exec(line);
-    if (ul) { openList('ul'); out.push(`<li>${inline(ul[1]!)}</li>`); continue; }
+    if (ul) { openList('ul'); mode = 'li'; buf = [ul[1]!]; continue; }
 
     const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
-    if (ol) { openList('ol'); out.push(`<li>${inline(ol[1]!)}</li>`); continue; }
+    if (ol) { openList('ol'); mode = 'li'; buf = [ol[1]!]; continue; }
 
     const qt = /^\s*&gt;\s?(.*)$/.exec(line);
-    if (qt) { closeList(); out.push(`<blockquote>${inline(qt[1]!)}</blockquote>`); continue; }
+    if (qt) {
+      if (mode !== 'quote') { closeList(); mode = 'quote'; }
+      buf.push(qt[1]!);
+      continue;
+    }
 
     if (!line.trim()) { closeList(); continue; }
 
-    // A line that is only a `key: value` pair reads as a field, not a sentence.
-    const kv = /^([A-Za-z][\w .-]{0,40}):\s+(.+)$/.exec(line);
-    if (kv && !list) { out.push(`<p class="kv"><b>${kv[1]!}</b> ${inline(kv[2]!)}</p>`); continue; }
-
-    out.push(`<p>${inline(line)}</p>`);
+    // A plain line continues whatever is open — a wrapped bullet, a wrapped
+    // quote, or a wrapped paragraph.
+    if (mode === null) mode = 'p';
+    buf.push(line.trim());
   }
   if (fence && code.length) out.push(`<pre>${code.join('\n')}</pre>`);
   closeList();
