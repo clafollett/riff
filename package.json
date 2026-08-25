@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "Give it a company name and a CEO. It founds the company, and the CEO hires the rest.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clafollett/helmsted.git"
+  },
   "engines": {
     "node": ">=26"
   },

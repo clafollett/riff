@@ -256,8 +256,8 @@ it and says so.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 105 unit tests |
-| `npm run test:ui` | 36 Playwright tests against a throwaway installation |
+| `npm test` | 108 unit tests |
+| `npm run test:ui` | 35 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |
 | `--company <slug>` | any script, when more than one company exists |
@@ -302,7 +302,50 @@ lands as a draft. Credentials go in that file, which is gitignored.
 | Console | Vue 3 + Vite |
 | Agents | `@anthropic-ai/claude-agent-sdk` |
 
-Runtime dependencies: the Agent SDK, `zod`, and Vue. That is the whole list.
+Runtime dependencies: the Agent SDK, `zod`, `markdown-it` and Vue. That is the
+whole list. Archives are made by shelling out to `tar`, which is already on
+every machine that can run this.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the gate, the ledger
 and the tick loop actually work.
+
+---
+
+## Carrying a company somewhere else
+
+A company is a directory — nothing outside it records that it exists, and its
+config does not state where it lives. So it moves.
+
+Export writes the whole thing to one file: config, ledger, and the world with
+its git history intact. An export you cannot `git log` is a screenshot, not a
+company.
+
+```
+Companies → Export        writes <slug>-<stamp>.helmsted.tar.gz
+Companies → Import        reads one back
+```
+
+An archive that arrives from someone else is treated as data rather than as a
+promise: every path is checked before anything is unpacked, a world containing
+a symbolic link is refused outright, and the company always lands **paused**.
+Someone else's company starting to spend your subscription the moment the copy
+finishes is not a feature.
+
+---
+
+## Licence and contributing
+
+Apache-2.0. See [LICENSE](LICENSE).
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — what to send, and what to open an issue
+  about first.
+- [SECURITY.md](SECURITY.md) — the threat model, what is actually contained,
+  what is not, and how to check both yourself. Read it before running this
+  unattended.
+
+The short version of the security posture: agents get a real shell, and they
+get it **only** inside the container, which has no route to the internet except
+an allowlisted proxy. Run this straight from a checkout on your own machine and
+the staff have no shell at all — that decision is in the code, not in a prompt,
+because the thing reading the prompt is the thing being contained.
+

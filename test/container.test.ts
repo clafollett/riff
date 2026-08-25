@@ -173,3 +173,30 @@ describe('what the factory can reach', () => {
     assert.match(factoryBlock, /no-new-privileges:true/);
   });
 });
+
+describe('the example env file describes this container, not an imagined one', () => {
+  // A .env.example naming variables nothing reads is worse than none at all:
+  // someone sets one, nothing happens, and they go looking for the bug in
+  // their own setup.
+  const example = readFileSync('docker/.env.example', 'utf8');
+
+  test('every variable it names is one compose actually reads', () => {
+    const named = [...example.matchAll(/^#?\s*([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]!);
+    assert.ok(named.length > 3, 'the example should document something');
+    for (const v of named) {
+      if (v === 'CLAUDE_CODE_OAUTH_TOKEN') continue;   // required, checked below
+      assert.ok(compose.includes(v), `${v} is in docker/.env.example but nothing in compose reads it`);
+    }
+  });
+
+  test('the token is present and empty, so a copy of it cannot carry a secret', () => {
+    assert.match(example, /^CLAUDE_CODE_OAUTH_TOKEN=\s*$/m);
+    assert.ok(compose.includes('CLAUDE_CODE_OAUTH_TOKEN'), 'compose must require the token');
+  });
+
+  test('docker/.env itself is ignored, and stays ignored', () => {
+    const ignored = readFileSync('.gitignore', 'utf8');
+    assert.match(ignored, /^docker\/\.env$/m);
+  });
+});
+
