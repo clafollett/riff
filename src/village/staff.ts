@@ -1,7 +1,13 @@
 import type { Role } from '../core/types.ts';
 
+/** Replaced at open() with the configured Inn Keeper's id. */
+export const INNKEEPER_SLOT = '__innkeeper__';
+
 /**
- * Opening-day staff. Ten house managers, one Steward, one Inn Keeper.
+ * Opening-day staff: ten house managers and a Steward.
+ *
+ * The Inn Keeper is deliberately NOT in this list — they are a different human
+ * on every install, so they come from configuration and are created at open.
  *
  * Deliberately distinct first initials — a dozen name labels share one map,
  * and distinct letters are what make them scannable at a glance.
@@ -22,11 +28,7 @@ export type Seed = {
 
 export const OPENING_STAFF: Seed[] = [
   {
-    id: 'cali', name: 'Cali', role: 'innkeeper', house: 'the-house', reportsTo: null,
-    brief: 'The Inn Keeper. The only human on the property. Everything here exists to give them back their time.',
-  },
-  {
-    id: 'hollis', name: 'Hollis', role: 'steward', house: 'the-inn', reportsTo: 'cali',
+    id: 'hollis', name: 'Hollis', role: 'steward', house: 'the-inn', reportsTo: INNKEEPER_SLOT,
     brief: [
       'You run the Inn on the Keeper\'s behalf, and you are the only one who may spend.',
       '',

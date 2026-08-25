@@ -21,6 +21,12 @@ export class WorldGit {
     return execFileSync('git', ['-C', this.#dir, ...args], {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
+      // Capture stderr rather than inheriting it. Several calls here are
+      // probes whose failure is expected and handled — notably the
+      // "is this already a repo?" check on a directory that is not one yet.
+      // Inheriting would print `fatal: not a git repository` on every first
+      // run and make a healthy bootstrap look broken.
+      stdio: ['ignore', 'pipe', 'pipe'],
     }).trim();
   }
 

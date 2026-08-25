@@ -31,6 +31,16 @@ export type HouseRules = {
   innkeeper: AgentId;
 };
 
+/**
+ * The rules for a given Inn. The Inn Keeper differs per install, so the House
+ * Rules are built from configuration rather than shipped with a name in them.
+ */
+export const houseRulesFor = (innkeeper: AgentId): HouseRules => ({
+  ...DEFAULT_HOUSE_RULES,
+  innkeeper,
+});
+
+/** Baseline. `innkeeper` here is a placeholder — call houseRulesFor(). */
 export const DEFAULT_HOUSE_RULES: HouseRules = {
   treasurers: ['hollis'],
   dailyCapCents: 500, // $5.00/day. Rule 4, to the cent.
@@ -40,5 +50,5 @@ export const DEFAULT_HOUSE_RULES: HouseRules = {
   // lands as a draft." One capability, no exceptions, no config to loosen it.
   innkeeperApproves: ['external.write'],
   steward: 'hollis',
-  innkeeper: 'cali',
+  innkeeper: 'the-keeper',
 };

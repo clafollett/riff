@@ -1,13 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
-import { Ledger } from '../ledger/ledger.ts';
-import { World } from '../worldfs/world.ts';
 import { PolicyGate } from '../policy/gate.ts';
-import { DEFAULT_HOUSE_RULES } from '../policy/rules.ts';
+import { houseRulesFor } from '../policy/rules.ts';
 import { Scheduler } from '../runtime/scheduler.ts';
 import { systemClock } from '../core/clock.ts';
 import { computeMorale } from './morale.ts';
+import { openTheInn } from '../village/open.ts';
 import { HOUSES, MAP_W, MAP_H, TILE, FOUNTAIN } from '../village/map.ts';
 import type { Event } from '../core/types.ts';
 
@@ -15,14 +14,13 @@ import { resolveConfig } from '../core/config.ts';
 
 const PORT = Number(process.env['PORT'] ?? 4173);
 const cfg = resolveConfig();
-const WORLD_DIR = cfg.worldDir;
-const LEDGER = cfg.ledgerPath;
 const CLIENT_DIR = resolve('client');
 
 const clock = systemClock;
-const ledger = new Ledger(LEDGER, clock);
-const world = new World(WORLD_DIR, clock);
-const rules = DEFAULT_HOUSE_RULES;
+// Bootstrap on first boot: a fresh clone on any machine becomes a working
+// village with no setup step. Their Inn, their history, shared with nobody.
+const { ledger, world, firstRun } = openTheInn(cfg, clock);
+const rules = houseRulesFor(cfg.innkeeper.id);
 const gate = new PolicyGate(ledger, rules);
 const scheduler = new Scheduler({ ledger, gate, world, clock });
 
@@ -212,7 +210,9 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
+  if (firstRun) console.log(`\n  First run — built a new Inn at ${cfg.home}`);
   console.log(`\n  The LaFollett Bed & Breakfast`);
+  console.log(`  Inn Keeper: ${cfg.innkeeper.name}`);
   console.log(`  ${ledger.listAgents().length} staff · ${HOUSES.length} houses`);
   console.log(`  http://localhost:${PORT}\n`);
   console.log(`  The staff are asleep. POST /api/inn/open to start the day.\n`);
