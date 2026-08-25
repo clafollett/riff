@@ -1,0 +1,133 @@
+import { test, describe, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { World } from '../src/worldfs/world.ts';
+import { parse, stringify } from '../src/worldfs/frontmatter.ts';
+import { Ledger } from '../src/ledger/ledger.ts';
+import { fixedClock } from '../src/core/clock.ts';
+
+let dir: string;
+let world: World;
+const clock = fixedClock('2026-08-24T14:30:00.000Z');
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'inn-'));
+  world = new World(join(dir, 'world'), clock);
+  world.ensure();
+});
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+describe('path containment — staff choose these strings, so this is a trust boundary', () => {
+  test('rejects ../ traversal', () => {
+    assert.throws(() => world.path('../../../etc/passwd'), /escapes the world/);
+  });
+
+  test('rejects absolute paths', () => {
+    assert.throws(() => world.path('/etc/passwd'), /escapes the world/);
+  });
+
+  test('rejects traversal buried mid-path', () => {
+    assert.throws(() => world.path('staff/greg/../../../../tmp/pwned'), /escapes the world/);
+  });
+
+  test('rejects a symlink planted inside the world', () => {
+    const outside = join(dir, 'outside');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'secret.md'), 'not yours');
+    symlinkSync(outside, join(world.root, 'commons', 'escape'));
+    assert.throws(() => world.path('commons/escape/secret.md'), /symlink/);
+  });
+
+  test('allows ordinary paths, including files that do not exist yet', () => {
+    assert.doesNotThrow(() => world.path('staff/greg/notes/new-note.md'));
+    assert.doesNotThrow(() => world.path('commons/morale.md'));
+  });
+});
+
+describe('frontmatter is total — a fumbled brief must not take the village down', () => {
+  test('round-trips scalars, arrays and booleans', () => {
+    const doc = { data: { author: 'greg', count: 42, active: true, tags: ['etsy', 'listings'] }, body: '# Hello\n' };
+    const back = parse(stringify(doc));
+    assert.deepEqual(back.data, doc.data);
+    assert.equal(back.body, doc.body);
+  });
+
+  test('dates and zero-padded ids stay strings', () => {
+    const back = parse('---\nday: 2026-08-24\nid: 007\n---\nbody\n');
+    assert.equal(back.data['day'], '2026-08-24');
+    assert.equal(back.data['id'], '007');
+  });
+
+  test('malformed frontmatter degrades instead of throwing', () => {
+    assert.doesNotThrow(() => parse('---\nthis line has no colon\n: nokey\nok: fine\n---\nbody'));
+    const d = parse('---\nthis line has no colon\nok: fine\n---\nbody');
+    assert.equal(d.data['ok'], 'fine');
+  });
+
+  test('a file with no frontmatter is all body', () => {
+    const d = parse('just prose, no fence\n');
+    assert.deepEqual(d.data, {});
+    assert.equal(d.body, 'just prose, no fence\n');
+  });
+});
+
+describe('notes — the 742-notes mechanic', () => {
+  test('a note is indexed and findable by subject', () => {
+    const ledger = new Ledger(':memory:', clock);
+    ledger.upsertAgent({
+      id: 'greg', name: 'Greg', role: 'director', title: 'Product', reportsTo: null,
+      building: 'the-market', department: 'product', status: 'active',
+      hiredAt: clock.iso(), hiredBy: null, model: 'claude-sonnet-5',
+    });
+    world.ensureStaff('greg');
+    world.writeNote('greg', 'dennis', 'Dennis carried the listings', 'He did most of the work today.');
+
+    assert.equal(world.reindexNotes(ledger), 1);
+    assert.equal(ledger.countNotes(), 1);
+    const about = ledger.notesAbout('dennis');
+    assert.equal(about.length, 1);
+    assert.equal(about[0]!.author, 'greg');
+  });
+
+  test('two notes on the same colleague the same day append, never clobber', () => {
+    world.ensureStaff('greg');
+    const rel = world.writeNote('greg', 'dennis', 'first', 'Morning observation.');
+    world.writeNote('greg', 'dennis', 'second', 'Afternoon revision.');
+    const body = world.readDoc(rel)!.body;
+    assert.match(body, /Morning observation/);
+    assert.match(body, /Afternoon revision/, 'second note overwrote the first');
+  });
+});
+
+describe('git — attribution is the audit trail', () => {
+  test('commits are authored as the staff member who acted', () => {
+    world.ensureStaff('greg');
+    world.writeNote('greg', 'dennis', 'observation', 'Something worth recording.');
+    const sha = world.git.commitAs({ id: 'greg', name: 'Greg' }, 'note: dennis carried the listings');
+    assert.ok(sha, 'expected a commit');
+
+    const log = world.git.since('1.hour');
+    assert.equal(log.length, 1);
+    assert.equal(log[0]!.author, 'Greg', 'commit must be attributed to the staff member');
+  });
+
+  test('committing nothing is a no-op, not an error', () => {
+    assert.equal(world.git.commitAs({ id: 'greg', name: 'Greg' }, 'empty'), null);
+  });
+
+  test('contributions since is the honest "who actually worked" list', () => {
+    world.ensureStaff('greg'); world.ensureStaff('dennis');
+    world.writeNote('greg', null, 'a', 'x');
+    world.git.commitAs({ id: 'greg', name: 'Greg' }, 'greg works');
+    world.writeNote('dennis', null, 'b', 'y');
+    world.git.commitAs({ id: 'dennis', name: 'Dennis' }, 'dennis works');
+    world.writeNote('dennis', null, 'c', 'z');
+    world.git.commitAs({ id: 'dennis', name: 'Dennis' }, 'dennis works more');
+
+    const c = world.git.contributionsSince('1.hour');
+    assert.equal(c[0]!.author, 'Dennis');
+    assert.equal(c[0]!.commits, 2);
+  });
+});
