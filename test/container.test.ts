@@ -61,6 +61,21 @@ describe('the container writes where the volume is', () => {
     assert.match(compose, new RegExp(`:${MOUNT}\\b`), 'the volume must be mounted at the root');
   });
 
+  test('the data path is the operator\'s, not root\'s', () => {
+    // Compose interpolates ${HOME} client-side, in the process that runs the
+    // command — so it is the invoking user's home, never the daemon's.
+    assert.match(compose, /\$\{HELMSTED_DATA:-\$\{HOME\}\/helmsted-data\}/);
+  });
+
+  test('it checks it can write the mount before doing anything', () => {
+    // Docker Desktop maps bind-mount ownership; a rootful Linux daemon does
+    // not, and the container's uid then cannot create anything. Unchecked,
+    // that surfaces as a confusing crash deep inside a git call.
+    assert.match(entrypoint, /touch \/data/);
+    assert.match(entrypoint, /Cannot write to \/data/);
+    assert.match(entrypoint, /chown/, 'the failure must carry its own fix');
+  });
+
   test('the entrypoint refuses to start if the root escapes the mount', () => {
     // Belt and braces: if someone overrides it at run time, fail loudly rather
     // than writing a whole company somewhere it will not survive.

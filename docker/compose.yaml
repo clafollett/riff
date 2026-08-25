@@ -42,6 +42,11 @@ services:
       http_proxy: http://egress:8888
       https_proxy: http://egress:8888
       NO_PROXY: localhost,127.0.0.1,egress
+    # Docker Desktop maps bind-mount ownership, so on macOS the image's own
+    # unprivileged user writes files that come back owned by you. A rootful
+    # Linux daemon does not map anything — uncomment this and set UID/GID in
+    # docker/.env to run as yourself. The entrypoint says so if it matters.
+    # user: "${UID:-10001}:${GID:-10001}"
     volumes:
       # A BIND MOUNT, not a named volume, so every company is an ordinary
       # directory on your disk: readable without Docker, backed up by whatever

@@ -203,6 +203,13 @@ an ordinary directory on your disk:
 Readable, greppable, and covered by whatever already backs up your home folder.
 Throw the container away and nothing is lost.
 
+`${HOME}` there is interpolated by the `docker compose` process, not by the
+daemon, so it is **your** home directory rather than root's. On macOS, Docker
+Desktop maps ownership across the mount and files come back owned by you
+whatever uid the container runs as. A rootful Linux daemon maps nothing, so
+the container's user may not be able to write — the entrypoint checks that
+before it does anything and tells you which of the two fixes to apply.
+
 For a snapshot the agents cannot reach — they have a shell and write access to
 their own data, so a copy they can also touch is not a backup:
 
