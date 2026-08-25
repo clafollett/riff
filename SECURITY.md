@@ -109,6 +109,19 @@ Docker socket. **Secrecy is not the control.** The control is that the factory
 has no route to the internet except an allowlisted proxy, so a token that can
 be read still cannot be sent anywhere.
 
+### One writer per installation
+
+The host and the container mount the same `~/.helmsted` on purpose. Two servers
+on it is not a conflicting file — it is two schedulers waking the same staff,
+doubling the spend, committing to one git repository from two sessions, and
+writing both their accounts into one ledger. The gateway takes a lock at
+`~/.helmsted/.lock` before anything opens a ledger, and refuses to start
+against a live one.
+
+Liveness is a heartbeat rather than a pid, because a container's pid 7 says
+nothing about the host. A lock whose heartbeat stopped is stale and gets taken
+over, so a killed server does not wedge the installation.
+
 ### The spend cap is a transaction, not a check
 
 Recorded under `BEGIN IMMEDIATE` in SQLite, so two staff members waking at the
@@ -158,7 +171,7 @@ Say these out loud before you run it unattended.
 ## Checking it yourself
 
 ```bash
-npm test          # 113 unit tests, including the container env contract
+npm test          # 119 unit tests, including the container env contract
 npm run test:ui   # 35 browser tests against a throwaway installation
 ```
 

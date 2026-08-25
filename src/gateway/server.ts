@@ -6,6 +6,7 @@ import {
 import { Registry, type Company } from '../company/registry.ts';
 import { exportCompany, exportName, importCompany } from '../company/transfer.ts';
 import { isOperatorError, installRoot } from '../core/config.ts';
+import { takeInstallationLock, type Lock } from '../core/lock.ts';
 import { readFile } from 'node:fs/promises';
 import { createReadStream, createWriteStream, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
@@ -17,6 +18,26 @@ const clock = systemClock;
 // The first layout put one company flat in ~/.helmsted. Move it before
 // anything opens it, so an existing world is never stranded by an upgrade.
 const migrated = migrateLegacyLayout();
+
+/**
+ * One writer per installation, taken before anything opens a ledger.
+ *
+ * The host and the container mount the same ~/.helmsted on purpose — a company
+ * founded one way is there the other way. Two servers on it is not a
+ * conflicting file, it is two schedulers waking the same staff: doubled spend,
+ * two sessions committing to one git repository, and a ledger recording both
+ * their accounts of what happened.
+ *
+ * The failure this prevents is mundane and easy: forget the server running in
+ * a terminal, start the container, and both are live against the same worlds.
+ */
+let lock: Lock;
+try {
+  lock = takeInstallationLock();
+} catch (e) {
+  if (isOperatorError(e)) { console.error(`\n  ${(e as Error).message}\n`); process.exit(1); }
+  throw e;
+}
 
 const registry = new Registry(clock);
 
@@ -496,9 +517,12 @@ const shutdown = async () => {
   for (const set of watchers.values()) for (const w of set) { try { w.end(); } catch { /* gone */ } }
   server.close(() => {
     for (const c of registry.opened()) c.ledger.close();
+    lock.release();
     process.exit(0);
   });
-  setTimeout(() => process.exit(0), 3000).unref();
+  // A hung close must still let go of the lock, or the next start is refused
+  // for thirty seconds by a process that no longer exists.
+  setTimeout(() => { lock.release(); process.exit(0); }, 3000).unref();
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
