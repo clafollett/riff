@@ -24,8 +24,8 @@ beforeEach(() => {
   // they occupy a row, stand on the map, and can be referenced by approvals.
   ledger.upsertAgent({ ...staff('cali', 'innkeeper', null), building: 'the-house' });
   ledger.upsertAgent(staff('matt', 'chief_of_staff', 'cali'));
-  ledger.upsertAgent(staff('greg', 'director'));
-  ledger.upsertAgent(staff('dennis', 'director'));
+  ledger.upsertAgent(staff('greg', 'house_manager'));
+  ledger.upsertAgent(staff('dennis', 'house_manager'));
   gate = new PolicyGate(ledger, rules);
 });
 
@@ -167,7 +167,7 @@ describe('standing', () => {
   });
 
   test('a dismissed staff member cannot act', () => {
-    ledger.upsertAgent({ ...staff('greg', 'director'), status: 'dismissed' });
+    ledger.upsertAgent({ ...staff('greg', 'house_manager'), status: 'dismissed' });
     const d = gate.request({ actor: 'greg', capability: 'task.create', summary: 'still here' });
     assert.equal(d.kind, 'deny');
     assert.equal(d.rule, 'staff.dismissed');

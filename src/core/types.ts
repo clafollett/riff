@@ -16,15 +16,15 @@ export type ApprovalId = string;
 export type EventId = string;
 
 /** Staff hierarchy. The Innkeeper is you; you are in the world, not above it. */
-export const ROLES = ['innkeeper', 'chief_of_staff', 'director', 'worker'] as const;
+export const ROLES = ['innkeeper', 'chief_of_staff', 'house_manager', 'house_assistant'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Lower rank number = more authority. Used by the gate to test standing. */
 export const RANK: Record<Role, number> = {
   innkeeper: 0,
   chief_of_staff: 1,
-  director: 2,
-  worker: 3,
+  house_manager: 2,
+  house_assistant: 3,
 };
 
 export type AgentStatus = 'active' | 'idle' | 'off_shift' | 'dismissed';

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE TABLE IF NOT EXISTS agents (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
-  role        TEXT NOT NULL CHECK (role IN ('innkeeper','chief_of_staff','director','worker')),
+  role        TEXT NOT NULL CHECK (role IN ('innkeeper','chief_of_staff','house_manager','house_assistant')),
   title       TEXT NOT NULL,
   reports_to  TEXT REFERENCES agents(id),
   building    TEXT NOT NULL,
