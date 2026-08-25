@@ -228,6 +228,33 @@ test('the feed shows what already happened, then keeps up', async ({ page }) => 
   expect(await page.locator('.feed li').count()).toBeGreaterThan(seeded);
 });
 
+test('the feed shows what changed, and keeps the machinery behind a toggle', async ({ page }) => {
+  // Two thirds of a working company's log is permission checks that passed and
+  // staff waking up. All true, none of it ever the answer to "what happened
+  // while I was out" — and it buried the handful of events that were.
+  await go(page, 'Feed');
+  await expect(page.locator('.feed li').first()).toBeVisible();
+
+  const kindsOf = () => page.locator('.feed .kind').allInnerTexts();
+  const quiet = await kindsOf();
+  for (const machinery of ['gate.allow', 'agent.woke', 'agent.slept', 'memory.consolidated']) {
+    expect(quiet).not.toContain(machinery);
+  }
+  expect(quiet).toContain('commons.posted');
+  await expect(page.locator('.note')).toContainText('routine events hidden');
+
+  await page.getByRole('button', { name: 'Everything' }).click();
+  const loud = await kindsOf();
+  expect(loud.length).toBeGreaterThan(quiet.length);
+  expect(loud).toContain('gate.allow');
+  expect(loud).toContain('agent.woke');
+  await expect(page.locator('.note')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'What changed' }).click();
+  await expect(page.locator('.feed .kind').first()).toBeVisible();
+  expect((await kindsOf()).length).toBe(quiet.length);
+});
+
 test('the commons reads in the order it was written', async ({ page }) => {
   // Listed alphabetically, forty documents give a newcomer no way in — there
   // was nothing on screen saying which came first.

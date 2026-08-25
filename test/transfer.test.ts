@@ -95,6 +95,47 @@ describe('a company travels whole', () => {
       `Rune's commit did not survive the trip: ${JSON.stringify(history)}`);
   });
 
+  test('a company folder can simply be moved, because it never says where it is', () => {
+    // The config used to carry absolute home/worldDir/ledgerPath, so a company
+    // that arrived from another machine pointed at that machine's disk — and
+    // won over the folder it was actually sitting in.
+    const res = JSON.parse(run(`${PRELUDE}
+      const { renameSync, readFileSync } = await import('node:fs');
+      const { companyHome, companiesDir } = await import('${cwd}/src/core/config.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Nomad', business: 'x', ceo: 'Nell', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      a.company.ledger.emit('nell', 'test.marker', null, {});
+      const seq = a.company.ledger.latestSeq();
+      await r.close('nomad');
+
+      const stored = JSON.parse(readFileSync(companyHome('nomad') + '/config.json', 'utf8'));
+
+      // A plain directory rename, with nothing else touched.
+      renameSync(companyHome('nomad'), companiesDir() + '/wanderer');
+
+      const r2 = new Registry(systemClock);
+      const moved = r2.get('wanderer');
+      console.log(JSON.stringify({
+        storedKeys: Object.keys(stored).sort(),
+        slugs: r2.list().map((c) => c.slug),
+        home: moved.cfg.home,
+        expected: companyHome('wanderer'),
+        seq: moved.ledger.latestSeq(),
+        name: moved.cfg.company.name,
+      }));
+    `)) as Record<string, unknown>;
+
+    // Nothing on disk claims to know where the company is.
+    assert.deepEqual(res['storedKeys'], ['board', 'ceo', 'company', 'connectors', 'version']);
+
+    // So moving the folder is all it takes.
+    assert.deepEqual(res['slugs'], ['wanderer']);
+    assert.equal(res['home'], res['expected']);
+    assert.equal(res['seq'], 2);
+    assert.equal(res['name'], 'Nomad');
+  });
+
   test('the config that arrives describes this machine, not the one it left', () => {
     const res = JSON.parse(run(`${PRELUDE}
       const r = new Registry(systemClock);
@@ -115,10 +156,11 @@ describe('a company travels whole', () => {
 
     const cfg = res['cfg'] as Record<string, unknown>;
     assert.equal(res['slug'], 'pathy-two');
-    assert.equal(cfg['home'], res['home']);
-    assert.equal(cfg['worldDir'], join(String(res['home']), 'world'));
-    assert.equal(cfg['ledgerPath'], join(String(res['home']), 'ledger.db'));
     assert.equal((cfg['company'] as Record<string, unknown>)['name'], 'Pathy Two');
+    // The paths of whichever machine wrote it do not travel at all.
+    assert.equal(cfg['home'], undefined);
+    assert.equal(cfg['worldDir'], undefined);
+    assert.equal(cfg['ledgerPath'], undefined);
   });
 
   test('an imported company arrives paused, whatever it was doing when it left', () => {

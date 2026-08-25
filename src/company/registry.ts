@@ -5,8 +5,8 @@ import { constitutionFor, type Constitution } from '../policy/rules.ts';
 import { Scheduler } from '../runtime/scheduler.ts';
 import { found } from './genesis.ts';
 import {
-  archiveDir, companyHome, listCompanies, resolveConfig, scaffoldConfig, setRunningFlag, slugId,
-  type CompanyRef, type HelmstedConfig,
+  archiveDir, companyHome, listCompanies, persisted, resolveConfig, scaffoldConfig,
+  setRunningFlag, slugId, type CompanyRef, type HelmstedConfig,
 } from '../core/config.ts';
 import type { Clock } from '../core/clock.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -186,7 +186,8 @@ export class Registry {
         business: patch.business?.trim() ?? cfg.company.business,
       },
     };
-    writeFileSync(path, JSON.stringify(next, null, 2) + '\n', 'utf8');
+    // Where it lives is the directory's job to say, not the file's.
+    writeFileSync(path, JSON.stringify(persisted(next), null, 2) + '\n', 'utf8');
     return { ok: true, slug: wanted };
   }
 

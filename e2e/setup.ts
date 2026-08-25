@@ -66,6 +66,18 @@ export default async function globalSetup(): Promise<void> {
     ledger.sendMessage('fen', cfg.board[0]!.id, `Routine report ${i}.\n\nNothing needs you.`);
   }
 
+  // The machinery, in the proportion a real company produces it: a permission
+  // check for roughly every message, plus the waking heartbeat. The feed hides
+  // these by default, and a fixture without them cannot show that it does.
+  for (let i = 1; i <= 20; i++) {
+    ledger.emit('fen', 'gate.allow', 'world.write', { summary: `check ${i}` });
+  }
+  ledger.emit('fen', 'agent.woke', null, {});
+  ledger.emit('fen', 'agent.slept', null, {});
+  ledger.emit('fen', 'memory.consolidated', 'fen', {});
+  // And one that is neither routine nor a message — the feed must keep it.
+  ledger.emit('fen', 'commons.posted', 'commons/seams.md', { title: 'Where the seams are' });
+
   // A draft waiting on the board, so the Envelope has something to render.
   const draftPath = 'staff/fen/drafts/2026-01-01-first-contact.md';
   world.writeDoc(draftPath, {

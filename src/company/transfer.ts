@@ -5,7 +5,7 @@ import {
   renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs';
 import { basename, join } from 'node:path';
-import { companiesDir, companyHome, installRoot, operatorError, slugId,
+import { companiesDir, companyHome, installRoot, operatorError, persisted, slugId,
   type HelmstedConfig } from '../core/config.ts';
 
 /**
@@ -215,8 +215,9 @@ export const importCompany = (
     for (let n = 2; existsSync(companyHome(slug)); n++) slug = `${wanted}-${n}`;
     const renamed = slug !== manifest.slug;
 
-    // The config that arrived describes someone else's disk. Every path in it
-    // is rewritten before anything opens it.
+    // A config written by an older Helmsted states where it used to live. Those
+    // paths describe someone else's disk, so they are dropped rather than
+    // rewritten — a company is located by the directory it is in.
     const home = companyHome(slug);
     const cfg = JSON.parse(readFileSync(join(work, 'config.json'), 'utf8')) as HelmstedConfig;
     const next: HelmstedConfig = {
@@ -230,7 +231,7 @@ export const importCompany = (
       },
       running: false,
     };
-    writeFileSync(join(work, 'config.json'), JSON.stringify(next, null, 2) + '\n', 'utf8');
+    writeFileSync(join(work, 'config.json'), JSON.stringify(persisted(next), null, 2) + '\n', 'utf8');
     rmSync(manifestPath, { force: true });
 
     mkdirSync(companiesDir(), { recursive: true });

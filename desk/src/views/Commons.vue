@@ -72,6 +72,20 @@ onEvents(() => props.events, /^commons\./, async () => {
 
 const pressure = computed(() => props.state.commons.held / props.state.commons.ceiling);
 const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(0, -1).join(' / ');
+
+/**
+ * Forty documents is the ceiling, and a company gets there. An index is for
+ * scanning, though, not for turning pages — paging it would mean clicking
+ * through to reach number thirty. Narrowing it is the useful move, and the
+ * numbering means a filtered list still says where each one sits in the whole.
+ */
+const find = ref('');
+const listed = computed(() => {
+  const q = find.value.trim().toLowerCase();
+  if (!q) return sorted.value;
+  return sorted.value.filter((d) =>
+    (d.title + ' ' + d.path + ' ' + who.value(d.author)).toLowerCase().includes(q));
+});
 </script>
 
 <template>
@@ -88,11 +102,12 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
           A ceiling, not a quota. At the top, adding means removing something that stopped being true.
         </p>
       </header>
+      <input v-model="find" class="find" placeholder="filter…" aria-label="Filter documents" />
       <div class="sorts">
         <button v-for="o in ORDERS" :key="o.key" class="sort" :class="{ on: order === o.key }"
                 @click="order = o.key">{{ o.label }}</button>
       </div>
-      <button v-for="d in sorted" :key="d.path" class="doc" :class="{ on: open?.path === d.path }" @click="read(d)">
+      <button v-for="d in listed" :key="d.path" class="doc" :class="{ on: open?.path === d.path }" @click="read(d)">
         <span class="n faint mono">{{ seq.get(d.path) }}</span>
         <span class="lines">
           <span class="shelf faint mono">{{ shelf(d.path) }}</span>
@@ -103,6 +118,7 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
         </span>
       </button>
       <p v-if="!docs.length" class="muted note">Nothing posted yet.</p>
+      <p v-else-if="!listed.length" class="muted note">Nothing matches “{{ find }}”.</p>
     </aside>
 
     <Splitter v-model="listWidth" :min="200" :max="520"
@@ -143,6 +159,9 @@ h1 { font-size: 24px; }
 .bar { flex: 1; height: 5px; background: #2a221c; border-radius: 3px; overflow: hidden; }
 .fill { display: block; height: 100%; }
 .note { font-size: 12px; line-height: 1.6; margin-top: 10px; }
+.find { display: block; width: calc(100% - 36px); margin: 0 18px 8px; background: #15100d;
+  color: var(--ink); border: 1px solid var(--line-2); border-radius: 5px;
+  padding: 6px 9px; font: inherit; font-size: 12px; }
 .sorts { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 18px 10px; }
 .sort { font: inherit; font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
   color: var(--faint); background: none; border: 1px solid transparent; border-radius: 4px;

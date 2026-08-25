@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join, resolve, isAbsolute } from 'node:path';
+import { join, resolve, isAbsolute, sep } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, renameSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { userInfo } from 'node:os';
@@ -31,7 +31,16 @@ import { userInfo } from 'node:os';
 
 export type HelmstedConfig = {
   version: 1;
-  /** The company's root. world/ and ledger.db live under it unless overridden. */
+  /**
+   * Where the company is, and where its two halves sit inside it.
+   *
+   * DERIVED, never persisted. A company is identified by the directory it is
+   * in, so a config that also states its own location is stating something the
+   * filesystem already knows — and the two can disagree. They did: an exported
+   * company carried the absolute paths of the machine it left, and those won
+   * over the folder it had actually arrived in. `persisted()` strips them on
+   * the way out, and `resolveConfig` computes them on the way in.
+   */
   home: string;
   worldDir: string;
   ledgerPath: string;
@@ -202,6 +211,30 @@ export const migrateLegacyLayout = (): { moved: string } | null => {
 
 const abs = (base: string, p: string): string => (isAbsolute(p) ? p : resolve(base, p));
 
+/**
+ * A stored path is honoured only if it lands inside the company it was read
+ * from. An absolute one pointing anywhere else is a leftover from another
+ * machine, not an instruction — HELMSTED_WORLD and HELMSTED_LEDGER are how
+ * you deliberately put a world somewhere unusual.
+ */
+const within = (base: string, p: string | undefined, fallback: string): string => {
+  const here = resolve(base);
+  const candidate = p ? abs(here, p) : join(here, fallback);
+  return candidate === here || candidate.startsWith(here + sep)
+    ? candidate : join(here, fallback);
+};
+
+/**
+ * The config as it goes to disk: everything except where it is.
+ *
+ * Kept as an explicit pick rather than a delete, so a field added to the type
+ * later is written by default instead of silently dropped.
+ */
+export const persisted = (cfg: HelmstedConfig & { running?: boolean }): Record<string, unknown> => {
+  const { home: _h, worldDir: _w, ledgerPath: _l, ...rest } = cfg;
+  return rest;
+};
+
 const fromHome = (home: string): HelmstedConfig => {
   const name = guessKeeperName();
   return {
@@ -276,8 +309,8 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): HelmstedConfi
   return {
     version: 1,
     home: base,
-    worldDir: env['HELMSTED_WORLD'] ? abs(cwd, env['HELMSTED_WORLD']) : abs(base, merged.worldDir ?? 'world'),
-    ledgerPath: env['HELMSTED_LEDGER'] ? abs(cwd, env['HELMSTED_LEDGER']) : abs(base, merged.ledgerPath ?? 'ledger.db'),
+    worldDir: env['HELMSTED_WORLD'] ? abs(cwd, env['HELMSTED_WORLD']) : within(base, merged.worldDir, 'world'),
+    ledgerPath: env['HELMSTED_LEDGER'] ? abs(cwd, env['HELMSTED_LEDGER']) : within(base, merged.ledgerPath, 'ledger.db'),
     company: {
       name: env['HELMSTED_COMPANY']?.trim() || merged.company?.name || 'Untitled Company',
       business: env['HELMSTED_BUSINESS']?.trim() || merged.company?.business || '',
@@ -295,7 +328,8 @@ export const setRunningFlag = (home: string, running: boolean): void => {
   const path = join(home, CONFIG_NAME);
   const cfg = readConfigFile(path);
   if (!cfg) return;
-  writeFileSync(path, JSON.stringify({ ...cfg, running }, null, 2) + '\n', 'utf8');
+  const { home: _h, worldDir: _w, ledgerPath: _l, ...rest } = cfg;
+  writeFileSync(path, JSON.stringify({ ...rest, running }, null, 2) + '\n', 'utf8');
 };
 
 /** Create the company's home and write the config. Idempotent. */
@@ -307,7 +341,7 @@ export const scaffoldConfig = (cfg: HelmstedConfig): { created: boolean; path: s
   const path = join(cfg.home, CONFIG_NAME);
   if (existsSync(path)) return { created: false, path };
 
-  writeFileSync(path, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
+  writeFileSync(path, JSON.stringify(persisted(cfg), null, 2) + '\n', 'utf8');
   return { created: true, path };
 };
 

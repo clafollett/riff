@@ -4,6 +4,7 @@ import { api, type Inbox, type Message, type Event, type State } from '../api';
 import { render } from '../markdown';
 import { onEvents } from '../live';
 import { namer } from '../names';
+import Pager from '../Pager.vue';
 
 const props = defineProps<{ state: State; events: Event[] }>();
 const emit = defineEmits<{ changed: [] }>();
@@ -170,11 +171,7 @@ const when = (iso: string) => {
       </template>
     </article>
 
-    <nav v-if="pages > 1" class="pager">
-      <button class="ghost" :disabled="page === 0" @click="page--; closeAll()">Newer</button>
-      <span class="faint mono">page {{ page + 1 }} of {{ pages }}</span>
-      <button class="ghost" :disabled="page >= pages - 1" @click="page++; closeAll()">Older</button>
-    </nav>
+    <Pager :page="page" :pages="pages" @update:page="page = $event; closeAll()" />
   </div>
 </template>
 
@@ -223,9 +220,6 @@ input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   border-radius: 5px; padding: 10px; resize: vertical; }
 .actions { display: flex; gap: 8px; padding: 12px 18px 16px; }
-
-.pager { display: flex; align-items: center; justify-content: center; gap: 14px;
-  margin-top: 22px; font-size: 11px; }
 
 @media (prefers-reduced-motion: reduce) { .chev { transition: none; } }
 </style>
