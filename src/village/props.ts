@@ -1,142 +1,152 @@
+import { ramp, INK } from './palette.ts';
+
 /**
- * The small things.
+ * The small things, drawn under the same four rules as the buildings:
+ * contour, top-left light, 2-unit grid, one palette.
  *
- * Density is what separates a village from a diagram. Twelve buildings on
- * empty grass reads as placeholder however well each one is drawn; the same
- * twelve behind stone walls, among benches, lamps, carts and stumps, reads as
- * a place people live.
- *
- * Everything snaps to a 4-unit grid and uses crispEdges, so props sit in the
- * same visual language as the buildings.
+ * Density is what separates a village from a diagram — but density only helps
+ * if the props share the buildings' visual language. Otherwise it reads as
+ * clutter from a different game.
  */
 
-const G = 4;
+const G = 2;
 const s = (n: number): number => Math.round(n / G) * G;
-const r = (x: number, y: number, w: number, h: number, fill: string): string =>
-  `<rect x="${s(x)}" y="${s(y)}" width="${s(w)}" height="${s(h)}" fill="${fill}"/>`;
-
-const wrap = (w: number, h: number, body: string, title: string): string =>
+const r = (x: number, y: number, w: number, h: number, f: string): string =>
+  `<rect x="${s(x)}" y="${s(y)}" width="${s(w)}" height="${s(h)}" fill="${f}"/>`;
+const box = (x: number, y: number, w: number, h: number, f: string, t = 2): string =>
+  r(x - t, y - t, w + t * 2, h + t * 2, INK) + r(x, y, w, h, f);
+const shadow = (cx: number, cy: number, rx: number): string =>
+  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${Math.max(3, rx * 0.3)}" fill="rgba(20,14,10,.30)"/>`;
+const svg = (w: number, h: number, title: string, body: string): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" shape-rendering="crispEdges"><title>${title}</title>${body}</svg>`;
 
-const shadow = (cx: number, cy: number, rx: number): string =>
-  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${Math.max(3, rx * 0.32)}" fill="rgba(0,0,0,.22)"/>`;
+const leaf = ramp('leaf'), tim = ramp('timber'), st = ramp('stone'), glow = ramp('glow');
 
 export const PROPS: Record<string, () => string> = {
-  // --- foliage -------------------------------------------------------------
-  pine: () => wrap(44, 64, `
-    ${shadow(24, 60, 13)}
-    ${r(18, 44, 8, 16, '#5b3b22')}
-    ${r(6, 30, 32, 16, '#2c5c30')}
-    ${r(10, 18, 24, 16, '#356c38')}
-    ${r(14, 8, 16, 14, '#3d7a3e')}
-    ${r(18, 2, 8, 8, '#488c46')}
-    ${r(10, 30, 12, 8, '#3d7a3e')}`, 'pine'),
+  oak: () => svg(52, 62, 'oak', `
+    ${shadow(26, 58, 15)}
+    ${box(21, 36, 9, 20, tim.base)}
+    ${r(21, 36, 4, 20, tim.light)}
+    ${box(6, 12, 40, 26, leaf.base)}
+    ${box(12, 4, 28, 14, leaf.base)}
+    ${r(10, 14, 18, 10, leaf.light)}
+    ${r(14, 6, 14, 8, leaf.hi)}
+    ${r(8, 30, 36, 6, leaf.dark)}`),
 
-  bush: () => wrap(36, 28, `
-    ${shadow(18, 25, 12)}
-    ${r(2, 10, 32, 14, '#356c38')}
-    ${r(6, 4, 24, 12, '#3d7a3e')}
-    ${r(10, 2, 12, 8, '#4a8f48')}
-    ${r(6, 10, 8, 6, '#4a8f48')}`, 'bush'),
+  pine: () => svg(48, 68, 'pine', `
+    ${shadow(24, 64, 13)}
+    ${box(19, 46, 9, 18, tim.base)}
+    ${box(4, 30, 40, 18, leaf.dark)}
+    ${box(8, 18, 32, 16, leaf.base)}
+    ${box(13, 6, 22, 15, leaf.base)}
+    ${r(11, 20, 14, 8, leaf.light)}
+    ${r(16, 8, 12, 8, leaf.hi)}`),
 
-  stump: () => wrap(32, 26, `
-    ${shadow(16, 23, 11)}
-    ${r(4, 10, 24, 12, '#5b3b22')}
-    ${r(4, 6, 24, 8, '#7a5433')}
-    ${r(10, 8, 12, 4, '#8f6640')}`, 'stump'),
+  bush: () => svg(40, 32, 'bush', `
+    ${shadow(20, 29, 13)}
+    ${box(3, 10, 34, 16, leaf.base)}
+    ${box(9, 4, 22, 12, leaf.base)}
+    ${r(7, 12, 14, 7, leaf.light)}
+    ${r(12, 6, 10, 6, leaf.hi)}
+    ${r(5, 22, 30, 4, leaf.dark)}`),
 
-  flowerbed: () => wrap(40, 24, `
-    ${r(2, 10, 36, 12, '#6b4a2c')}
-    ${r(2, 8, 36, 4, '#7d5a3c')}
-    ${r(6, 4, 6, 6, '#e8d24a')}
-    ${r(16, 2, 6, 6, '#e07a9a')}
-    ${r(26, 5, 6, 6, '#d8d8e8')}
-    ${r(32, 2, 5, 5, '#e29a4a')}`, 'flowerbed'),
+  stump: () => svg(34, 28, 'stump', `
+    ${shadow(17, 25, 12)}
+    ${box(5, 10, 24, 13, tim.base)}
+    ${r(5, 10, 24, 5, tim.light)}
+    ${r(11, 12, 12, 3, tim.hi)}`),
 
-  // --- furniture and fittings ---------------------------------------------
-  lamp: () => wrap(24, 60, `
-    ${shadow(12, 56, 8)}
-    ${r(8, 20, 8, 36, '#3b3630')}
-    ${r(6, 52, 12, 6, '#2e2a25')}
-    ${r(4, 8, 16, 14, '#4a443c')}
-    ${r(6, 10, 12, 10, '#f6d98a')}
-    ${r(8, 2, 8, 8, '#3b3630')}`, 'lamp'),
+  flowerbed: () => svg(44, 26, 'flowerbed', `
+    ${box(3, 11, 38, 12, ramp('dirt').base)}
+    ${r(3, 11, 38, 4, ramp('dirt').light)}
+    ${r(7, 4, 6, 7, '#e8d24a')}${r(17, 2, 6, 7, '#e07a9a')}
+    ${r(27, 5, 6, 7, '#e8e2ea')}${r(34, 2, 5, 6, '#e29a4a')}`),
 
-  bench: () => wrap(52, 30, `
-    ${shadow(26, 27, 20)}
-    ${r(4, 10, 44, 6, '#8a6340')}
-    ${r(4, 18, 44, 5, '#7d5a3c')}
-    ${r(6, 16, 6, 12, '#5f452c')}
-    ${r(40, 16, 6, 12, '#5f452c')}`, 'bench'),
+  lamp: () => svg(26, 64, 'lamp', `
+    ${shadow(13, 60, 8)}
+    ${box(9, 22, 7, 38, st.dark)}
+    ${box(5, 56, 15, 5, st.base)}
+    ${box(4, 8, 17, 15, tim.dark)}
+    ${r(6, 10, 13, 11, glow.light)}
+    ${r(6, 10, 13, 4, glow.hi)}
+    ${box(9, 2, 7, 7, st.dark)}`),
 
-  well: () => wrap(48, 52, `
-    ${shadow(24, 48, 17)}
-    ${r(6, 26, 36, 18, '#8d8880')}
-    ${r(6, 26, 36, 5, '#a9a49b')}
-    ${r(12, 32, 24, 10, '#3f5f77')}
-    ${r(8, 6, 6, 22, '#7d5a3c')}
-    ${r(34, 6, 6, 22, '#7d5a3c')}
-    ${r(2, 0, 44, 10, '#8a4b3f')}
-    ${r(2, 0, 44, 4, '#a35c4c')}`, 'well'),
+  bench: () => svg(56, 34, 'bench', `
+    ${shadow(28, 30, 21)}
+    ${box(5, 10, 46, 7, tim.light)}
+    ${box(5, 19, 46, 6, tim.base)}
+    ${box(8, 17, 6, 12, tim.dark)}
+    ${box(42, 17, 6, 12, tim.dark)}`),
 
-  crates: () => wrap(48, 40, `
-    ${shadow(24, 37, 18)}
-    ${r(4, 14, 22, 22, '#8a6340')}
-    ${r(4, 14, 22, 5, '#a07a52')}
-    ${r(13, 14, 4, 22, '#6b4a2c')}
-    ${r(28, 20, 18, 16, '#7d5a3c')}
-    ${r(28, 20, 18, 4, '#96704a')}`, 'crates'),
+  well: () => svg(52, 58, 'well', `
+    ${shadow(26, 54, 18)}
+    ${box(7, 28, 38, 20, st.base)}
+    ${r(7, 28, 38, 5, st.light)}
+    ${r(13, 34, 26, 11, '#274a5e')}
+    ${box(9, 6, 7, 24, tim.base)}
+    ${box(36, 6, 7, 24, tim.base)}
+    ${box(3, 0, 46, 11, ramp('clay').base)}
+    ${r(3, 0, 46, 4, ramp('clay').light)}`),
 
-  barrels: () => wrap(44, 40, `
-    ${shadow(22, 37, 17)}
-    ${r(4, 12, 16, 24, '#8a6340')}
-    ${r(4, 18, 16, 4, '#5f452c')}
-    ${r(4, 28, 16, 4, '#5f452c')}
-    ${r(24, 18, 16, 18, '#7d5a3c')}
-    ${r(24, 24, 16, 4, '#5f452c')}`, 'barrels'),
+  crates: () => svg(52, 44, 'crates', `
+    ${shadow(26, 41, 20)}
+    ${box(5, 15, 23, 24, tim.base)}
+    ${r(5, 15, 23, 4, tim.light)}
+    ${r(15, 15, 4, 24, tim.dark)}
+    ${box(31, 21, 18, 18, tim.light)}
+    ${r(31, 21, 18, 4, tim.hi)}`),
 
-  cart: () => wrap(64, 42, `
-    ${shadow(32, 39, 26)}
-    ${r(6, 12, 48, 16, '#8a6340')}
-    ${r(6, 12, 48, 4, '#a07a52')}
-    ${r(10, 26, 12, 12, '#5f452c')}
-    ${r(38, 26, 12, 12, '#5f452c')}
-    ${r(50, 8, 12, 6, '#7d5a3c')}`, 'cart'),
+  barrels: () => svg(48, 44, 'barrels', `
+    ${shadow(24, 41, 19)}
+    ${box(5, 13, 17, 26, tim.base)}
+    ${r(5, 19, 17, 4, tim.dark)}${r(5, 30, 17, 4, tim.dark)}
+    ${box(27, 19, 16, 20, tim.light)}
+    ${r(27, 25, 16, 4, tim.dark)}`),
 
-  signpost: () => wrap(36, 52, `
-    ${shadow(18, 49, 9)}
-    ${r(14, 14, 8, 34, '#7d5a3c')}
-    ${r(2, 6, 32, 10, '#8a6340')}
-    ${r(2, 6, 32, 3, '#a07a52')}
-    ${r(6, 20, 24, 8, '#8a6340')}`, 'signpost'),
+  cart: () => svg(68, 46, 'cart', `
+    ${shadow(34, 43, 28)}
+    ${box(7, 13, 50, 17, tim.base)}
+    ${r(7, 13, 50, 4, tim.light)}
+    ${box(11, 28, 13, 13, tim.dark)}
+    ${box(41, 28, 13, 13, tim.dark)}
+    ${box(53, 8, 13, 7, tim.base)}`),
 
-  laundry: () => wrap(72, 44, `
-    ${r(4, 6, 4, 36, '#7d5a3c')}
-    ${r(64, 6, 4, 36, '#7d5a3c')}
-    ${r(6, 8, 60, 3, '#c9c2b4')}
-    ${r(12, 10, 14, 20, '#dfe6ec')}
-    ${r(32, 10, 12, 16, '#e8d7c0')}
-    ${r(48, 10, 12, 22, '#cddae0')}`, 'laundry'),
+  signpost: () => svg(40, 56, 'signpost', `
+    ${shadow(20, 52, 10)}
+    ${box(15, 15, 8, 36, tim.base)}
+    ${box(3, 6, 34, 11, tim.light)}
+    ${r(3, 6, 34, 3, tim.hi)}
+    ${box(7, 21, 26, 9, tim.base)}`),
 
-  stall: () => wrap(72, 52, `
-    ${shadow(36, 49, 28)}
-    ${r(6, 22, 60, 22, '#8a6340')}
-    ${r(6, 22, 60, 4, '#a07a52')}
-    ${r(2, 6, 68, 14, '#c8503f')}
-    ${r(2, 6, 68, 5, '#e0e0d8')}
-    ${r(16, 6, 12, 14, '#e0e0d8')}
-    ${r(44, 6, 12, 14, '#e0e0d8')}
-    ${r(12, 28, 10, 8, '#d05a3c')}
-    ${r(28, 28, 10, 8, '#e8b03c')}
-    ${r(44, 28, 10, 8, '#6f9c4a')}`, 'stall'),
+  laundry: () => svg(76, 48, 'laundry', `
+    ${box(4, 6, 5, 38, tim.base)}
+    ${box(66, 6, 5, 38, tim.base)}
+    ${r(7, 9, 62, 3, INK)}
+    ${box(13, 11, 15, 21, '#dfe6ec')}
+    ${box(33, 11, 13, 17, '#e8d7c0')}
+    ${box(51, 11, 13, 23, '#cddae0')}`),
+
+  stall: () => svg(76, 56, 'stall', `
+    ${shadow(38, 52, 30)}
+    ${box(7, 24, 62, 23, tim.base)}
+    ${r(7, 24, 62, 4, tim.light)}
+    ${box(3, 6, 70, 15, ramp('clay').base)}
+    ${r(3, 6, 70, 5, '#e8e2d4')}
+    ${r(18, 6, 13, 15, '#e8e2d4')}
+    ${r(47, 6, 13, 15, '#e8e2d4')}
+    ${r(13, 30, 11, 9, '#c4553c')}
+    ${r(30, 30, 11, 9, '#d8a83c')}
+    ${r(47, 30, 11, 9, '#5d9945')}`),
 };
 
-/** A run of stone wall. Plots are enclosed, which is most of the structure. */
+/** A run of stone wall. Plots are enclosed; that is most of the structure. */
 export const wallSvg = (horizontal: boolean): string => {
-  const L = 32, T = 12;
+  const L = 32, T = 14;
   const w = horizontal ? L : T, h = horizontal ? T : L;
   const body = horizontal
-    ? `${r(0, 4, L, 8, '#7c766b')}${r(0, 0, L, 5, '#9a958c')}${r(6, 4, 3, 8, '#6d675e')}${r(20, 4, 3, 8, '#6d675e')}`
-    : `${r(0, 0, T, L, '#7c766b')}${r(0, 0, 5, L, '#9a958c')}${r(0, 8, T, 3, '#6d675e')}${r(0, 22, T, 3, '#6d675e')}`;
-  return wrap(w, h, body, 'wall');
+    ? `${r(0, 0, L, T, INK)}${r(0, 2, L, T - 4, st.base)}${r(0, 2, L, 3, st.light)}
+       ${r(7, 2, 2, T - 4, st.dark)}${r(21, 2, 2, T - 4, st.dark)}`
+    : `${r(0, 0, T, L, INK)}${r(2, 0, T - 4, L, st.base)}${r(2, 0, 3, L, st.light)}
+       ${r(2, 9, T - 4, 2, st.dark)}${r(2, 23, T - 4, 2, st.dark)}`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" shape-rendering="crispEdges"><title>wall</title>${body}</svg>`;
 };
