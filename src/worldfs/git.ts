@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { realpathSync } from 'node:fs';
 
 /**
  * The village's own git repo.
@@ -24,13 +25,19 @@ export class WorldGit {
   }
 
   init(): void {
+    // `rev-parse --git-dir` WALKS UP. When world/ sits inside another repo it
+    // reports the ancestor's git dir, so "am I a repo?" answers yes for a
+    // directory that has never been initialised — and every subsequent commit
+    // lands in the parent repo instead. Compare the toplevel to our own path.
     try {
-      this.#git(['rev-parse', '--git-dir']);
+      const top = this.#git(['rev-parse', '--show-toplevel']);
+      if (realpathSync(top) === realpathSync(this.#dir)) return;
     } catch {
-      this.#git(['init', '-q', '-b', 'main']);
-      this.#git(['config', 'user.name', 'The Inn']);
-      this.#git(['config', 'user.email', 'inn@localhost']);
+      // Not inside any repo. Fall through and initialise.
     }
+    this.#git(['init', '-q', '-b', 'main']);
+    this.#git(['config', 'user.name', 'The Inn']);
+    this.#git(['config', 'user.email', 'inn@localhost']);
   }
 
   isDirty(): boolean {

@@ -1,6 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { World } from '../src/worldfs/world.ts';
@@ -98,6 +99,37 @@ describe('notes — the 742-notes mechanic', () => {
     const body = world.readDoc(rel)!.body;
     assert.match(body, /Morning observation/);
     assert.match(body, /Afternoon revision/, 'second note overwrote the first');
+  });
+});
+
+describe('git — the world owns its own history', () => {
+  test('a world nested inside another repo still gets its OWN repo', () => {
+    // The real deployment shape: world/ lives inside the project repo.
+    // `rev-parse --git-dir` walks up, so a naive "is this a repo?" check
+    // answers yes and every commit silently lands in the PARENT repo.
+    const outer = mkdtempSync(join(tmpdir(), 'outer-'));
+    execFileSync('git', ['-C', outer, 'init', '-q', '-b', 'main']);
+
+    const nested = new World(join(outer, 'world'));
+    nested.ensure();
+    assert.ok(existsSync(join(nested.root, '.git')), 'world/ must have its own .git');
+
+    const top = execFileSync('git', ['-C', nested.root, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+    assert.equal(realpathSync(top), realpathSync(nested.root), 'commits would land in the parent repo');
+
+    nested.ensureStaff('greg');
+    nested.writeNote('greg', null, 'first', 'a note');
+    nested.git.commitAs({ id: 'greg', name: 'Greg' }, 'greg writes');
+
+    // The parent repo must be entirely untouched by village activity.
+    // rev-list --count works on an empty repo; `git log` exits 128 there.
+    const outerCommits = execFileSync('git', ['-C', outer, 'rev-list', '--count', '--all'], { encoding: 'utf8' }).trim();
+    assert.equal(outerCommits, '0', 'village commits leaked into the parent repo');
+
+    // ...and the world's own history has exactly the one commit Greg made.
+    const innerCommits = execFileSync('git', ['-C', nested.root, 'rev-list', '--count', '--all'], { encoding: 'utf8' }).trim();
+    assert.equal(innerCommits, '1');
+    rmSync(outer, { recursive: true, force: true });
   });
 });
 
