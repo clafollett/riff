@@ -4,19 +4,20 @@
  *
  *   node scripts/seed.ts [worldDir] [ledgerPath]
  */
-import { mkdirSync } from 'node:fs';
 import { Ledger } from '../src/ledger/ledger.ts';
 import { World } from '../src/worldfs/world.ts';
 import { systemClock } from '../src/core/clock.ts';
 import { titleFor } from '../src/core/titles.ts';
 import { DEFAULT_HOUSE_RULES } from '../src/policy/rules.ts';
 import { HOUSES, houseById } from '../src/village/map.ts';
+import { resolveConfig, scaffoldConfig } from '../src/core/config.ts';
 import { OPENING_STAFF } from '../src/village/staff.ts';
 
-const worldDir = process.argv[2] ?? 'world';
-const ledgerPath = process.argv[3] ?? 'var/ledger.db';
-
-mkdirSync('var', { recursive: true });
+// Location is resolved, never assumed — and scaffolded if this is the first run.
+const cfg = resolveConfig();
+scaffoldConfig(cfg);
+const worldDir = process.argv[2] ?? cfg.worldDir;
+const ledgerPath = process.argv[3] ?? cfg.ledgerPath;
 
 const clock = systemClock;
 const world = new World(worldDir, clock);

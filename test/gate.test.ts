@@ -15,7 +15,11 @@ const staff = (id: string, role: Agent['role'], reportsTo: string | null = 'matt
 let clock: ReturnType<typeof fixedClock>;
 let ledger: Ledger;
 let gate: PolicyGate;
-const rules: HouseRules = { ...DEFAULT_HOUSE_RULES, innkeeper: 'cali', steward: 'matt' };
+// Fixture cast, deliberately independent of the shipped opening staff —
+// renaming the Inn's people must never quietly break the rule tests.
+const rules: HouseRules = {
+  ...DEFAULT_HOUSE_RULES, innkeeper: 'cali', steward: 'matt', treasurers: ['matt'],
+};
 
 beforeEach(() => {
   clock = fixedClock('2026-08-24T09:00:00.000Z');

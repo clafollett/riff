@@ -32,13 +32,13 @@ export type HouseRules = {
 };
 
 export const DEFAULT_HOUSE_RULES: HouseRules = {
-  treasurers: ['matt'],
+  treasurers: ['hollis'],
   dailyCapCents: 500, // $5.00/day. Rule 4, to the cent.
   overCap: 'escalate',
   stewardApproves: ['hire', 'world.write_other'],
   // R3: "you can take work all the way out into the real world, but it always
   // lands as a draft." One capability, no exceptions, no config to loosen it.
   innkeeperApproves: ['external.write'],
-  steward: 'matt',
+  steward: 'hollis',
   innkeeper: 'cali',
 };
