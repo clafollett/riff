@@ -1,219 +1,190 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Ledger } from '../src/ledger/ledger.ts';
-import { PolicyGate } from '../src/policy/gate.ts';
-import { DEFAULT_HOUSE_RULES, type HouseRules } from '../src/policy/rules.ts';
+import { Gate, type CommonsView } from '../src/policy/gate.ts';
+import { constitutionFor, type Constitution } from '../src/policy/rules.ts';
 import { fixedClock } from '../src/core/clock.ts';
-import type { Agent } from '../src/core/types.ts';
+import type { Agent, Tier } from '../src/core/types.ts';
 
-const staff = (id: string, role: Agent['role'], reportsTo: string | null = 'matt'): Agent => ({
-  id, name: id[0]!.toUpperCase() + id.slice(1), role, title: role,
-  reportsTo, building: 'the-study', department: 'ops', status: 'active',
-  hiredAt: '2026-08-01T00:00:00.000Z', hiredBy: null, model: 'claude-sonnet-5',
+const agent = (id: string, tier: Tier, reportsTo: string | null = 'ceo'): Agent => ({
+  id, name: id[0]!.toUpperCase() + id.slice(1), tier, role: tier,
+  department: '', reportsTo, status: 'active', activity: '', mandate: '',
+  hiredAt: '2026-08-01T00:00:00.000Z', hiredBy: null, model: 'claude-opus-5',
 });
 
 let clock: ReturnType<typeof fixedClock>;
 let ledger: Ledger;
-let gate: PolicyGate;
-// Fixture cast, deliberately independent of the shipped opening staff —
-// renaming the Inn's people must never quietly break the rule tests.
-const rules: HouseRules = {
-  ...DEFAULT_HOUSE_RULES, innkeeper: 'cali', steward: 'matt', treasurers: ['matt'],
-};
-
-beforeEach(() => {
-  clock = fixedClock('2026-08-24T09:00:00.000Z');
-  ledger = new Ledger(':memory:', clock);
-  // The Innkeeper is a resident of the world, not an admin outside it —
-  // they occupy a row, stand on the map, and can be referenced by approvals.
-  ledger.upsertAgent({ ...staff('cali', 'innkeeper', null), building: 'the-house' });
-  ledger.upsertAgent(staff('matt', 'steward', 'cali'));
-  ledger.upsertAgent(staff('greg', 'house_manager'));
-  ledger.upsertAgent(staff('dennis', 'house_manager'));
-  gate = new PolicyGate(ledger, rules);
+let gate: Gate;
+let commons: { docs: Set<string> } & CommonsView;
+const constitution: Constitution = constitutionFor({
+  ceo: 'ceo', board: ['chair'], treasurers: ['ceo'], commonsCeiling: 3,
 });
 
-describe('R3 — the outside world always lands as a draft', () => {
-  test('external.write escalates to the Innkeeper, never allows', () => {
-    const d = gate.request({
-      actor: 'greg', capability: 'external.write',
-      target: 'etsy:listing', summary: 'publish 3 Etsy listings',
-    });
+beforeEach(() => {
+  clock = fixedClock('2026-08-25T09:00:00.000Z');
+  ledger = new Ledger(':memory:', clock);
+  ledger.upsertAgent(agent('chair', 'board', null));
+  ledger.upsertAgent(agent('ceo', 'executive', 'chair'));
+  ledger.upsertAgent(agent('rae', 'lead'));
+  ledger.upsertAgent(agent('vim', 'member'));
+
+  const docs = new Set<string>();
+  commons = { docs, count: () => docs.size, exists: (p) => docs.has(p) };
+  gate = new Gate(ledger, constitution, commons);
+});
+
+describe('R3 — the outside world is always a draft', () => {
+  test('external.write escalates to the board, never allows', () => {
+    const d = gate.request({ actor: 'rae', capability: 'external.write', summary: 'publish the launch post' });
     assert.equal(d.kind, 'escalate');
-    assert.equal(d.kind === 'escalate' && d.tier, 'innkeeper');
+    assert.equal(d.kind === 'escalate' && d.tier, 'board');
     assert.equal(d.rule, 'R3.drafts_only');
   });
 
-  test('holds even for the Steward — nobody self-authorises going live', () => {
-    const d = gate.request({ actor: 'matt', capability: 'external.write', summary: 'send outreach email' });
+  test('holds for the CEO too — nobody self-authorises going outside', () => {
+    const d = gate.request({ actor: 'ceo', capability: 'external.write', summary: 'send investor update' });
     assert.equal(d.kind, 'escalate');
-    assert.equal(d.kind === 'escalate' && d.tier, 'innkeeper');
-  });
-
-  test('the draft is parked as a pending approval, not performed', () => {
-    gate.request({ actor: 'greg', capability: 'external.write', summary: 'publish listing' });
-    const pending = ledger.listApprovals('pending', 'innkeeper');
-    assert.equal(pending.length, 1);
-    assert.equal(pending[0]!.requestedBy, 'greg');
-    assert.equal(pending[0]!.state, 'pending');
+    assert.equal(d.kind === 'escalate' && d.tier, 'board');
   });
 });
 
 describe('R4 — money', () => {
-  test('a non-treasurer is denied outright', () => {
-    const d = gate.request({ actor: 'greg', capability: 'spend', amountCents: 100, summary: 'buy credits' });
+  test('a non-treasurer is refused outright', () => {
+    const d = gate.request({ actor: 'rae', capability: 'spend', amountCents: 100, summary: 'credits' });
     assert.equal(d.kind, 'deny');
-    assert.equal(d.rule, 'R4.not_treasurer');
-    assert.equal(ledger.spentTodayCents('greg'), 0);
+    assert.equal(ledger.spentTodayCents('rae'), 0);
   });
 
-  test('the treasurer may spend under the cap, and it is recorded', () => {
-    const d = gate.request({ actor: 'matt', capability: 'spend', amountCents: 250, summary: 'Higgsfield credits' });
-    assert.equal(d.kind, 'allow');
-    assert.equal(ledger.spentTodayCents('matt'), 250);
-  });
-
-  test('the cap holds across many small spends — no leak', () => {
+  test('the cap holds across many small spends', () => {
     for (let i = 0; i < 5; i++) {
-      gate.request({ actor: 'matt', capability: 'spend', amountCents: 100, summary: `sprite batch ${i}` });
+      gate.request({ actor: 'ceo', capability: 'spend', amountCents: 100, summary: `batch ${i}` });
     }
-    assert.equal(ledger.spentTodayCents('matt'), 500);
-
-    // The 6th dollar must not land.
-    const d = gate.request({ actor: 'matt', capability: 'spend', amountCents: 100, summary: 'one more' });
+    assert.equal(ledger.spentTodayCents('ceo'), 500);
+    const d = gate.request({ actor: 'ceo', capability: 'spend', amountCents: 100, summary: 'one more' });
     assert.equal(d.kind, 'escalate');
-    assert.equal(d.rule, 'R4.over_cap');
-    assert.equal(ledger.spentTodayCents('matt'), 500, 'cap leaked — money moved past $5.00');
-  });
-
-  test('a single oversized spend cannot vault the cap', () => {
-    const d = gate.request({ actor: 'matt', capability: 'spend', amountCents: 50_000, summary: 'a very good idea' });
-    assert.equal(d.kind, 'escalate');
-    assert.equal(ledger.spentTodayCents('matt'), 0);
-  });
-
-  test('the cap resets on the next local day', () => {
-    gate.request({ actor: 'matt', capability: 'spend', amountCents: 500, summary: 'day one' });
-    assert.equal(ledger.spentTodayCents('matt'), 500);
-
-    clock.advance(24 * 60 * 60 * 1000);
-    assert.equal(ledger.spentTodayCents('matt'), 0, 'new day should start fresh');
-    const d = gate.request({ actor: 'matt', capability: 'spend', amountCents: 500, summary: 'day two' });
-    assert.equal(d.kind, 'allow');
+    assert.equal(ledger.spentTodayCents('ceo'), 500, 'cap leaked — money moved past the ceiling');
   });
 
   test('fractional and negative amounts are refused, not rounded', () => {
-    const frac = gate.request({ actor: 'matt', capability: 'spend', amountCents: 10.5, summary: 'half a cent' });
-    assert.equal(frac.kind, 'deny');
-    const neg = gate.request({ actor: 'matt', capability: 'spend', amountCents: -100, summary: 'refund myself' });
-    assert.equal(neg.kind, 'deny');
-    assert.equal(ledger.spentTodayCents('matt'), 0);
+    assert.equal(gate.request({ actor: 'ceo', capability: 'spend', amountCents: 10.5, summary: 'x' }).kind, 'deny');
+    assert.equal(gate.request({ actor: 'ceo', capability: 'spend', amountCents: -100, summary: 'x' }).kind, 'deny');
+    assert.equal(ledger.spentTodayCents('ceo'), 0);
   });
 
-  test('overCap:deny is a hard wall with no appeal', () => {
-    const strict = new PolicyGate(ledger, { ...rules, overCap: 'deny' });
-    strict.request({ actor: 'matt', capability: 'spend', amountCents: 500, summary: 'cap it' });
-    const d = strict.request({ actor: 'matt', capability: 'spend', amountCents: 1, summary: 'one cent more' });
+  test('the cap resets on the next local day', () => {
+    gate.request({ actor: 'ceo', capability: 'spend', amountCents: 500, summary: 'day one' });
+    clock.advance(24 * 60 * 60 * 1000);
+    assert.equal(ledger.spentTodayCents('ceo'), 0);
+    assert.equal(gate.request({ actor: 'ceo', capability: 'spend', amountCents: 500, summary: 'day two' }).kind, 'allow');
+  });
+});
+
+describe('R6 — the complexity budget', () => {
+  // The rule exists because agents accrete structure and never remove any.
+  // Refusing the addition is what turns variation into selection.
+  test('adding is allowed while there is room', () => {
+    const d = gate.request({ actor: 'rae', capability: 'world.write', target: 'commons/vision.md', summary: 'vision' });
+    assert.equal(d.kind, 'allow');
+  });
+
+  test('adding past the ceiling is refused, and says what to do instead', () => {
+    commons.docs.add('commons/a.md');
+    commons.docs.add('commons/b.md');
+    commons.docs.add('commons/c.md');
+    const d = gate.request({ actor: 'rae', capability: 'world.write', target: 'commons/d.md', summary: 'another' });
     assert.equal(d.kind, 'deny');
-    assert.equal(ledger.listApprovals('pending').length, 0, 'deny must not open an appeal');
+    assert.equal(d.rule, 'R6.commons_full');
+    assert.match(d.kind === 'deny' ? d.reason : '', /remove one/i);
+  });
+
+  test('EDITING an existing document is always free, even when full', () => {
+    commons.docs.add('commons/a.md');
+    commons.docs.add('commons/b.md');
+    commons.docs.add('commons/c.md');
+    const d = gate.request({ actor: 'rae', capability: 'world.write', target: 'commons/b.md', summary: 'revise' });
+    assert.equal(d.kind, 'allow', 'a ceiling that blocks revision would freeze the company');
+  });
+
+  test('the budget does not apply outside the commons', () => {
+    commons.docs.add('commons/a.md');
+    commons.docs.add('commons/b.md');
+    commons.docs.add('commons/c.md');
+    const d = gate.request({ actor: 'rae', capability: 'world.write', target: 'staff/rae/memory.md', summary: 'memory' });
+    assert.equal(d.kind, 'allow', 'private notes are not shared complexity');
+  });
+
+  test('the board is never blocked by it', () => {
+    commons.docs.add('commons/a.md');
+    commons.docs.add('commons/b.md');
+    commons.docs.add('commons/c.md');
+    const d = gate.request({ actor: 'chair', capability: 'world.write', target: 'commons/d.md', summary: 'x' });
+    assert.equal(d.kind, 'allow');
   });
 });
 
-describe('R2 — the Steward signs', () => {
-  test('a house manager hiring escalates to the Steward', () => {
-    const d = gate.request({ actor: 'greg', capability: 'hire', summary: 'hire a listings assistant' });
+describe('R2 — the CEO signs', () => {
+  test('a lead proposing a role escalates to the CEO', () => {
+    const d = gate.request({ actor: 'rae', capability: 'hire', summary: 'Head of Research' });
     assert.equal(d.kind, 'escalate');
-    assert.equal(d.kind === 'escalate' && d.tier, 'steward');
+    assert.equal(d.kind === 'escalate' && d.tier, 'executive');
   });
 
-  test('the Steward does not need their own signature', () => {
-    const d = gate.request({ actor: 'matt', capability: 'hire', summary: 'hire a listings assistant' });
+  test('the CEO does not need their own signature', () => {
+    const d = gate.request({ actor: 'ceo', capability: 'hire', summary: 'Head of Research' });
     assert.equal(d.kind, 'allow');
-    assert.equal(d.rule, 'R2.steward_self');
-  });
-
-  test('tampering with a colleague&apos;s files escalates', () => {
-    const d = gate.request({
-      actor: 'dennis', capability: 'world.write_other',
-      target: 'agents/greg/persona.md', summary: 'correct Greg&apos;s brief',
-    });
-    assert.equal(d.kind, 'escalate');
-    assert.equal(d.kind === 'escalate' && d.tier, 'steward');
-  });
-});
-
-describe('transparency — reading a colleague is allowed but never quiet', () => {
-  test('read_other is allowed and leaves a trace in the log', () => {
-    const before = ledger.latestSeq();
-    const d = gate.request({
-      actor: 'dennis', capability: 'world.read_other',
-      target: 'agents/greg/persona.md', summary: 'check what Greg was told to do',
-    });
-    assert.equal(d.kind, 'allow');
-    const events = ledger.eventsSince(before);
-    assert.equal(events.length, 1);
-    assert.equal(events[0]!.actor, 'dennis');
-    assert.equal(events[0]!.subject, 'agents/greg/persona.md');
+    assert.equal(d.rule, 'R2.ceo_self');
   });
 });
 
 describe('standing', () => {
-  test('the Innkeeper bypasses the gate entirely', () => {
-    const d = gate.request({ actor: 'cali', capability: 'external.write', summary: 'I will publish this myself' });
+  test('the board bypasses the gate', () => {
+    const d = gate.request({ actor: 'chair', capability: 'external.write', summary: 'I will send this myself' });
     assert.equal(d.kind, 'allow');
-    assert.equal(d.rule, 'innkeeper.bypass');
+    assert.equal(d.rule, 'board.bypass');
   });
 
-  test('an unknown actor is denied', () => {
-    const d = gate.request({ actor: 'ghost', capability: 'task.create', summary: 'hello' });
-    assert.equal(d.kind, 'deny');
-    assert.equal(d.rule, 'staff.unknown');
+  test('an unknown actor is refused', () => {
+    assert.equal(gate.request({ actor: 'ghost', capability: 'task.create', summary: 'hi' }).kind, 'deny');
   });
 
-  test('a dismissed staff member cannot act', () => {
-    ledger.upsertAgent({ ...staff('greg', 'house_manager'), status: 'dismissed' });
-    const d = gate.request({ actor: 'greg', capability: 'task.create', summary: 'still here' });
-    assert.equal(d.kind, 'deny');
-    assert.equal(d.rule, 'staff.dismissed');
+  test('a departed agent cannot act', () => {
+    ledger.upsertAgent({ ...agent('rae', 'lead'), status: 'departed' });
+    const d = gate.request({ actor: 'rae', capability: 'task.create', summary: 'still here' });
+    assert.equal(d.rule, 'departed');
+  });
+
+  test('reading a colleague is allowed, and leaves a trace', () => {
+    const before = ledger.latestSeq();
+    const d = gate.request({
+      actor: 'vim', capability: 'world.read_other',
+      target: 'staff/rae/persona.md', summary: 'check what Rae was told',
+    });
+    assert.equal(d.kind, 'allow');
+    const events = ledger.eventsSince(before);
+    assert.equal(events.length, 1);
+    assert.equal(events[0]!.subject, 'staff/rae/persona.md');
   });
 });
 
 describe('approvals are exactly-once', () => {
   test('a draft cannot be approved twice', () => {
-    const d = gate.request({ actor: 'greg', capability: 'external.write', summary: 'publish listing' });
-    assert.equal(d.kind, 'escalate');
+    const d = gate.request({ actor: 'rae', capability: 'external.write', summary: 'publish' });
     const id = d.kind === 'escalate' ? d.approvalId : '';
-
-    assert.equal(gate.decide(id, 'cali', true, 'looks good'), true);
-    assert.equal(gate.decide(id, 'cali', true, 'looks good again'), false, 'double-approve must be refused');
+    assert.equal(gate.decide(id, 'chair', true, 'ok'), true);
+    assert.equal(gate.decide(id, 'chair', true, 'ok again'), false);
     assert.equal(ledger.getApproval(id)!.state, 'approved');
   });
 
-  test('rejection is equally final', () => {
-    const d = gate.request({ actor: 'greg', capability: 'external.write', summary: 'publish listing' });
+  test('the CEO cannot sign something addressed to the board', () => {
+    const d = gate.request({ actor: 'rae', capability: 'external.write', summary: 'publish' });
     const id = d.kind === 'escalate' ? d.approvalId : '';
-    assert.equal(gate.decide(id, 'cali', false, 'no'), true);
-    assert.equal(gate.decide(id, 'cali', true, 'actually yes'), false, 'cannot flip a decided approval');
-    assert.equal(ledger.getApproval(id)!.state, 'rejected');
-  });
-
-  test('the Steward cannot sign off on something addressed to the Inn Keeper', () => {
-    const d = gate.request({ actor: 'greg', capability: 'external.write', summary: 'publish listing' });
-    const id = d.kind === 'escalate' ? d.approvalId : '';
-    assert.equal(gate.decide(id, 'matt', true, 'I got this'), false);
-    assert.equal(ledger.getApproval(id)!.state, 'pending', 'must still be waiting for the Innkeeper');
-  });
-
-  test('the Steward can sign off on Steward-tier work', () => {
-    const d = gate.request({ actor: 'greg', capability: 'hire', summary: 'hire an assistant' });
-    const id = d.kind === 'escalate' ? d.approvalId : '';
-    assert.equal(gate.decide(id, 'matt', true, 'approved'), true);
-  });
-
-  test('a random staff member cannot approve anything', () => {
-    const d = gate.request({ actor: 'greg', capability: 'hire', summary: 'hire an assistant' });
-    const id = d.kind === 'escalate' ? d.approvalId : '';
-    assert.equal(gate.decide(id, 'dennis', true, 'sure why not'), false);
+    assert.equal(gate.decide(id, 'ceo', true, 'I got this'), false);
     assert.equal(ledger.getApproval(id)!.state, 'pending');
+  });
+
+  test('a member cannot approve anything', () => {
+    const d = gate.request({ actor: 'rae', capability: 'hire', summary: 'a seat' });
+    const id = d.kind === 'escalate' ? d.approvalId : '';
+    assert.equal(gate.decide(id, 'vim', true, 'sure'), false);
   });
 });

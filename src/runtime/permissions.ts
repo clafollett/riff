@@ -1,7 +1,7 @@
 import { resolve, sep } from 'node:path';
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentId, Capability } from '../core/types.ts';
-import type { PolicyGate } from '../policy/gate.ts';
+import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import { slug } from '../core/ids.ts';
 
@@ -9,7 +9,7 @@ import { slug } from '../core/ids.ts';
  * The bridge between the Agent SDK and the House Rules.
  *
  * canUseTool is the single chokepoint every tool call crosses — built-ins
- * included — so wiring PolicyGate here means there is no tool surface that
+ * included — so wiring Gate here means there is no tool surface that
  * bypasses the rules. A staff member cannot talk its way past this; it is not
  * in the prompt.
  *
@@ -58,7 +58,7 @@ const allow = (): PermissionResult => ({ behavior: 'allow' });
 export type PermissionDeps = {
   actor: AgentId;
   world: World;
-  gate: PolicyGate;
+  gate: Gate;
   /** Called for every decision, so a shift spent hammering a refused tool is
    *  visible instead of silent. */
   onDecision?: (toolName: string, outcome: 'allow' | 'deny', detail: string) => void;

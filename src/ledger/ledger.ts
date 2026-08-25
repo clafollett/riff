@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { newId } from '../core/ids.ts';
 import { systemClock, type Clock } from '../core/clock.ts';
 import type {
-  Agent, AgentId, Approval, ApprovalId, ApprovalTier, Building, Capability,
-  Event, Message, Position, SpendRecord, Task, TaskId, TaskStatus,
+  Agent, AgentId, Approval, ApprovalId, ApprovalTier, Capability,
+  Event, Message, SpendRecord, Task, TaskId, TaskStatus,
 } from '../core/types.ts';
 
 const SCHEMA = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
@@ -81,13 +81,19 @@ export class Ledger {
   // ---------------------------------------------------------------- agents
   upsertAgent(a: Agent): void {
     this.#db.prepare(
-      `INSERT INTO agents(id,name,role,title,reports_to,building,department,status,hired_at,hired_by,model)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      `INSERT INTO agents(id,name,tier,role,department,reports_to,status,activity,mandate,hired_at,hired_by,model)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(id) DO UPDATE SET
-         name=excluded.name, role=excluded.role, title=excluded.title,
-         reports_to=excluded.reports_to, building=excluded.building,
-         department=excluded.department, status=excluded.status, model=excluded.model`
-    ).run(a.id, a.name, a.role, a.title, a.reportsTo, a.building, a.department, a.status, a.hiredAt, a.hiredBy, a.model);
+         name=excluded.name, tier=excluded.tier, role=excluded.role,
+         department=excluded.department, reports_to=excluded.reports_to,
+         status=excluded.status, activity=excluded.activity,
+         mandate=excluded.mandate, model=excluded.model`
+    ).run(a.id, a.name, a.tier, a.role, a.department, a.reportsTo, a.status,
+          a.activity, a.mandate, a.hiredAt, a.hiredBy, a.model);
+  }
+
+  setActivity(id: AgentId, activity: string): void {
+    this.#db.prepare('UPDATE agents SET activity=? WHERE id=?').run(activity, id);
   }
 
   getAgent(id: AgentId): Agent | null {
@@ -95,10 +101,10 @@ export class Ledger {
     return r ? this.#toAgent(r) : null;
   }
 
-  listAgents(includeDismissed = false): Agent[] {
-    const sql = includeDismissed
-      ? 'SELECT * FROM agents ORDER BY role, name'
-      : "SELECT * FROM agents WHERE status!='dismissed' ORDER BY role, name";
+  listAgents(includeDeparted = false): Agent[] {
+    const sql = includeDeparted
+      ? 'SELECT * FROM agents ORDER BY tier, name'
+      : "SELECT * FROM agents WHERE status!='departed' ORDER BY tier, name";
     return (this.#db.prepare(sql).all() as Row[]).map((r) => this.#toAgent(r));
   }
 
@@ -117,45 +123,12 @@ export class Ledger {
 
   #toAgent(r: Row): Agent {
     return {
-      id: str(r['id']), name: str(r['name']), role: str(r['role']) as Agent['role'],
-      title: str(r['title']), reportsTo: nstr(r['reports_to']), building: str(r['building']),
-      department: str(r['department']), status: str(r['status']) as Agent['status'],
+      id: str(r['id']), name: str(r['name']), tier: str(r['tier']) as Agent['tier'],
+      role: str(r['role']), department: str(r['department']),
+      reportsTo: nstr(r['reports_to']), status: str(r['status']) as Agent['status'],
+      activity: str(r['activity']), mandate: str(r['mandate']),
       hiredAt: str(r['hired_at']), hiredBy: nstr(r['hired_by']), model: str(r['model']),
     };
-  }
-
-  // ------------------------------------------------------------- buildings
-  upsertBuilding(b: Building): void {
-    this.#db.prepare(
-      `INSERT INTO buildings(id,name,department,x,y,w,h,door_x,door_y) VALUES(?,?,?,?,?,?,?,?,?)
-       ON CONFLICT(id) DO UPDATE SET name=excluded.name, department=excluded.department,
-         x=excluded.x,y=excluded.y,w=excluded.w,h=excluded.h,door_x=excluded.door_x,door_y=excluded.door_y`
-    ).run(b.id, b.name, b.department, b.x, b.y, b.w, b.h, b.doorX, b.doorY);
-  }
-
-  listBuildings(): Building[] {
-    return (this.#db.prepare('SELECT * FROM buildings ORDER BY id').all() as Row[]).map((r) => ({
-      id: str(r['id']), name: str(r['name']), department: str(r['department']),
-      x: num(r['x']), y: num(r['y']), w: num(r['w']), h: num(r['h']),
-      doorX: num(r['door_x']), doorY: num(r['door_y']),
-    }));
-  }
-
-  // ------------------------------------------------------------- positions
-  setPosition(p: Omit<Position, 'updatedAt'>): void {
-    this.#db.prepare(
-      `INSERT INTO positions(agent_id,x,y,facing,activity,updated_at) VALUES(?,?,?,?,?,?)
-       ON CONFLICT(agent_id) DO UPDATE SET x=excluded.x,y=excluded.y,
-         facing=excluded.facing,activity=excluded.activity,updated_at=excluded.updated_at`
-    ).run(p.agentId, p.x, p.y, p.facing, p.activity, this.#clock.iso());
-  }
-
-  listPositions(): Position[] {
-    return (this.#db.prepare('SELECT * FROM positions').all() as Row[]).map((r) => ({
-      agentId: str(r['agent_id']), x: num(r['x']), y: num(r['y']),
-      facing: str(r['facing']) as Position['facing'], activity: str(r['activity']),
-      updatedAt: str(r['updated_at']),
-    }));
   }
 
   // ----------------------------------------------------------------- tasks

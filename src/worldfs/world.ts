@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, statSync, realpathSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, statSync, realpathSync, rmSync } from 'node:fs';
 import { join, resolve, sep, dirname, relative } from 'node:path';
 import { parse, stringify, field, type Doc, type Frontmatter } from './frontmatter.ts';
 import { WorldGit } from './git.ts';
@@ -215,6 +215,15 @@ export class World {
     walk(dir);
     return out.sort();
   }
+
+  /** Delete a document. The counterpart to R6: a ceiling with no way to
+   *  remove would just be a wall. */
+  remove(rel: string): void {
+    const abs = this.path(rel);
+    if (existsSync(abs)) rmSync(abs, { force: true });
+  }
+
+  commonsCount(): number { return this.listCommons().length; }
 
   listDrafts(id: AgentId): string[] {
     const dir = join(this.#root, 'staff', slug(id), 'drafts');

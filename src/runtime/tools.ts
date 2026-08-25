@@ -1,17 +1,16 @@
 import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { newId, slug } from '../core/ids.ts';
-import type { Capability, AgentId, Facing } from '../core/types.ts';
+import type { Capability, AgentId, Tier } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
-import type { PolicyGate } from '../policy/gate.ts';
+import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
-import { registerAsset, writeSpec, readManifest, isValidKey, assetsDir } from '../village/assets.ts';
 
-export type InnContext = {
+export type Ctx = {
   actor: AgentId;
   ledger: Ledger;
-  gate: PolicyGate;
+  gate: Gate;
   world: World;
   clock: Clock;
 };
@@ -19,15 +18,12 @@ export type InnContext = {
 const say = (text: string) => ({ content: [{ type: 'text' as const, text }] });
 
 /**
- * Run an action behind the gate. The tool body — not canUseTool — is where the
- * real check happens, because only here do we know WHAT is being asked for
- * (the amount, the target, the one-line summary that lands in the inbox).
+ * Run behind the gate. The tool body — not canUseTool — is where the real
+ * check happens, because only here do we know WHAT is being asked for: the
+ * amount, the target, the one line that lands in the board's queue.
  */
 const gated = (
-  ctx: InnContext,
-  capability: Capability,
-  summary: string,
-  target: string | null,
+  ctx: Ctx, capability: Capability, summary: string, target: string | null,
   perform: () => string,
   extra?: { amountCents?: number; payload?: unknown },
 ): string => {
@@ -40,135 +36,145 @@ const gated = (
   if (d.kind === 'allow') return perform();
   if (d.kind === 'deny') return `Refused (${d.rule}): ${d.reason}`;
   return `Held for approval (${d.rule}): ${d.reason}\n` +
-    `Approval ${d.approvalId} is pending with the ${d.tier}. It is queued — ` +
-    `do not retry. Move on to other work.`;
+    `Approval ${d.approvalId} is pending with the ${d.tier}. It is queued — do not retry. ` +
+    `Carry on with other work.`;
 };
 
-export const createInnTools = (ctx: InnContext) => {
+export const createTools = (ctx: Ctx) => {
   const { actor, ledger, world, clock } = ctx;
 
-  // ------------------------------------------------------------ awareness
-  const whosHere = tool(
-    'whos_here',
-    'List everyone who works at the Inn, with their role, house and current activity.',
+  // ------------------------------------------------------------- awareness
+  const whoIsHere = tool(
+    'who_is_here',
+    'Everyone who works at this company, with their tier, role and what they are doing.',
     {},
     async () => {
-      const agents = ledger.listAgents();
-      const pos = new Map(ledger.listPositions().map((p) => [p.agentId, p]));
-      const lines = agents.map((a) => {
-        const p = pos.get(a.id);
-        return `- ${a.name} (${a.id}) — ${a.title}, ${a.building}${p?.activity ? ` — ${p.activity}` : ''}`;
-      });
-      return say(lines.join('\n') || 'Nobody is on the grounds.');
+      const rows = ledger.listAgents().map((a) =>
+        `- ${a.name} (${a.id}) — ${a.role} · ${a.tier}${a.department ? ` · ${a.department}` : ''}` +
+        `${a.activity ? ` — ${a.activity}` : ''}`);
+      return say(rows.join('\n') || 'Nobody works here yet.');
     },
     { annotations: { readOnlyHint: true } },
   );
 
   const readColleague = tool(
     'read_colleague',
-    "Read a colleague's brief, memory, or notes. Allowed — but every read is recorded and visible to everyone, including them.",
-    {
-      who: z.string().describe('Their staff id, e.g. "greg"'),
-      file: z.enum(['persona', 'memory']).describe('Which of their files to read'),
-    },
+    "Read a colleague's brief or memory. Allowed — but every read is recorded and visible to them.",
+    { who: z.string(), file: z.enum(['persona', 'memory']) },
     async ({ who, file }) => {
       const target = file === 'persona' ? world.personaPath(who) : world.memoryPath(who);
-      return say(gated(ctx, 'world.read_other', `read ${who}'s ${file}`, target, () => {
-        const doc = world.readDoc(target);
-        return doc ? doc.body.trim() : `${who} has no ${file} on file.`;
-      }));
+      return say(gated(ctx, 'world.read_other', `read ${who}'s ${file}`, target, () =>
+        world.readDoc(target)?.body.trim() ?? `${who} has no ${file} on file.`));
     },
     { annotations: { readOnlyHint: true } },
   );
 
-  // ----------------------------------------------------------- expression
-  const speak = tool(
-    'say',
-    'Say something out loud on the grounds. Appears as a speech bubble above you.',
-    { text: z.string().max(240).describe('Keep it short — it has to fit in a bubble') },
-    async ({ text }) => say(gated(ctx, 'message', text.slice(0, 120), null, () => {
-      ledger.emit(actor, 'agent.said', null, { text });
-      return 'Said.';
+  // ------------------------------------------------------ building the company
+  const proposeRole = tool(
+    'propose_role',
+    'Propose a new seat. Say what it owns and what goes undone without it — a vague mandate produces vague work. The board decides.',
+    {
+      name: z.string().max(60).describe('The person who would fill it'),
+      role: z.string().max(80).describe('Job title, e.g. "Head of Research"'),
+      tier: z.enum(['executive', 'lead', 'member']),
+      department: z.string().max(60).default(''),
+      mandate: z.string().describe('What this seat owns, and what goes undone without it'),
+      reportsTo: z.string().describe('Agent id they would report to'),
+    },
+    async (p) => say(gated(ctx, 'hire', `${p.role}: ${p.name}`, slug(p.name), () => 'queued', {
+      payload: { ...p, proposedBy: actor },
     })),
   );
 
+  const retireRole = tool(
+    'retire_role',
+    'Retire a seat that has stopped earning its place. Say why. This is how the company stays small enough to understand.',
+    { who: z.string(), why: z.string().max(400) },
+    async ({ who, why }) => {
+      const a = ledger.getAgent(who);
+      if (!a) return say(`Nobody called '${who}' works here.`);
+      if (a.tier === 'board') return say('The board cannot be retired.');
+      return say(gated(ctx, 'hire', `retire ${a.role} (${a.name}): ${why}`, who, () => {
+        ledger.upsertAgent({ ...a, status: 'departed' });
+        ledger.emit(actor, 'role.retired', who, { why });
+        return `${a.name} has left the company.`;
+      }, { payload: { retire: who, why } }));
+    },
+  );
+
+  // ----------------------------------------------------------- the commons
+  const postToCommons = tool(
+    'post_to_commons',
+    'Publish to the commons — shared ground everyone reads. No fixed format; invent what the company needs. There is a ceiling: past it you must remove something first.',
+    { path: z.string(), title: z.string().max(140), body: z.string() },
+    async ({ path, title, body }) => {
+      const rel = `commons/${path.replace(/^\/+/, '')}`;
+      return say(gated(ctx, 'world.write', `commons: ${title}`, rel, () => {
+        world.writeCommons(path, { title, author: actor, updated: clock.iso() }, body);
+        ledger.emit(actor, 'commons.posted', rel, { title });
+        return `Posted to ${rel}.`;
+      }));
+    },
+  );
+
+  const removeFromCommons = tool(
+    'remove_from_commons',
+    'Remove a commons document that has stopped being true. Say what changed. Removal is a first-class act here, not a failure.',
+    { path: z.string(), why: z.string().max(400) },
+    async ({ path, why }) => {
+      const rel = path.startsWith('commons/') ? path : `commons/${path}`;
+      if (!world.exists(rel)) return say(`${rel} is not there.`);
+      return say(gated(ctx, 'world.write', `remove ${rel}: ${why}`, rel, () => {
+        world.remove(rel);
+        ledger.emit(actor, 'commons.removed', rel, { why });
+        return `Removed ${rel}. ${world.commonsCount()} documents remain.`;
+      }));
+    },
+  );
+
+  const commonsIndex = tool(
+    'commons_index',
+    'What the commons currently holds, and how much room is left.',
+    {},
+    async () => {
+      const docs = world.listCommons();
+      const ceiling = ctx.gate.constitution.commonsCeiling;
+      return say(`${docs.length} of ${ceiling} documents:\n${docs.map((d) => `- ${d}`).join('\n')}`);
+    },
+    { annotations: { readOnlyHint: true } },
+  );
+
+  // ------------------------------------------------------------- expression
   const sendMessage = tool(
     'send_message',
-    'Send a message to a colleague, or to everyone. They read it when they next wake — this does not interrupt them and you do not wait for a reply.',
-    {
-      to: z.string().describe('A staff id, or "everyone" to address the whole Inn'),
-      body: z.string().max(2000),
-    },
+    'Message a colleague, or everyone. They read it when they next wake — you do not wait for a reply.',
+    { to: z.string().describe('An agent id, or "everyone"'), body: z.string().max(4000) },
     async ({ to, body }) => say(gated(ctx, 'message', `message to ${to}`, to, () => {
       const target = to === 'everyone' ? null : to;
       if (target && !ledger.getAgent(target)) return `Nobody called '${to}' works here.`;
       const n = ledger.sendMessage(actor, target, body);
       ledger.emit(actor, 'message.sent', target, { recipients: n });
-      return `Delivered to ${n} ${n === 1 ? 'person' : 'people'}. They will read it when they next wake.`;
+      return `Delivered to ${n}. They read it when they next wake.`;
     })),
   );
 
-  const walkTo = tool(
-    'walk_to',
-    'Walk to one of the houses on the grounds. Others will see you go.',
-    {
-      house: z.string().describe('Building id, e.g. "the-study"'),
-      activity: z.string().max(80).default('working').describe('What you are going there to do'),
-    },
-    async ({ house, activity }) => {
-      const b = ledger.listBuildings().find((x) => x.id === house);
-      if (!b) return say(`There is no house called '${house}' on the grounds.`);
-      ledger.setPosition({ agentId: actor, x: b.doorX, y: b.doorY, facing: 'down' as Facing, activity });
-      ledger.emit(actor, 'agent.moved', house, { activity });
-      return say(`You are at ${b.name}. ${activity}`);
-    },
-  );
-
-  // ---------------------------------------------------------------- notes
   const noteAbout = tool(
     'note_about',
-    'Record an observation about a colleague, or about the Inn. Notes are permanent and readable by everyone.',
-    {
-      about: z.string().nullable().describe('Their staff id, or null for a note about the Inn itself'),
-      title: z.string().max(120),
-      body: z.string().describe('What you observed. Be specific and fair.'),
-    },
+    'Record an observation about a colleague, or about the company. Notes are permanent and everyone can read them.',
+    { about: z.string().nullable(), title: z.string().max(140), body: z.string() },
     async ({ about, title, body }) => say(
-      gated(ctx, 'note.write', `note on ${about ?? 'the Inn'}: ${title}`, about, () => {
+      gated(ctx, 'note.write', `note on ${about ?? 'the company'}: ${title}`, about, () => {
         const rel = world.writeNote(actor, about, title, body);
         world.reindexNotes(ledger);
         ledger.emit(actor, 'note.written', about, { title, path: rel });
         return `Recorded at ${rel}.`;
-      }),
-    ),
+      })),
   );
 
-  const postToCommons = tool(
-    'post_to_commons',
-    'Publish something to the commons — shared ground everyone can read and edit. There is no fixed format; invent what the Inn needs.',
-    {
-      path: z.string().describe('Relative path under commons/, e.g. "morale.md"'),
-      title: z.string().max(120),
-      body: z.string(),
-    },
-    async ({ path, title, body }) => say(
-      gated(ctx, 'world.write', `commons: ${title}`, `commons/${path}`, () => {
-        const rel = world.writeCommons(path, { title, author: actor, updated: clock.iso() }, body);
-        ledger.emit(actor, 'commons.posted', rel, { title });
-        return `Posted to ${rel}.`;
-      }),
-    ),
-  );
-
-  /**
-   * Long-running agents rot without this. Borrowed from the AI Village, which
-   * found that agents running for months need to periodically rewrite their own
-   * memory more concisely or it drifts and they forget load-bearing facts.
-   */
   const remember = tool(
     'remember',
-    'Rewrite your long-term memory. Keep what still matters, drop what does not. Do this when your memory grows long or stale.',
-    { memory: z.string().describe('Your complete new memory. It REPLACES the old one.') },
+    'Rewrite your long-term memory, keeping what still matters. Do this when it grows long or stale — it REPLACES the old one.',
+    { memory: z.string() },
     async ({ memory }) => say(gated(ctx, 'world.write', 'consolidated memory', world.memoryPath(actor), () => {
       world.writeMemory(actor, memory);
       ledger.emit(actor, 'memory.consolidated', null, { chars: memory.length });
@@ -176,32 +182,39 @@ export const createInnTools = (ctx: InnContext) => {
     })),
   );
 
-  // ----------------------------------------------------------------- work
+  const setActivity = tool(
+    'set_activity',
+    'Say what you are working on now, in one line. Colleagues and the board see it.',
+    { activity: z.string().max(120) },
+    async ({ activity }) => {
+      ledger.setActivity(actor, activity);
+      return say('Noted.');
+    },
+  );
+
+  // ------------------------------------------------------------------- work
   const openTask = tool(
     'open_task',
-    'Put a piece of work on the board. Leave assignedTo empty to let anyone claim it.',
+    'Put work on the board. Leave assignedTo empty to let anyone claim it.',
     {
-      title: z.string().max(160),
-      body: z.string().default(''),
+      title: z.string().max(200), body: z.string().default(''),
       assignedTo: z.string().nullable().default(null),
       priority: z.number().int().min(0).max(9).default(5),
     },
     async ({ title, body, assignedTo, priority }) => say(
-      gated(ctx, 'task.create', `open task: ${title}`, assignedTo, () => {
+      gated(ctx, 'task.create', `open: ${title}`, assignedTo, () => {
         const t = ledger.createTask({
-          id: newId('tsk', clock.now()), title, body, status: assignedTo ? 'claimed' : 'open',
+          id: newId('tsk', clock.now()), title, body,
+          status: assignedTo ? 'claimed' : 'open',
           createdBy: actor, assignedTo, parentId: null, priority,
         });
         ledger.emit(actor, 'task.opened', t.id, { title, assignedTo });
         return `Task ${t.id} is on the board.`;
-      }),
-    ),
+      })),
   );
 
   const claimTask = tool(
-    'claim_task',
-    'Claim an open task for yourself.',
-    { taskId: z.string() },
+    'claim_task', 'Claim an open task.', { taskId: z.string() },
     async ({ taskId }) => {
       const t = ledger.getTask(taskId);
       if (!t) return say(`No task ${taskId}.`);
@@ -214,12 +227,8 @@ export const createInnTools = (ctx: InnContext) => {
 
   const finishTask = tool(
     'finish_task',
-    'Mark a task done, blocked, or dropped, with a short note on the outcome.',
-    {
-      taskId: z.string(),
-      status: z.enum(['done', 'blocked', 'dropped']),
-      outcome: z.string().max(400),
-    },
+    'Close a task as done, blocked or dropped, with a short account of the outcome.',
+    { taskId: z.string(), status: z.enum(['done', 'blocked', 'dropped']), outcome: z.string().max(600) },
     async ({ taskId, status, outcome }) => {
       const t = ledger.getTask(taskId);
       if (!t) return say(`No task ${taskId}.`);
@@ -230,144 +239,54 @@ export const createInnTools = (ctx: InnContext) => {
     },
   );
 
-  // ---------------------------------------------------------------- money
+  // ------------------------------------------------------------------ money
   const spend = tool(
     'spend',
-    'Spend real money. Only the treasurer may, and only within the daily cap. Amount is in whole cents.',
-    {
-      amountCents: z.number().int().positive().describe('Integer cents. $2.50 is 250.'),
-      purpose: z.string().max(200),
-    },
+    'Spend real money. Only treasurers may, and only within the daily cap. Whole cents.',
+    { amountCents: z.number().int().positive(), purpose: z.string().max(300) },
     async ({ amountCents, purpose }) => say(
-      // An `allow` here means the money is ALREADY recorded — the gate performs
+      // An allow here means the money is ALREADY recorded — the gate performs
       // the spend inside its transaction so the cap cannot be raced.
       gated(ctx, 'spend', purpose, null, () => {
         const spent = ledger.spentTodayCents(actor);
         ledger.emit(actor, 'spend.made', null, { amountCents, purpose });
-        return `Spent ${(amountCents / 100).toFixed(2)}. Today's total: $${(spent / 100).toFixed(2)}.`;
-      }, { amountCents }),
-    ),
+        return `Spent $${(amountCents / 100).toFixed(2)}. Today: $${(spent / 100).toFixed(2)}.`;
+      }, { amountCents })),
   );
 
   // ------------------------------------------------------- the outside world
-  const draftToOutside = tool(
-    'draft_to_outside',
-    'Prepare anything that touches the world beyond the Inn — an email, a listing, a post. It is saved as a draft for the Inn Keeper. Nothing you send here goes live on its own.',
-    {
-      channel: z.string().describe('e.g. "email", "etsy", "calendar"'),
-      summary: z.string().max(200).describe('One line the Inn Keeper will see in their envelope'),
-      content: z.string().describe('The full draft'),
-    },
+  const draftOutward = tool(
+    'draft_outward',
+    'Prepare anything that reaches beyond the company — an email, a post, a publication. It is saved as a draft for the board. Nothing you send here goes out on its own.',
+    { channel: z.string(), summary: z.string().max(300), content: z.string() },
     async ({ channel, summary, content }) => {
-      // The draft is written first so the Inn Keeper can read the whole thing;
-      // the approval row only carries the one-line summary.
       const rel = `staff/${slug(actor)}/drafts/${clock.day()}-${slug(summary)}.md`;
       world.writeDoc(rel, { data: { channel, author: actor, created: clock.iso() }, body: content });
-      return say(gated(ctx, 'external.write', `[${channel}] ${summary}`, rel, () => 'unreachable', {
-        payload: { channel, draftPath: rel },
-      }));
+      return say(gated(ctx, 'external.write', `[${channel}] ${summary}`, rel, () => 'queued',
+        { payload: { channel, draftPath: rel } }));
     },
-  );
-
-  // --------------------------------------------------------------- the art
-  const commissionArt = tool(
-    'commission_art',
-    'Commission a piece of art for the village — a building, a character, a prop. Write the brief first; generating it costs credits, so this passes the money gate before anything is made.',
-    {
-      key: z.string().describe('house/<building-id>, staff/<agent-id>/<up|down|left|right>, prop/<name> or tile/<name>'),
-      brief: z.string().describe('Exactly what it should look like. Be specific about style, palette, angle and size.'),
-      estimateCents: z.number().int().positive().describe('What you expect this to cost, in whole cents.'),
-    },
-    async ({ key, brief, estimateCents }) => {
-      if (!isValidKey(key)) return say(`'${key}' is not a valid asset key.`);
-      return say(gated(ctx, 'spend', `art: ${key}`, key, () => {
-        const spec = writeSpec(world, key, brief, actor, clock.iso());
-        ledger.emit(actor, 'art.commissioned', key, { spec, estimateCents });
-        return [
-          `Commissioned. Brief saved at ${spec}.`,
-          `Now generate it with whichever image tool the Inn Keeper has connected,`,
-          `save the file under ${assetsDir(world)}/, then call register_art to hang it.`,
-        ].join(' ');
-      }, { amountCents: estimateCents }));
-    },
-  );
-
-  const registerArt = tool(
-    'register_art',
-    'Hang a finished piece in the village so the map starts using it. The file must already be saved inside assets/.',
-    {
-      key: z.string(),
-      file: z.string().describe('Path relative to assets/, e.g. "house-the-inn.png"'),
-      w: z.number().int().positive(),
-      h: z.number().int().positive(),
-      brief: z.string().max(300).default(''),
-    },
-    async ({ key, file, w, h, brief }) => {
-      const r = registerAsset(world, { key, file, w, h, by: actor, at: clock.iso(), brief });
-      if (!r.ok) return say(`Cannot hang that: ${r.reason}`);
-      ledger.emit(actor, 'art.hung', key, { file: r.entry.file, w, h });
-      return say(`Hung ${key}. The village is using it now.`);
-    },
-  );
-
-  const artSoFar = tool(
-    'art_so_far',
-    'List the art the village already has, so you do not commission something twice.',
-    {},
-    async () => {
-      const m = readManifest(world);
-      const keys = Object.keys(m.assets);
-      return say(keys.length
-        ? keys.map((k) => `- ${k} (by ${m.assets[k]!.by})`).join('\n')
-        : 'The village has no art yet. Everything is still drawn as plain shapes.');
-    },
-    { annotations: { readOnlyHint: true } },
-  );
-
-  const proposeHire = tool(
-    'propose_hire',
-    'Propose a new staff member for your house. The Steward decides.',
-    {
-      name: z.string().max(60),
-      house: z.string().describe('Building id they would work in'),
-      title: z.string().max(80).describe('Must end in "Manager" or "Assistant"'),
-      why: z.string().max(400).describe('What work is going undone without them'),
-    },
-    async ({ name, house, title, why }) => say(
-      gated(ctx, 'hire', `hire ${name} as ${title} (${house})`, house, () => 'unreachable', {
-        payload: { name, house, title, why, proposedBy: actor },
-      }),
-    ),
   );
 
   const capabilities: Record<string, Capability> = {
-    whos_here: 'world.read',
-    read_colleague: 'world.read_other',
-    say: 'message',
-    send_message: 'message',
-    walk_to: 'world.read',
-    note_about: 'note.write',
-    post_to_commons: 'world.write',
-    remember: 'world.write',
-    open_task: 'task.create',
-    claim_task: 'task.assign',
-    finish_task: 'task.assign',
-    spend: 'spend',
-    draft_to_outside: 'external.write',
-    propose_hire: 'hire',
-    commission_art: 'spend',
-    register_art: 'world.write',
-    art_so_far: 'world.read',
+    who_is_here: 'world.read', read_colleague: 'world.read_other',
+    propose_role: 'hire', retire_role: 'hire',
+    post_to_commons: 'world.write', remove_from_commons: 'world.write',
+    commons_index: 'world.read',
+    send_message: 'message', note_about: 'note.write', remember: 'world.write',
+    set_activity: 'world.write',
+    open_task: 'task.create', claim_task: 'task.assign', finish_task: 'task.assign',
+    spend: 'spend', draft_outward: 'external.write',
   };
 
   const server = createSdkMcpServer({
-    name: 'inn',
+    name: 'company',
     version: '0.1.0',
-    instructions: 'Village life at the LaFollett Bed & Breakfast.',
+    instructions: 'Working life at this company.',
     tools: [
-      whosHere, readColleague, speak, sendMessage, walkTo, noteAbout, postToCommons, remember,
-      openTask, claimTask, finishTask, spend, draftToOutside, proposeHire,
-      commissionArt, registerArt, artSoFar,
+      whoIsHere, readColleague, proposeRole, retireRole,
+      postToCommons, removeFromCommons, commonsIndex,
+      sendMessage, noteAbout, remember, setActivity,
+      openTask, claimTask, finishTask, spend, draftOutward,
     ],
   });
 

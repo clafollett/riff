@@ -1,82 +1,81 @@
 /**
- * The domain. Everything else in the Inn is downstream of these shapes.
+ * The whole vocabulary. Deliberately small.
  *
- * Two storage worlds, one rule:
- *   - If a staff member INVENTS it, it is a file under world/.   (emergence)
- *   - If breaking it breaks a House Rule or a render frame, it is a
- *     row in ledger.db.                                          (integrity)
+ * A previous system of ours became unmanageable because agents accrete
+ * structure and never remove it — manifests, validation contracts, ADRs
+ * amending earlier ADRs. The counter-measure is a substrate with FEW concepts:
+ * anything richer belongs in the world as data the staff write and can delete,
+ * never as schema they cannot.
+ *
+ * If this file grows a resolver, a manifest, or a second kind of hierarchy,
+ * that is the failure mode returning.
  */
 
-// ---------------------------------------------------------------- identities
-
-export type AgentId = string; // slug: 'matt', 'greg'
-export type BuildingId = string; // slug: 'the-study', 'the-vault'
+export type AgentId = string;
 export type TaskId = string;
 export type ApprovalId = string;
-export type EventId = string;
 
-/** Staff hierarchy. The Innkeeper is you; you are in the world, not above it. */
-export const ROLES = ['innkeeper', 'steward', 'house_manager', 'house_assistant'] as const;
-export type Role = (typeof ROLES)[number];
+/**
+ * Authority, and the only thing the gate switches on. FOUR values, forever.
+ *
+ * Titles are data (below) because every company invents its own; authority is
+ * structural because the rules have to mean something. A CEO can run the
+ * company and still not sign off on its own related-party transaction — that
+ * separation is the entire point, so `board` is terminal and has no override.
+ */
+export const TIERS = ['board', 'executive', 'lead', 'member'] as const;
+export type Tier = (typeof TIERS)[number];
 
-/** Lower rank number = more authority. Used by the gate to test standing. */
-export const RANK: Record<Role, number> = {
-  innkeeper: 0,
-  steward: 1,
-  house_manager: 2,
-  house_assistant: 3,
-};
+/** Lower binds tighter. Used to test standing, never to name a job. */
+export const RANK: Record<Tier, number> = { board: 0, executive: 1, lead: 2, member: 3 };
 
-export type AgentStatus = 'active' | 'idle' | 'off_shift' | 'dismissed';
+export type AgentStatus = 'active' | 'idle' | 'departed';
 
 export type Agent = {
   id: AgentId;
   name: string;
-  role: Role;
-  title: string;
-  /** Who they answer to. Only the Innkeeper reports to nobody. */
-  reportsTo: AgentId | null;
-  building: BuildingId;
+  /** Structural authority. */
+  tier: Tier;
+  /** Free text — "CEO", "Head of Research", "Chairman". The CEO invents these. */
+  role: string;
+  /** Free text. There is no department registry, on purpose. */
   department: string;
+  reportsTo: AgentId | null;
   status: AgentStatus;
-  hiredAt: string; // ISO
+  /** What they are doing right now, in their own words. */
+  activity: string;
+  hiredAt: string;
   hiredBy: AgentId | null;
-  /** Model to run this staff member on. Workers are cheap, directors think. */
   model: string;
+  /** Why this seat exists. Written by whoever created it; read by the board. */
+  mandate: string;
 };
 
-// ------------------------------------------------------------------- capabilities
+// ------------------------------------------------------------------ the gate
 
-/**
- * Every action a staff member can attempt is one of these. The gate switches
- * on this and nothing else — if it is not enumerated here, it cannot happen.
- */
 export const CAPABILITIES = [
-  'world.read', // read own files
-  'world.read_other', // read a colleague's files — allowed, but LOUD
-  'world.write', // write own files
-  'world.write_other', // tamper with a colleague's files — escalates
-  'note.write', // write a note about a colleague
+  'world.read',
+  'world.read_other',
+  'world.write',
+  'world.write_other',
+  'note.write',
   'task.create',
   'task.assign',
-  'message', // speak to a colleague
-  'hire', // grow the staff
-  'spend', // costs real money
-  'external.read', // read inbox / calendar / the outside world
-  'external.write', // touch the outside world — ALWAYS lands as a draft
+  'message',
+  'hire',           // grow or reshape the company
+  'spend',
+  'external.read',
+  'external.write', // reaches beyond the company — always a draft
+  'shell',          // real tools; contained, not forbidden
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
-
-// ------------------------------------------------------------------- the gate
 
 export type GateRequest = {
   actor: AgentId;
   capability: Capability;
-  /** What is being acted upon: an agent id, a file path, an external target. */
   target?: string;
-  /** Required for `spend`. Integer cents. Never floats — this is money. */
+  /** Integer cents. Money never touches a float. */
   amountCents?: number;
-  /** One line, human-readable. Shows up in your inbox. Staff must write it. */
   summary: string;
   payload?: unknown;
 };
@@ -86,9 +85,8 @@ export type Decision =
   | { kind: 'deny'; rule: string; reason: string }
   | { kind: 'escalate'; rule: string; tier: ApprovalTier; approvalId: ApprovalId; reason: string };
 
-/** Who has to sign off. `innkeeper` means it waits in your envelope. */
-export type ApprovalTier = 'steward' | 'innkeeper';
-
+/** Who must sign. `board` means it waits for a human. */
+export type ApprovalTier = 'executive' | 'board';
 export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 
 export type Approval = {
@@ -107,7 +105,7 @@ export type Approval = {
   decisionReason: string | null;
 };
 
-// -------------------------------------------------------------------- work
+// ---------------------------------------------------------------------- work
 
 export type TaskStatus = 'open' | 'claimed' | 'in_progress' | 'blocked' | 'done' | 'dropped';
 
@@ -118,38 +116,10 @@ export type Task = {
   status: TaskStatus;
   createdBy: AgentId;
   assignedTo: AgentId | null;
-  /** Delegation tree. A director's task spawns worker subtasks. */
   parentId: TaskId | null;
-  priority: number; // 0 highest
+  priority: number;
   createdAt: string;
   updatedAt: string;
-};
-
-// ------------------------------------------------------------------ the map
-
-export type Facing = 'up' | 'down' | 'left' | 'right';
-
-/** Live pose. Written every tick, read every frame — hence a row, not a file. */
-export type Position = {
-  agentId: AgentId;
-  x: number;
-  y: number;
-  facing: Facing;
-  /** Free text: 'walking to the-vault', 'thinking', 'talking to greg'. */
-  activity: string;
-  updatedAt: string;
-};
-
-export type Building = {
-  id: BuildingId;
-  name: string;
-  department: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  doorX: number;
-  doorY: number;
 };
 
 export type Message = {
@@ -162,23 +132,16 @@ export type Message = {
   readAt: string | null;
 };
 
-// ---------------------------------------------------------------- event log
-
-/**
- * Append-only. The single source of truth for "what happened while I was gone".
- * The village map is a projection of this; so is morale; so is the audit trail.
- */
+/** Append-only. Everything that happened, in order. */
 export type Event = {
-  id: EventId;
+  id: string;
   seq: number;
   at: string;
   actor: AgentId;
-  kind: string; // 'task.done', 'gate.deny', 'note.written', 'agent.hired'
+  kind: string;
   subject: string | null;
   dataJson: string | null;
 };
-
-// ------------------------------------------------------------------- money
 
 export type SpendRecord = {
   id: string;

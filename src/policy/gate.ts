@@ -1,33 +1,37 @@
 import type { Decision, GateRequest } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
-import type { HouseRules } from './rules.ts';
+import type { Constitution } from './rules.ts';
 
 /**
- * The policy gate. Every action any staff member attempts passes through
- * `request()` — the runtime exposes no tool that bypasses it.
+ * Every action any agent attempts crosses this. The runtime exposes no tool
+ * that bypasses it, which is the difference between a rule and a suggestion.
  *
- * IMPORTANT — `spend` is not advisory.
- * For every other capability, `request()` decides and the caller then acts.
- * For `spend`, deciding and acting must be one atomic step or the daily cap
- * leaks under concurrency, so an `allow` for `spend` means the money has
- * ALREADY been recorded. There is deliberately no way to ask "would this be
- * allowed?" for money — that question is the race.
+ * `spend` is not advisory: an `allow` means the money is ALREADY recorded,
+ * because deciding and acting have to be one atomic step or the daily cap
+ * leaks under concurrency. There is deliberately no way to ask "would this be
+ * allowed?" for money — that question IS the race.
  */
-export class PolicyGate {
-  #ledger: Ledger;
-  #rules: HouseRules;
 
-  constructor(ledger: Ledger, rules: HouseRules) {
+/** The gate asks about the commons rather than reading the disk itself. */
+export type CommonsView = { count(): number; exists(path: string): boolean };
+
+export class Gate {
+  #ledger: Ledger;
+  #c: Constitution;
+  #commons: CommonsView;
+
+  constructor(ledger: Ledger, constitution: Constitution, commons: CommonsView) {
     this.#ledger = ledger;
-    this.#rules = rules;
+    this.#c = constitution;
+    this.#commons = commons;
   }
 
-  get rules(): HouseRules { return this.#rules; }
+  get constitution(): Constitution { return this.#c; }
 
   request(req: GateRequest): Decision {
     const d = this.#decide(req);
-    // Every decision is logged, including the allows. This log is the whole
-    // answer to "what did they do while I was gone".
+    // Every decision is logged, allows included. This log is the whole answer
+    // to "what did they do while I was gone".
     this.#ledger.emit(req.actor, `gate.${d.kind}`, req.target ?? null, {
       capability: req.capability,
       rule: d.rule,
@@ -41,107 +45,115 @@ export class PolicyGate {
 
   #decide(req: GateRequest): Decision {
     const { capability, actor } = req;
-    const r = this.#rules;
+    const c = this.#c;
 
-    // You are the principal, not a subject. The gate exists to protect you
-    // from the staff, not to supervise you.
-    if (actor === r.innkeeper) return { kind: 'allow', rule: 'innkeeper.bypass' };
+    // The board is not a subject of the gate. It IS the gate.
+    if (c.board.includes(actor)) return { kind: 'allow', rule: 'board.bypass' };
 
     const agent = this.#ledger.getAgent(actor);
-    if (!agent) {
-      return { kind: 'deny', rule: 'staff.unknown', reason: `no staff member '${actor}' works here` };
-    }
-    if (agent.status === 'dismissed') {
-      return { kind: 'deny', rule: 'staff.dismissed', reason: `${agent.name} no longer works here` };
+    if (!agent) return { kind: 'deny', rule: 'unknown', reason: `no agent '${actor}' works here` };
+    if (agent.status === 'departed') {
+      return { kind: 'deny', rule: 'departed', reason: `${agent.name} no longer works here` };
     }
 
-    // ---- R3: the outside world is reachable, but only ever as a draft. ----
-    // Checked before everything else so no later branch can shadow it.
-    if (r.innkeeperApproves.includes(capability)) {
+    // ---- R3: the outside world, always as a draft. Checked first so no
+    // later branch can shadow it. ----
+    if (c.boardApproves.includes(capability)) {
       const ap = this.#ledger.createApproval({
-        requestedBy: actor, capability, tier: 'innkeeper', summary: req.summary,
+        requestedBy: actor, capability, tier: 'board', summary: req.summary,
         target: req.target ?? null, amountCents: req.amountCents ?? null, payload: req.payload,
       });
       return {
-        kind: 'escalate', rule: 'R3.drafts_only', tier: 'innkeeper', approvalId: ap.id,
-        reason: 'reaches the outside world; held as a draft for the Innkeeper',
+        kind: 'escalate', rule: 'R3.drafts_only', tier: 'board', approvalId: ap.id,
+        reason: 'reaches outside the company; held as a draft for the board',
       };
     }
 
-    // ---------------------------- R4: money ----------------------------
+    // ---- R4: money ----
     if (capability === 'spend') {
-      if (!r.treasurers.includes(actor)) {
+      if (!c.treasurers.includes(actor)) {
         return {
           kind: 'deny', rule: 'R4.not_treasurer',
-          reason: `only ${r.treasurers.join(', ')} may spend; ${agent.name} may not`,
+          reason: `only ${c.treasurers.join(', ')} may spend`,
         };
       }
       const amount = req.amountCents;
       if (amount == null || !Number.isInteger(amount) || amount <= 0) {
         return { kind: 'deny', rule: 'R4.bad_amount', reason: 'spend needs a positive integer amountCents' };
       }
-
-      // Atomic: this either records the money or refuses. No gap to race in.
       const out = this.#ledger.trySpend({
-        agentId: actor, amountCents: amount, purpose: req.summary, capCents: r.dailyCapCents,
+        agentId: actor, amountCents: amount, purpose: req.summary, capCents: c.dailyCapCents,
       });
-
       if (out.ok) return { kind: 'allow', rule: 'R4.within_cap' };
-
-      if (r.overCap === 'deny') {
+      if (c.overCap === 'deny') {
         return {
           kind: 'deny', rule: 'R4.over_cap',
-          reason: `daily cap ${fmt(out.capCents)} would be exceeded (${fmt(out.spentTodayCents)} spent, ${fmt(out.requestedCents)} requested)`,
+          reason: `daily cap ${money(out.capCents)} would be exceeded (${money(out.spentTodayCents)} spent)`,
         };
       }
       const ap = this.#ledger.createApproval({
-        requestedBy: actor, capability, tier: 'innkeeper', summary: req.summary,
+        requestedBy: actor, capability, tier: 'board', summary: req.summary,
         target: req.target ?? null, amountCents: amount, payload: req.payload,
       });
       return {
-        kind: 'escalate', rule: 'R4.over_cap', tier: 'innkeeper', approvalId: ap.id,
-        reason: `over the ${fmt(out.capCents)} daily cap (${fmt(out.spentTodayCents)} already spent today)`,
+        kind: 'escalate', rule: 'R4.over_cap', tier: 'board', approvalId: ap.id,
+        reason: `over the ${money(out.capCents)} daily cap`,
       };
     }
 
-    // ---------------------- R2: the Steward signs ----------------------
-    if (r.stewardApproves.includes(capability)) {
-      // The Steward does not need their own signature.
-      if (actor === r.steward) return { kind: 'allow', rule: 'R2.steward_self' };
+    // ---- R6: the complexity budget ----
+    // Editing what exists is always free. Only ADDING is rationed, because the
+    // failure mode is accretion — a hundred defensible additions and no
+    // removals. Refusing here is what turns variation into selection.
+    if (capability === 'world.write' && req.target?.startsWith('commons/')) {
+      const target = req.target;
+      if (!this.#commons.exists(target)) {
+        const count = this.#commons.count();
+        if (count >= c.commonsCeiling) {
+          return {
+            kind: 'deny', rule: 'R6.commons_full',
+            reason: `the commons holds ${count} of ${c.commonsCeiling} documents. ` +
+              `Remove one that has stopped being true before adding another — ` +
+              `and say which, and why, when you do.`,
+          };
+        }
+      }
+    }
+
+    // ---- R2: the CEO signs ----
+    if (c.executiveApproves.includes(capability)) {
+      if (actor === c.ceo) return { kind: 'allow', rule: 'R2.ceo_self' };
       const ap = this.#ledger.createApproval({
-        requestedBy: actor, capability, tier: 'steward', summary: req.summary,
+        requestedBy: actor, capability, tier: 'executive', summary: req.summary,
         target: req.target ?? null, amountCents: req.amountCents ?? null, payload: req.payload,
       });
       return {
-        kind: 'escalate', rule: 'R2.steward_approves', tier: 'steward', approvalId: ap.id,
-        reason: `${capability} needs the Steward's sign-off`,
+        kind: 'escalate', rule: 'R2.ceo_approves', tier: 'executive', approvalId: ap.id,
+        reason: `${capability} needs the CEO's sign-off`,
       };
     }
 
-    // Reading a colleague's files is ALLOWED — deliberately. It is how one of
-    // them noticed a colleague had faked a product. But it is never quiet: the
-    // emit in request() makes every peek visible in the log and on the map.
+    // Reading a colleague's files is allowed on purpose — that is how anyone
+    // notices a problem — but it is never quiet: request() logs every peek.
     if (capability === 'world.read_other') {
       return { kind: 'allow', rule: 'transparency.read_is_loud' };
     }
 
-    // R2's spirit: within your own remit, work however you like.
     return { kind: 'allow', rule: 'R2.autonomy' };
   }
 
   /**
-   * Resolve a pending approval. Returns false if it was already decided —
-   * the ledger's conditional UPDATE is what makes this exactly-once, so a
-   * double-click in your inbox cannot publish a draft twice.
+   * Resolve a pending approval. False if it was already decided — the ledger's
+   * conditional UPDATE is what makes this exactly-once, so a double-click
+   * cannot publish a draft twice.
    */
   decide(approvalId: string, decidedBy: string, approved: boolean, reason = ''): boolean {
     const ap = this.#ledger.getApproval(approvalId);
     if (!ap) return false;
 
-    // Standing check: only the tier that was asked may answer.
-    const permitted = ap.tier === 'innkeeper'
-      ? decidedBy === this.#rules.innkeeper
-      : decidedBy === this.#rules.steward || decidedBy === this.#rules.innkeeper;
+    const permitted = ap.tier === 'board'
+      ? this.#c.board.includes(decidedBy)
+      : decidedBy === this.#c.ceo || this.#c.board.includes(decidedBy);
     if (!permitted) {
       this.#ledger.emit(decidedBy, 'gate.decide_refused', approvalId, {
         reason: `${decidedBy} lacks standing to answer a ${ap.tier} approval`,
@@ -159,4 +171,4 @@ export class PolicyGate {
   }
 }
 
-const fmt = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
+const money = (cents: number): string => `$${(cents / 100).toFixed(2)}`;

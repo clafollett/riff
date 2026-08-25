@@ -1,6 +1,6 @@
 import type { Agent, AgentId } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
-import type { PolicyGate } from '../policy/gate.ts';
+import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { tick, type TickResult } from './staff.ts';
@@ -44,7 +44,7 @@ export const DEFAULT_SCHEDULE: SchedulerOptions = {
 };
 
 type Deps = {
-  ledger: Ledger; gate: PolicyGate; world: World; clock: Clock;
+  ledger: Ledger; gate: Gate; world: World; clock: Clock;
   connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
   options?: Partial<SchedulerOptions>;
   onTick?: (r: TickResult) => void;
@@ -117,7 +117,7 @@ export class Scheduler {
 
   /** Rank sets cadence: the Steward wakes ~2x as often as a house assistant. */
   #intervalFor(a: Agent): number {
-    const rank = RANK[a.role];
+    const rank = RANK[a.tier];
     const factor = 1 + rank * 0.35;
     // Jitter so ticks never phase-lock into a thundering herd.
     const jitter = 0.85 + ((hash(a.id) % 30) / 100);
@@ -164,10 +164,10 @@ export class Scheduler {
 
       const now = Date.now();
       const due = this.#d.ledger.listAgents()
-        .filter((a) => a.role !== 'innkeeper' && a.status === 'active')
+        .filter((a) => a.tier !== 'board' && a.status === 'active')
         .filter((a) => !this.#inFlight.has(a.id))
         .filter((a) => (this.#nextDue.get(a.id) ?? 0) <= now)
-        .sort((a, b) => RANK[a.role] - RANK[b.role])
+        .sort((a, b) => RANK[a.tier] - RANK[b.tier])
         .slice(0, Math.max(0, this.#opts.concurrency - this.#inFlight.size));
 
       for (const a of due) void this.#wake(a);

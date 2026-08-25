@@ -11,39 +11,26 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
+-- tier is structural and closed; role and department are free text the CEO
+-- invents. Constraining job titles in schema is exactly the kind of ceremony
+-- that made a previous system unmanageable.
 CREATE TABLE IF NOT EXISTS agents (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
-  role        TEXT NOT NULL CHECK (role IN ('innkeeper','steward','house_manager','house_assistant')),
-  title       TEXT NOT NULL,
+  tier        TEXT NOT NULL CHECK (tier IN ('board','executive','lead','member')),
+  role        TEXT NOT NULL,
+  department  TEXT NOT NULL DEFAULT '',
   reports_to  TEXT REFERENCES agents(id),
-  building    TEXT NOT NULL,
-  department  TEXT NOT NULL,
   status      TEXT NOT NULL DEFAULT 'active'
-              CHECK (status IN ('active','idle','off_shift','dismissed')),
+              CHECK (status IN ('active','idle','departed')),
+  activity    TEXT NOT NULL DEFAULT '',
+  mandate     TEXT NOT NULL DEFAULT '',
   hired_at    TEXT NOT NULL,
   hired_by    TEXT REFERENCES agents(id),
   model       TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS buildings (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  department TEXT NOT NULL,
-  x INTEGER NOT NULL, y INTEGER NOT NULL,
-  w INTEGER NOT NULL, h INTEGER NOT NULL,
-  door_x INTEGER NOT NULL, door_y INTEGER NOT NULL
-);
 
--- Written every tick, read every frame. The one table that earns its keep
--- purely on read speed.
-CREATE TABLE IF NOT EXISTS positions (
-  agent_id   TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-  x REAL NOT NULL, y REAL NOT NULL,
-  facing     TEXT NOT NULL CHECK (facing IN ('up','down','left','right')),
-  activity   TEXT NOT NULL DEFAULT '',
-  updated_at TEXT NOT NULL
-);
 
 CREATE TABLE IF NOT EXISTS tasks (
   id          TEXT PRIMARY KEY,
@@ -67,7 +54,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   id              TEXT PRIMARY KEY,
   requested_by    TEXT NOT NULL REFERENCES agents(id),
   capability      TEXT NOT NULL,
-  tier            TEXT NOT NULL CHECK (tier IN ('steward','innkeeper')),
+  tier            TEXT NOT NULL CHECK (tier IN ('executive','board')),
   state           TEXT NOT NULL DEFAULT 'pending'
                   CHECK (state IN ('pending','approved','rejected','expired')),
   summary         TEXT NOT NULL,

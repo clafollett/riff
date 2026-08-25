@@ -4,11 +4,11 @@
  * want to do it deliberately.
  */
 import { resolveConfig } from '../src/core/config.ts';
-import { openTheInn } from '../src/village/open.ts';
+import { found } from '../src/company/genesis.ts';
 import { systemClock } from '../src/core/clock.ts';
 
 const cfg = resolveConfig();
-const { ledger, world, firstRun } = openTheInn(cfg, systemClock);
+const { ledger, world, firstRun } = found(cfg, systemClock);
 
 console.log(`\n  home   : ${cfg.home}`);
 console.log(`  world  : ${world.root}`);

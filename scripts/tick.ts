@@ -7,9 +7,9 @@
  * is the script for proving the runtime works before letting a village loose.
  */
 import { resolveConfig } from '../src/core/config.ts';
-import { openTheInn } from '../src/village/open.ts';
-import { PolicyGate } from '../src/policy/gate.ts';
-import { houseRulesFor } from '../src/policy/rules.ts';
+import { found } from '../src/company/genesis.ts';
+import { Gate } from '../src/policy/gate.ts';
+import { constitutionFor } from '../src/policy/rules.ts';
 import { systemClock } from '../src/core/clock.ts';
 import { tick } from '../src/runtime/staff.ts';
 
@@ -18,8 +18,12 @@ const maxTurns = Number(process.argv[3] ?? 8);
 
 const cfg = resolveConfig();
 const clock = systemClock;
-const { ledger, world } = openTheInn(cfg, clock);
-const gate = new PolicyGate(ledger, houseRulesFor(cfg.innkeeper.id));
+const { ledger, world } = found(cfg, clock);
+const gate = new Gate(
+  ledger,
+  constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) }),
+  { count: () => world.commonsCount(), exists: (p) => world.exists(p) },
+);
 
 const agent = ledger.getAgent(who);
 if (!agent) {
@@ -27,7 +31,7 @@ if (!agent) {
   process.exit(1);
 }
 
-console.log(`\n  Waking ${agent.name} (${agent.title})  ·  max ${maxTurns} turns\n`);
+console.log(`\n  Waking ${agent.name} (${agent.role})  ·  max ${maxTurns} turns\n`);
 const before = ledger.latestSeq();
 const started = Date.now();
 

@@ -1,16 +1,16 @@
 import { query, type SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
-import type { PolicyGate } from '../policy/gate.ts';
+import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
-import { createInnTools } from './tools.ts';
+import { createTools } from './tools.ts';
 import { makeCanUseTool } from './permissions.ts';
 
 export type TickDeps = {
   agent: Agent;
   ledger: Ledger;
-  gate: PolicyGate;
+  gate: Gate;
   world: World;
   clock: Clock;
   /** Hard ceiling on what one wake-up may cost, independent of the spend cap.
@@ -46,7 +46,7 @@ export type TickResult = {
  */
 const buildSystemPrompt = (d: TickDeps): string => {
   const { agent, world, gate, ledger } = d;
-  const r = gate.rules;
+  const r = gate.constitution;
   const persona = world.readPersona(agent.id);
   const memory = world.readMemory(agent.id);
 
@@ -56,12 +56,12 @@ const buildSystemPrompt = (d: TickDeps): string => {
   // turn cap having produced nothing. Stable between ticks, so it caches.
   const roster = ledger.listAgents()
     .filter((a) => a.id !== agent.id)
-    .map((a) => `- ${a.name} (${a.id}) — ${a.title}, works out of ${a.building}`)
+    .map((a) => `- ${a.name} (${a.id}) — ${a.role}, ${a.tier}${a.department ? ` · ${a.department}` : ''}`)
     .join('\n');
 
   return [
-    `You are ${agent.name}, ${agent.title} at the LaFollett Bed & Breakfast.`,
-    `Your staff id is "${agent.id}". You work out of ${agent.building}.`,
+    `You are ${agent.name}. Your role is ${agent.role}.`,
+    `Your agent id is "${agent.id}"${agent.department ? `, in ${agent.department}` : ''}.`,
     agent.reportsTo ? `You report to ${agent.reportsTo}.` : '',
     '',
     '## Who you are',
@@ -144,7 +144,7 @@ const buildTickPrompt = (d: TickDeps): string => {
  */
 export const tick = async (d: TickDeps): Promise<TickResult> => {
   const { agent, ledger, gate, world, clock } = d;
-  const { server, capabilities } = createInnTools({
+  const { server, capabilities } = createTools({
     actor: agent.id, ledger, gate, world, clock,
   });
 

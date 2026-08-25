@@ -78,9 +78,9 @@ describe('notes — the 742-notes mechanic', () => {
   test('a note is indexed and findable by subject', () => {
     const ledger = new Ledger(':memory:', clock);
     ledger.upsertAgent({
-      id: 'greg', name: 'Greg', role: 'house_manager', title: 'Market Manager', reportsTo: null,
-      building: 'the-market', department: 'product', status: 'active',
-      hiredAt: clock.iso(), hiredBy: null, model: 'claude-sonnet-5',
+      id: 'greg', name: 'Greg', tier: 'lead', role: 'Head of Product',
+      department: 'product', reportsTo: null, status: 'active',
+      activity: '', mandate: '', hiredAt: clock.iso(), hiredBy: null, model: 'claude-opus-5',
     });
     world.ensureStaff('greg');
     world.writeNote('greg', 'dennis', 'Dennis carried the listings', 'He did most of the work today.');

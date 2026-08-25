@@ -1,5 +1,4 @@
 import { slug } from '../core/ids.ts';
-import { titleFor, titleMatchesRole } from '../core/titles.ts';
 import type { Ledger } from '../ledger/ledger.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
@@ -25,32 +24,37 @@ export const applyApproved = (ledger: Ledger, world: World, clock: Clock): numbe
     try {
       switch (ap.capability) {
         case 'hire': {
-          const p = JSON.parse(ap.payloadJson ?? '{}') as
-            { name?: string; house?: string; title?: string; why?: string };
-          if (!p.name || !p.house) break;
-
-          const id = slug(p.name);
-          if (ledger.getAgent(id)) break; // already works here
-
-          const role = 'house_assistant' as const;
-          const title = p.title && titleMatchesRole(role, p.title)
-            ? p.title
-            : titleFor(role, p.house);
-
+          const p = JSON.parse(ap.payloadJson ?? '{}') as Record<string, string>;
+          if (p['retire']) {                       // a retirement, not a hire
+            const gone = ledger.getAgent(p['retire']);
+            if (gone) ledger.upsertAgent({ ...gone, status: 'departed' });
+            ledger.emit('company', 'role.retired', p['retire'] ?? null, { why: p['why'] });
+            applied++;
+            break;
+          }
+          if (!p['name'] || !p['role']) break;
+          const id = slug(p['name']);
+          if (ledger.getAgent(id)) break;
           ledger.upsertAgent({
-            id, name: p.name, role, title,
-            reportsTo: ap.requestedBy, building: p.house,
-            department: p.house, status: 'active',
-            hiredAt: clock.iso(), hiredBy: ap.requestedBy,
-            model: 'claude-opus-5',
+            id, name: p['name'], tier: (p['tier'] ?? 'member') as 'executive' | 'lead' | 'member',
+            role: p['role'], department: p['department'] ?? '',
+            reportsTo: p['reportsTo'] ?? ap.requestedBy, status: 'active',
+            activity: 'just arrived', mandate: p['mandate'] ?? '',
+            hiredAt: clock.iso(), hiredBy: ap.requestedBy, model: 'claude-opus-5',
           });
           world.ensureStaff(id);
           world.writeDoc(world.personaPath(id), {
-            data: { agent: id, role, hired_by: ap.requestedBy, hired_at: clock.iso() },
-            body: `# ${p.name}\n\n${title}, working out of ${p.house}.\n\n` +
-                  `Hired because: ${p.why ?? 'the house needed the help.'}\n`,
+            data: { agent: id, tier: p['tier'] ?? 'member', role: p['role'] },
+            body: `# ${p['name']}
+
+**${p['role']}**
+
+## Your mandate
+
+${p['mandate'] ?? ''}
+`,
           });
-          ledger.emit('inn', 'agent.hired', id, { by: ap.requestedBy, title });
+          ledger.emit('company', 'role.filled', id, { by: ap.requestedBy, role: p['role'] });
           applied++;
           break;
         }

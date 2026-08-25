@@ -12,8 +12,8 @@ import { userInfo } from 'node:os';
  * checkout, and it must survive the project folder being moved or renamed.
  *
  * Resolution order, first match wins:
- *   1. INN_KEEPER / INN_WORLD / INN_LEDGER   explicit overrides
- *   2. INN_HOME                    relocate the whole Inn
+ *   1. INN_KEEPER / HELMSTED_WORLD / HELMSTED_LEDGER   explicit overrides
+ *   2. HELMSTED_HOME                    relocate the whole Inn
  *   3. ./inn.config.json           project-local, for development
  *   4. ~/.lafollett-bnb/config.json  the scaffolded default
  *   5. built-in defaults           only ever used to WRITE #4, never assumed
@@ -29,7 +29,11 @@ export type InnConfig = {
    * Whose Inn this is. Every install has a different human at the top, so the
    * Inn Keeper is configuration, never a name in the source.
    */
-  innkeeper: { id: string; name: string };
+  company: { name: string; business: string };
+  /** Humans. Terminal authority. */
+  board: Array<{ id: string; name: string; role: string }>;
+  /** The primary agent. Builds the company. */
+  ceo: { id: string; name: string };
   /**
    * External MCP servers handed to every staff session — an image generator,
    * a calendar, an inbox. The Inn knows nothing about any specific provider;
@@ -44,7 +48,7 @@ export type InnConfig = {
 
 /** Best guess at who is running this, for the first-run prompt to confirm. */
 export const guessKeeperName = (): string => {
-  const fromEnv = process.env['INN_KEEPER'];
+  const fromEnv = process.env['HELMSTED_CHAIR'];
   if (fromEnv && fromEnv.trim()) return fromEnv.trim();
   try {
     const g = execFileSync('git', ['config', '--get', 'user.name'],
@@ -56,11 +60,11 @@ export const guessKeeperName = (): string => {
 };
 
 /** Filesystem- and id-safe handle derived from a display name. */
-export const keeperId = (name: string): string =>
+export const slugId = (name: string): string =>
   name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'keeper';
 
-export const DEFAULT_HOME = join(homedir(), '.lafollett-bnb');
-const PROJECT_CONFIG = 'inn.config.json';
+export const DEFAULT_HOME = join(homedir(), '.helmsted');
+const PROJECT_CONFIG = 'helmsted.config.json';
 const CONFIG_NAME = 'config.json';
 
 const abs = (base: string, p: string): string => (isAbsolute(p) ? p : resolve(base, p));
@@ -72,7 +76,9 @@ const fromHome = (home: string): InnConfig => {
     home,
     worldDir: join(home, 'world'),
     ledgerPath: join(home, 'ledger.db'),
-    innkeeper: { id: keeperId(name), name },
+    company: { name: 'Untitled Company', business: '' },
+    board: [{ id: slugId(name), name, role: 'Chairman' }],
+    ceo: { id: 'ceo', name: 'CEO' },
     connectors: {},
   };
 };
@@ -86,7 +92,7 @@ const readConfigFile = (path: string): Partial<InnConfig> | null => {
 /** Resolve without touching disk beyond reading. Never creates anything. */
 export const resolveConfig = (cwd = process.cwd()): InnConfig => {
   const env = process.env;
-  const home = env['INN_HOME'] ? abs(cwd, env['INN_HOME']) : null;
+  const home = env['HELMSTED_HOME'] ? abs(cwd, env['HELMSTED_HOME']) : null;
 
   const projectCfg = readConfigFile(join(cwd, PROJECT_CONFIG));
   const homeCfg = readConfigFile(join(home ?? DEFAULT_HOME, CONFIG_NAME));
@@ -101,15 +107,22 @@ export const resolveConfig = (cwd = process.cwd()): InnConfig => {
   // An explicit INN_KEEPER wins; otherwise a stored keeper is kept forever,
   // because renaming the Inn Keeper mid-life would orphan every approval,
   // note and commit already attributed to them.
-  const storedKeeper = merged.innkeeper;
-  const keeperName = env['INN_KEEPER']?.trim() || storedKeeper?.name || guessKeeperName();
+  const chairName = env['HELMSTED_CHAIR']?.trim() || merged.board?.[0]?.name || guessKeeperName();
+  const board = merged.board?.length
+    ? merged.board
+    : [{ id: slugId(chairName), name: chairName, role: 'Chairman' }];
 
   return {
     version: 1,
     home: base,
-    worldDir: env['INN_WORLD'] ? abs(cwd, env['INN_WORLD']) : abs(base, merged.worldDir ?? 'world'),
-    ledgerPath: env['INN_LEDGER'] ? abs(cwd, env['INN_LEDGER']) : abs(base, merged.ledgerPath ?? 'ledger.db'),
-    innkeeper: { id: storedKeeper?.id ?? keeperId(keeperName), name: keeperName },
+    worldDir: env['HELMSTED_WORLD'] ? abs(cwd, env['HELMSTED_WORLD']) : abs(base, merged.worldDir ?? 'world'),
+    ledgerPath: env['HELMSTED_LEDGER'] ? abs(cwd, env['HELMSTED_LEDGER']) : abs(base, merged.ledgerPath ?? 'ledger.db'),
+    company: {
+      name: env['HELMSTED_COMPANY']?.trim() || merged.company?.name || 'Untitled Company',
+      business: env['HELMSTED_BUSINESS']?.trim() || merged.company?.business || '',
+    },
+    board,
+    ceo: merged.ceo ?? { id: 'ceo', name: 'CEO' },
     connectors: merged.connectors ?? {},
   };
 };
