@@ -128,6 +128,24 @@ test('a wrapped sentence is one paragraph, not one per source line', async ({ pa
   expect(await page.locator('.reader .body p').count()).toBeLessThan(4);
 });
 
+test('a markdown table renders as a table, not a line of pipes', async ({ page }) => {
+  // The seats doctrine and every scorecard is a table. The hand-rolled
+  // renderer had no table support at all and they came out as run-on prose.
+  await go(page, 'Commons');
+  await page.locator('.doc', { hasText: 'Scores, including ours' }).click();
+  const table = page.locator('.reader .body table');
+  await expect(table).toHaveCount(1);
+  await expect(table.locator('th')).toHaveText(['subject', 'score']);
+  await expect(table.locator('tbody tr')).toHaveCount(1);
+  await expect(page.locator('.reader .body')).not.toContainText('|');
+
+  // Wide tables scroll inside their own box; the page never scrolls sideways.
+  await expect(page.locator('.reader .body .tablewrap')).toHaveCount(1);
+  const overflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test('a doubled commons prefix still resolves to one document', async ({ page }) => {
   // Written as commons/records/scores.md by an author who had already typed
   // the prefix. It must appear once, on the right shelf.
