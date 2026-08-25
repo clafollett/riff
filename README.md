@@ -8,6 +8,9 @@ company should have, what its staff should be called, or what it should build.
 One agent starts work, and everything after that is a decision somebody in the
 company made and can be read back.
 
+Needs **Node 26 or newer** — the server runs TypeScript directly by type
+stripping, with no build step.
+
 ```
 npm install
 node scripts/init.ts     # asks four questions, founds a company
@@ -103,7 +106,7 @@ an attributed append-only log, a diff engine, and free time travel. Every
 commit is authored **as the agent who made the change**, so
 
 ```bash
-git -C ~/.helmsted/world log --since=3.days
+git -C ~/.helmsted/companies/<slug>/world log --since=3.days
 ```
 
 answers *"what did they do while I was gone?"* — with diffs. The Desk's Record
@@ -170,9 +173,31 @@ the tool allowlist just turns into a blocklist you maintain forever. So the
 boundary is structural:
 
 ```bash
-cp docker/.env.example docker/.env    # put your token in it
-docker compose -f docker/compose.yaml up --build
+cp docker/.env.example docker/.env    # point it at your password manager
+docker/up.sh check                    # prove the token wiring, start nothing
+docker/up.sh up --build
 ```
+
+`docker/.env` holds a **command that prints the token**, not the token:
+
+```
+HELMSTED_TOKEN_CMD="security find-generic-password -s helmsted -a claude -w"
+```
+
+`up.sh` runs it at launch and hands the result to compose through the
+environment, so the credential is never written to a file, never an argument
+(so it stays out of `ps`), and never typed (so it stays out of shell history).
+There are recipes for KeePassXC, macOS Keychain, 1Password and `pass` in the
+example file. A literal token in `docker/.env` still works.
+
+Only the subcommands that start something ask for it, so `up.sh logs`, `ps`,
+`down` and `config` never make your password manager prompt. To keep this
+checkout free of your configuration entirely, put the file anywhere and set
+`HELMSTED_ENV` to its path.
+
+Use `docker/up.sh` rather than raw `docker compose` for everything: compose
+interpolates the token variable on every subcommand, so plain
+`docker compose logs` fails before it prints a line.
 
 Three containers, and the shape is the point:
 
@@ -205,8 +230,13 @@ Throw the container away and nothing is lost.
 
 It is the **same `~/.helmsted` the host uses** — one installation, not two, so
 a company founded on the host is simply there when you start the container.
-Only one of them may run it at a time; whichever starts second says so and
-stops rather than scheduling every agent twice.
+
+Only one of them may run it at a time. A lock at `~/.helmsted/.lock` is taken
+before anything opens a ledger, and whichever starts second refuses and names
+the first rather than scheduling every agent twice. Liveness is a heartbeat
+rather than a pid, because a container's pid 7 says nothing about the host, so
+a killed server goes stale in thirty seconds instead of wedging the
+installation.
 
 `${HOME}` there is interpolated by the `docker compose` process, not by the
 daemon, so it is **your** home directory rather than root's. On macOS, Docker
@@ -245,8 +275,8 @@ The token is yours to generate and yours alone to see:
 claude setup-token
 ```
 
-It goes in `docker/.env`, which is gitignored. Compose refuses to start without
-it and says so.
+Store it in your password manager and point `HELMSTED_TOKEN_CMD` at it. Nothing
+in this project ever needs the value written down.
 
 ---
 
