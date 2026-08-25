@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -231,8 +231,8 @@ describe('the example env file describes this container, not an imagined one', (
     assert.equal(r.status, 0, `up.sh ${args.join(' ')} failed: ${r.stderr}`);
     return {
       out: r.stdout,
-      argv: readFileSync(join(dir, 'argv'), 'utf8'),
-      env: readFileSync(join(dir, 'env'), 'utf8'),
+      argv: existsSync(join(dir, 'argv')) ? readFileSync(join(dir, 'argv'), 'utf8') : '',
+      env: existsSync(join(dir, 'env')) ? readFileSync(join(dir, 'env'), 'utf8') : '',
       // The stub vault announces itself on stderr when it is opened.
       asked: r.stderr.includes('VAULT-OPENED'),
     };
@@ -263,6 +263,16 @@ describe('the example env file describes this container, not an imagined one', (
     for (const loud of [['up'], ['up', '--build'], ['restart'], ['run', 'x', 'sh']]) {
       assert.equal(launch(loud).asked, true, `${loud.join(' ')} starts something and needs a real token`);
     }
+  });
+
+  test('check proves the wiring and starts nothing', () => {
+    // Worth having before an overnight run: everything a start does, right up
+    // to the point of starting anything.
+    const { out, asked, argv } = launch(['check']);
+    assert.equal(asked, true, 'check must actually resolve the token');
+    assert.match(out, new RegExp(`a token is available \\(${SENTINEL.length} characters\\)`));
+    assert.ok(!out.includes(SENTINEL), 'check must not print the token');
+    assert.equal(argv, '', 'check must not invoke docker at all');
   });
 
   test('the launcher writes nothing to disk', () => {

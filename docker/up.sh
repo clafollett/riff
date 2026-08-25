@@ -1,8 +1,9 @@
 #!/bin/sh
 # Start the stack, resolving the Claude token at launch.
 #
-#   docker/up.sh [--build] [any other compose arguments]
-#   docker/up.sh down
+#   docker/up.sh up --build    start it
+#   docker/up.sh check         prove the token wiring works, and start nothing
+#   docker/up.sh logs -f       anything else compose understands
 #
 # WHERE THE TOKEN LIVES: in your password manager, and nowhere else. Not in
 # this repository, not in a dotfile, not in your shell profile. What the
@@ -58,13 +59,17 @@ from_file() {
 # interpolates the variable for every subcommand, so the others get a
 # placeholder that never reaches a running container.
 needs_token=no
+subcommand=
 for a in "$@"; do
   case $a in
     -*) continue ;;
-    up|run|start|restart|create) needs_token=yes ;;
+    *) subcommand=$a ;;
   esac
   break
 done
+case $subcommand in
+  up|run|start|restart|create|check) needs_token=yes ;;
+esac
 
 if [ "$needs_token" = no ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
   CLAUDE_CODE_OAUTH_TOKEN=not-needed-for-this-command
@@ -98,6 +103,19 @@ if [ "$needs_token" = yes ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
     # gave me an error message", without putting any of it on your screen.
     echo "helmsted: token resolved from HELMSTED_TOKEN_CMD (${#token} characters)"
   fi
+fi
+
+# `check` exists so you can prove the wiring before trusting it with an
+# overnight run: it does everything a start does right up to the point of
+# starting anything. It prints a length, never a token.
+if [ "$subcommand" = check ]; then
+  if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+    echo "helmsted: no token, and nothing configured to fetch one." >&2
+    echo "  Set HELMSTED_TOKEN_CMD in $local_env${outside_env:+ or $outside_env}." >&2
+    exit 1
+  fi
+  echo "helmsted: a token is available (${#CLAUDE_CODE_OAUTH_TOKEN} characters). Nothing was started."
+  exit 0
 fi
 
 # Anything still unset is left to compose, which has its own message pointing
