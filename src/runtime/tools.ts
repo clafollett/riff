@@ -6,6 +6,7 @@ import type { Ledger } from '../ledger/ledger.ts';
 import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
+import { fillSeat } from '../company/hire.ts';
 
 export type Ctx = {
   actor: AgentId;
@@ -84,9 +85,14 @@ export const createTools = (ctx: Ctx) => {
         'Independence does not need a reporting line here: the commons, notes and the event log ' +
         'are visible to the board regardless of who reports to whom.'),
     },
-    async (p) => say(gated(ctx, 'hire', `${p.role}: ${p.name}`, slug(p.name), () => 'queued', {
-      payload: { ...p, proposedBy: actor },
-    })),
+    async (p) => say(gated(ctx, 'hire', `${p.role}: ${p.name}`, slug(p.name), () => {
+      // Reached only when the gate ALLOWS outright (the CEO's own hire).
+      // Everyone else escalates and the executor calls the same function.
+      const r = fillSeat(ledger, world, clock, { ...p, proposedBy: actor });
+      if (!r.ok) return `Could not fill that seat: ${r.reason}`;
+      return `${p.name} has joined as ${p.role}.` +
+        (r.redirected ? ` Reporting line set to you — the board governs, it does not manage.` : '');
+    }, { payload: { ...p, proposedBy: actor } })),
   );
 
   const retireRole = tool(

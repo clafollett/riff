@@ -1,4 +1,4 @@
-import { slug } from '../core/ids.ts';
+import { fillSeat } from '../company/hire.ts';
 import type { Ledger } from '../ledger/ledger.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
@@ -25,54 +25,21 @@ export const applyApproved = (ledger: Ledger, world: World, clock: Clock): numbe
       switch (ap.capability) {
         case 'hire': {
           const p = JSON.parse(ap.payloadJson ?? '{}') as Record<string, string>;
-          if (p['retire']) {                       // a retirement, not a hire
+          if (p['retire']) {
             const gone = ledger.getAgent(p['retire']);
             if (gone) ledger.upsertAgent({ ...gone, status: 'departed' });
             ledger.emit('company', 'role.retired', p['retire'] ?? null, { why: p['why'] });
             applied++;
             break;
           }
-          if (!p['name'] || !p['role']) break;
-
-          // The board governs; it does not manage. Only the CEO reports to it.
-          // A seat reporting to a board member makes the chair a line manager
-          // and creates a shadow org — and the independence it appears to buy
-          // is already structural here: the commons, notes and the event log
-          // are visible to the board no matter who reports to whom, so the CEO
-          // cannot suppress an unflattering finding by owning the reporting
-          // line. Redirect rather than refuse; the seat is still worth filling.
-          const proposedBoss = p['reportsTo'] ?? ap.requestedBy;
-          const boss = ledger.getAgent(proposedBoss);
-          const reportsTo = boss?.tier === 'board' ? ap.requestedBy : proposedBoss;
-          if (boss?.tier === 'board') {
-            ledger.emit('company', 'org.reporting_redirected', slug(p['name']), {
-              proposed: proposedBoss, actual: reportsTo,
-              why: 'the board governs rather than manages; only the CEO reports to it',
-            });
-          }
-          const id = slug(p['name']);
-          if (ledger.getAgent(id)) break;
-          ledger.upsertAgent({
-            id, name: p['name'], tier: (p['tier'] ?? 'member') as 'executive' | 'lead' | 'member',
-            role: p['role'], department: p['department'] ?? '',
-            reportsTo, status: 'active',
-            activity: 'just arrived', mandate: p['mandate'] ?? '',
-            hiredAt: clock.iso(), hiredBy: ap.requestedBy, model: 'claude-opus-5',
+          const r = fillSeat(ledger, world, clock, {
+            name: p['name'] ?? '', role: p['role'] ?? '',
+            tier: (p['tier'] ?? 'member') as 'executive' | 'lead' | 'member',
+            department: p['department'] ?? '', mandate: p['mandate'] ?? '',
+            reportsTo: p['reportsTo'] ?? ap.requestedBy, proposedBy: ap.requestedBy,
           });
-          world.ensureStaff(id);
-          world.writeDoc(world.personaPath(id), {
-            data: { agent: id, tier: p['tier'] ?? 'member', role: p['role'] },
-            body: `# ${p['name']}
-
-**${p['role']}**
-
-## Your mandate
-
-${p['mandate'] ?? ''}
-`,
-          });
-          ledger.emit('company', 'role.filled', id, { by: ap.requestedBy, role: p['role'] });
-          applied++;
+          if (r.ok) applied++;
+          else ledger.emit('company', 'approval.apply_failed', ap.id, { reason: r.reason });
           break;
         }
 
