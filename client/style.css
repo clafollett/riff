@@ -45,12 +45,23 @@ button:disabled { opacity:.45; cursor:not-allowed; }
 .card .row button { flex:1; padding:5px; }
 .empty { color:var(--muted); font-size:12px; font-style:italic; padding:6px 0; }
 
-.morale { display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:12px; }
-.morale .name { width:62px; color:#e8dcc8; }
-.morale .bar { flex:1; height:7px; background:#1b1510; border-radius:4px; overflow:hidden; }
-.morale .fill { height:100%; border-radius:4px; }
-.morale .n { width:26px; text-align:right; color:var(--muted); font-size:11px; }
-.morale .why { font-size:10px; color:var(--muted); margin:-3px 0 8px 70px; }
+.m-row { margin-bottom:9px; }
+.m-top { display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:3px; }
+.m-top .name { width:58px; color:#e8dcc8; flex:none; }
+.m-top .bar {
+  flex:1; height:9px; background:#15100c; border:1px solid #0a0806;
+  border-radius:5px; overflow:hidden;
+}
+/* display:block is load-bearing — a <span> is inline, and inline boxes ignore
+   width/height entirely, so the fill silently measured 0x0. */
+.m-top .fill { display:block; height:100%; }
+.m-top .n { width:22px; text-align:right; color:#e8dcc8; font-size:11px; flex:none; }
+/* One line, always. These repeat across a dozen staff and wrapping turns the
+   panel into a wall of identical sentences. */
+.m-row .why {
+  font-size:10px; color:var(--muted); padding-left:66px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
 
 #log { font-size:11px; line-height:1.6; color:var(--muted); max-height:190px; overflow-y:auto; }
 #log div { padding:1px 0; }

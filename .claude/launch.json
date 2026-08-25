@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "inn",
+      "runtimeExecutable": "/Users/clafollett/.nvm/versions/node/v26.7.0/bin/node",
+      "runtimeArgs": ["src/gateway/server.ts"],
+      "port": 4173
+    }
+  ]
+}
