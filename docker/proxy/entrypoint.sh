@@ -1,19 +1,10 @@
 #!/bin/sh
-# Compile the human-readable allowlist into anchored regexes.
-# Anchoring matters: an unanchored "github.com" would also match
-# "github.com.evil.example", which is the classic allowlist bypass.
+# The filter was compiled into the image at build time, so this only reports
+# what the wall lets through and starts the proxy. Nothing here writes to the
+# filesystem, which is what lets the container run read-only.
 set -eu
 
-: > /etc/tinyproxy/filter.re
-while IFS= read -r line; do
-  case "$line" in ''|\#*) continue ;; esac
-  host=$(printf '%s' "$line" | tr -d '[:space:]')
-  [ -z "$host" ] && continue
-  escaped=$(printf '%s' "$host" | sed 's/\./\\./g')
-  printf '^%s$\n' "$escaped" >> /etc/tinyproxy/filter.re
-done < /etc/tinyproxy/allowlist.conf
-
-echo "egress allowlist ($(wc -l < /etc/tinyproxy/filter.re) hosts):"
+echo "egress allowlist ($(wc -l < /etc/tinyproxy/filter.re | tr -d ' ') hosts):"
 sed 's/^/  /' /etc/tinyproxy/filter.re
 
 exec tinyproxy -d -c /etc/tinyproxy/tinyproxy.conf

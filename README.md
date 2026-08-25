@@ -174,10 +174,44 @@ cp docker/.env.example docker/.env    # put your token in it
 docker compose -f docker/compose.yaml up --build
 ```
 
-Two containers. `factory` has the real tools and your token, and sits on a
-network with **no route off the machine**. `egress` is the only door, forwarding
-to an anchored-regex allowlist. An agent that talks its way past every check
-still has nowhere to send anything.
+Three containers, and the shape is the point:
+
+| | |
+| - | - |
+| `factory` | the real tools, the shell, your token. On a network with **no route off the machine** |
+| `egress` | the only way out, to an anchored-regex allowlist. Logs what it refused |
+| `ingress` | the only way in: a TCP forwarder with no token and no agent code |
+
+The factory publishes no port of its own, because a container on an internal
+network cannot be NAT-ed in either direction — no gateway means no ingress as
+well as no egress, and Docker publishes nothing without saying so. The
+forwarder carries the console out instead.
+
+Verified rather than assumed: an allowed host answers through the proxy, a
+denied one does not, `github.com.evil.example` does not, and ignoring the proxy
+gets no route at all.
+
+### Your data is yours
+
+Companies live in a **bind mount**, not a named volume, so every one of them is
+an ordinary directory on your disk:
+
+```
+~/helmsted-data/companies/<slug>/world/    a git repo you can read without Docker
+```
+
+Readable, greppable, and covered by whatever already backs up your home folder.
+Throw the container away and nothing is lost.
+
+For a snapshot the agents cannot reach — they have a shell and write access to
+their own data, so a copy they can also touch is not a backup:
+
+```bash
+docker/backup.sh              # → ~/helmsted-backups/helmsted-<stamp>.tar.gz
+```
+
+Run it from the host, on a schedule if you like. It keeps the last 30, and
+because each world is a git repository the history is inside the tarball too.
 
 The token is yours to generate and yours alone to see:
 
@@ -196,7 +230,7 @@ it and says so.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 80 unit tests |
+| `npm test` | 93 unit tests |
 | `npm run test:ui` | 28 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |

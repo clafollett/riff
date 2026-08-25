@@ -32,8 +32,8 @@ RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@latest
 
 # Never root. An agent with a shell should not also have the box.
 RUN useradd -m -u 10001 -s /bin/bash labs \
- && mkdir -p /world /app \
- && chown -R labs:labs /world /app
+ && mkdir -p /data /app \
+ && chown -R labs:labs /data /app
 
 WORKDIR /app
 COPY --chown=labs:labs package*.json ./
@@ -49,12 +49,17 @@ USER labs
 RUN git config --global user.name  "Helmsted" \
  && git config --global user.email "helmsted@localhost" \
  && git config --global init.defaultBranch main \
- && git config --global --add safe.directory /world
+ && git config --global --add safe.directory '*'
 
+# HELMSTED_ROOT is the INSTALLATION root — companies/ and archive/ live under
+# it. It must point at the mounted volume: set to a path outside the mount and
+# every company is written to the container's own filesystem and destroyed on
+# the next restart, silently.
+#
 # HELMSTED_CONTAINED opens the shell. The runtime also requires a container
 # marker file, so this variable on its own does nothing on someone's laptop.
 ENV NODE_ENV=production \
-    HELMSTED_HOME=/world \
+    HELMSTED_ROOT=/data \
     HELMSTED_CONTAINED=1 \
     PORT=4173 \
     NPM_CONFIG_FUND=false \

@@ -1,15 +1,17 @@
 #!/bin/sh
-# First boot founds the company; every boot after that finds it already there.
-# init.ts is idempotent, so this is safe to run unconditionally.
+# The server founds a company when the installation is empty and resumes every
+# company left running, so there is nothing to arrange here.
+#
+# This used to run init.ts and a scheduler of its own. Both are now the
+# server's job, and running a second scheduler beside it would have woken
+# every agent twice.
 set -eu
 
-node scripts/init.ts
-
-# The Desk and the shifts are separate concerns and fail separately. If the
-# scheduler dies the console must stay up, because the console is how you find
-# out the scheduler died.
-if [ "${HELMSTED_RUN_SHIFTS:-1}" = "1" ]; then
-  node scripts/run-overnight.ts "${HELMSTED_UNTIL_HOUR:-}" "${HELMSTED_MAX_SHIFTS:-}" &
-fi
+# Fail loudly rather than writing a whole company somewhere it will not survive.
+case "${HELMSTED_ROOT:-}" in
+  /data*) ;;
+  *) echo "HELMSTED_ROOT must live under the mounted volume; got '${HELMSTED_ROOT:-unset}'" >&2
+     exit 1 ;;
+esac
 
 exec "$@"
