@@ -125,7 +125,8 @@ export const api = {
   work: () => get<Work>('/api/work'),
   inbox: () => get<Inbox>('/api/inbox'),
   recent: (limit = 200) => get<{ events: Event[] }>(`/api/events?limit=${limit}`),
-  markRead: (ids?: string[]) => send<{ marked: number }>('/api/inbox/read', 'POST', ids ? { ids } : {}),
+  markRead: (ids?: string[], read = true) =>
+    send<{ marked: number; read: boolean }>('/api/inbox/read', 'POST', { ...(ids ? { ids } : {}), read }),
   start: () => send<{ running: boolean }>('/api/open', 'POST'),
   pause: () => send<{ running: boolean }>('/api/close', 'POST'),
   wake: (who?: string) => send<{ waking: string }>('/api/wake', 'POST', who ? { who } : {}),

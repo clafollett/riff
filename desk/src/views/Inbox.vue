@@ -29,10 +29,16 @@ const readAll = async () => {
   emit('changed');
 };
 
-/** Looking at a message is reading it. Nothing else happens. */
-const markSeen = async (m: Message) => {
-  if (m.readAt) return;
-  await api.markRead([m.id]);
+/**
+ * Marking read is an explicit act.
+ *
+ * The whole header used to be a silent click target for this, so clicking the
+ * broadcast label — which looks like a button and is not one — made the unread
+ * bar vanish with no explanation and no way back. An effect nobody asked for,
+ * from a control that does not exist.
+ */
+const markSeen = async (m: Message, read = true) => {
+  await api.markRead([m.id], read);
   await load();
   emit('changed');
 };
@@ -40,7 +46,9 @@ const markSeen = async (m: Message) => {
 const openReply = async (m: Message) => {
   replyTo.value = replyTo.value === m.id ? null : m.id;
   draft.value = '';
-  await markSeen(m);
+  // Replying is engaging with it. But if you deliberately put it back to
+  // unread, that decision stands until you act on it.
+  if (!m.readAt) await markSeen(m);
 };
 
 const send = async (m: Message) => {
@@ -70,7 +78,9 @@ const when = (iso: string) => {
         <h1>Inbox</h1>
         <p class="muted lede">
           What the staff have written to you. They write here when something is
-          yours to decide, or when they want to be checked.
+          yours to decide, or when they want to be checked. Unread ones are
+          marked <span class="new inline">New</span>, and you can put one back
+          to unread to keep it in front of you.
         </p>
       </div>
       <button v-if="unread.length" class="ghost" @click="readAll">
@@ -83,12 +93,13 @@ const when = (iso: string) => {
     </p>
 
     <article v-for="m in messages" :key="m.id" class="msg" :class="{ unread: !m.readAt }">
-      <header @click="markSeen(m)">
-        <span class="dot" />
+      <header>
         <span class="who">{{ nameOf(m.from) }}</span>
         <span class="role faint">{{ roleOf(m.from) }}</span>
-        <span v-if="m.broadcast" class="tag mono">everyone</span>
+        <span v-if="m.broadcast" class="to-all"
+              title="Sent to the whole company, not only to you.">to everyone</span>
         <span class="grow" />
+        <span v-if="!m.readAt" class="new">New</span>
         <span class="when faint mono">{{ when(m.sentAt) }}</span>
       </header>
       <div class="body" v-html="render(m.body)" />
@@ -100,7 +111,14 @@ const when = (iso: string) => {
           <button class="ghost" @click="replyTo = null">Cancel</button>
         </div>
       </div>
-      <button v-else class="ghost replybtn" @click="openReply(m)">Reply</button>
+      <div v-else class="actions">
+        <button class="ghost" @click="openReply(m)">Reply</button>
+        <!-- The state we WANT, not the state it is in. These were the wrong
+             way round, so the button labelled "Mark read" sent read:false. -->
+        <button class="ghost" @click="markSeen(m, !m.readAt)">
+          {{ m.readAt ? 'Mark unread' : 'Mark read' }}
+        </button>
+      </div>
     </article>
   </div>
 </template>
@@ -114,14 +132,17 @@ h1 { font-size: 30px; }
 .msg { border: 1px solid var(--line); border-left: 3px solid var(--line);
   border-radius: 6px; background: var(--panel); padding: 16px 20px; margin-bottom: 12px; }
 .msg.unread { border-left-color: var(--accent); }
-.msg > header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; cursor: pointer; }
-.dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex: none; align-self: center; }
-.msg.unread .dot { background: var(--accent); }
+.msg > header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
 .who { font-family: var(--serif); font-size: 16px; color: var(--ink); }
 .msg.unread .who { font-weight: 500; }
 .role { font-size: 12px; }
-.tag { font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
-  border: 1px solid var(--line-2); border-radius: 2px; padding: 1px 5px; color: var(--muted); }
+/* A label, not a control. It carries no border precisely so it stops looking
+   like something to press. */
+.to-all { font-size: 12px; font-style: italic; color: var(--faint); cursor: help; }
+.new { font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 9px; padding: 1px 8px; font-family: var(--sans); }
+.new.inline { display: inline-block; vertical-align: baseline; }
 .grow { flex: 1; }
 .when { font-size: 11px; }
 .body { font-size: 15px; }
@@ -130,5 +151,5 @@ h1 { font-size: 30px; }
   background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   border-radius: 5px; padding: 10px; resize: vertical; }
 .row { display: flex; gap: 8px; margin-top: 10px; }
-.replybtn { margin-top: 12px; }
+.actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>

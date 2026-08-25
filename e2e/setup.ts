@@ -57,6 +57,8 @@ export default async function globalSetup(): Promise<void> {
     + ' I would rather you heard it from me than found it in the log.');
   ledger.sendMessage(cfg.ceo.id, cfg.board[0]!.id,
     'Second report. **Nothing needs you yet** — this is so you can see it coming.');
+  // A broadcast, so the "to everyone" label exists to be mis-clicked.
+  ledger.sendMessage('fen', null, 'Posted to the whole company, not only the board.');
 
   // A draft waiting on the board, so the Envelope has something to render.
   const draftPath = 'staff/fen/drafts/2026-01-01-first-contact.md';

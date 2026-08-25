@@ -329,7 +329,10 @@ export class Ledger {
    *  failed tick does not silently swallow someone's message. */
   inbox(agentId: AgentId, markRead = false): Message[] {
     const rows = this.#db.prepare(
-      'SELECT * FROM messages WHERE to_agent=? AND read_at IS NULL ORDER BY sent_at'
+      // id breaks the tie: several messages can be written inside the same
+      // millisecond, and an ORDER BY that is not total reshuffles the list on
+      // every read.
+      'SELECT * FROM messages WHERE to_agent=? AND read_at IS NULL ORDER BY sent_at, id'
     ).all(agentId) as Row[];
 
     const msgs = rows.map((r) => ({
@@ -355,7 +358,7 @@ export class Ledger {
    */
   messagesFor(agentId: AgentId, limit = 200): Message[] {
     const rows = this.#db.prepare(
-      'SELECT * FROM messages WHERE to_agent=? ORDER BY sent_at DESC LIMIT ?'
+      'SELECT * FROM messages WHERE to_agent=? ORDER BY sent_at DESC, id DESC LIMIT ?'
     ).all(agentId, limit) as Row[];
     return rows.map((r) => ({
       id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']),
@@ -371,17 +374,26 @@ export class Ledger {
     return num(r['c']);
   }
 
-  /** Mark specific messages read, or everything addressed to someone. */
-  markRead(agentId: AgentId, ids?: string[]): number {
-    const now = this.#clock.iso();
+  /**
+   * Mark specific messages read, or everything addressed to someone.
+   *
+   * Reversible on purpose. Putting a message back to unread is how people
+   * keep something visible when they read it at a moment they cannot act on
+   * it, and a one-way "read" turns the inbox into a list you can only lose
+   * things from.
+   */
+  markRead(agentId: AgentId, ids?: string[], read = true): number {
+    const at = read ? this.#clock.iso() : null;
+    const cond = read ? 'read_at IS NULL' : 'read_at IS NOT NULL';
     if (ids?.length) {
-      const upd = this.#db.prepare('UPDATE messages SET read_at=? WHERE id=? AND to_agent=? AND read_at IS NULL');
+      const upd = this.#db.prepare(
+        `UPDATE messages SET read_at=? WHERE id=? AND to_agent=? AND ${cond}`);
       let n = 0;
-      for (const id of ids) n += upd.run(now, id, agentId).changes as number;
+      for (const id of ids) n += upd.run(at, id, agentId).changes as number;
       return n;
     }
-    const r = this.#db.prepare('UPDATE messages SET read_at=? WHERE to_agent=? AND read_at IS NULL')
-      .run(now, agentId);
+    const r = this.#db.prepare(`UPDATE messages SET read_at=? WHERE to_agent=? AND ${cond}`)
+      .run(at, agentId);
     return r.changes as number;
   }
 

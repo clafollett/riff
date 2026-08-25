@@ -276,7 +276,8 @@ const server = createServer(async (req, res) => {
         const b = await readBody(req);
         const me = cfg.board[0]?.id ?? 'board';
         const ids = Array.isArray(b['ids']) ? (b['ids'] as unknown[]).map(String) : undefined;
-        return json(res, { marked: ledger.markRead(me, ids) });
+        const read = b['read'] !== false;
+        return json(res, { marked: ledger.markRead(me, ids, read), read });
       }
 
       // Work in flight, and the two health checks that used to need a terminal.

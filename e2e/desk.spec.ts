@@ -232,27 +232,69 @@ test('mail addressed to the board is readable, and says so before you look', asy
   // Agents wrote to the chair from the first hour and the console had no
   // inbox at all — the message existed and the only way in was a SQL query.
   await expect(page).toHaveTitle(/^\(\d+\) The Desk$/);
-  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('2');
+  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('3');
 
   await go(page, 'Inbox');
-  await expect(page.locator('.msg')).toHaveCount(2);
-  await expect(page.locator('.msg.unread')).toHaveCount(2);
+  await expect(page.locator('.msg')).toHaveCount(3);
+  await expect(page.locator('.msg.unread')).toHaveCount(3);
   // The body renders as prose, not as raw markdown.
   await expect(page.locator('.msg .body h2').first()).toHaveText('The noise floor is real');
   await expect(page.locator('.msg .body strong').first()).toHaveText('Nothing needs you yet');
 });
 
-test('opening a message reads it, and the badge follows', async ({ page }) => {
+test('a message can be put back to unread, to keep it in front of you', async ({ page }) => {
+  // Reading something at a moment you cannot act on it should not lose it.
   await go(page, 'Inbox');
-  await page.locator('.msg').first().locator('header').click();
-  await expect(page.locator('.msg.unread')).toHaveCount(1);
-  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('1');
+  const m = page.locator('.msg').first();
+  await expect(m).toBeVisible();
+  await m.getByRole('button', { name: 'Mark read' }).click();
+  await expect(m).not.toHaveClass(/unread/);
+  await expect(m.locator('header .new')).toHaveCount(0);
+
+  await m.getByRole('button', { name: 'Mark unread' }).click();
+  await expect(m).toHaveClass(/unread/);
+  await expect(m.locator('header .new')).toHaveText('New');
+  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toBeVisible();
+});
+
+test('marking read is an explicit act, and nothing else does it by accident', async ({ page }) => {
+  await go(page, 'Inbox');
+  // count() does not auto-wait, and the messages arrive after the heading.
+  await expect(page.locator('.msg').first()).toBeVisible();
+  const before = await page.locator('.msg.unread').count();
+  expect(before).toBeGreaterThan(1);
+
+  // The broadcast label looks like a chip and is not a control. Clicking it
+  // used to silently mark the message read, which read as a toggle that had
+  // broken — the unread bar vanished and clicking again did nothing.
+  const broadcast = page.locator('.msg', { has: page.locator('.to-all') }).first();
+  await broadcast.locator('.to-all').click();
+  await expect(page.locator('.msg.unread')).toHaveCount(before);
+
+  // Neither does clicking the header, or the body.
+  await broadcast.locator('header').click();
+  await broadcast.locator('.body').click({ position: { x: 5, y: 5 } });
+  await expect(page.locator('.msg.unread')).toHaveCount(before);
+
+  // Unread says so in words, not only in a coloured edge.
+  await expect(broadcast.locator('header .new')).toHaveText('New');
+
+  // The explicit control is the only thing that does it.
+  await broadcast.getByRole('button', { name: 'Mark read' }).click();
+  await expect(page.locator('.msg.unread')).toHaveCount(before - 1);
+  await expect(broadcast.locator('header .new')).toHaveCount(0);
+  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill'))
+    .toHaveText(String(before - 1));
 
   await page.getByRole('button', { name: /Mark all read/ }).click();
   await expect(page.locator('.msg.unread')).toHaveCount(0);
   await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveCount(0);
-  // Nothing outstanding, so the tab stops shouting.
-  await expect(page).toHaveTitle('The Desk');
+
+  // The tab counts everything outstanding, and mail is no longer part of it.
+  // Approvals still are, and whether one is pending depends on which other
+  // tests have run — so assert against what the status bar actually says.
+  const waiting = Number(/(\d+) waiting on you/.exec(await page.locator('.status').innerText())?.[1] ?? '0');
+  await expect(page).toHaveTitle(waiting ? `(${waiting}) The Desk` : 'The Desk');
 });
 
 test('a reply reaches the person who wrote to you', async ({ page }) => {
