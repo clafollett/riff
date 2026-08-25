@@ -203,6 +203,20 @@ export class Ledger {
   }
 
   /**
+   * Decisions on this agent's own requests, most recent first.
+   *
+   * Without this an agent sees "something was rejected" in the event stream
+   * and never learns WHY — the reason sits in a column nothing renders. A
+   * review loop whose verdict never reaches the author is not a review loop.
+   */
+  decisionsFor(agentId: AgentId, limit = 5): Approval[] {
+    return (this.#db.prepare(
+      `SELECT * FROM approvals WHERE requested_by=? AND state IN ('approved','rejected')
+       ORDER BY decided_at DESC LIMIT ?`
+    ).all(agentId, limit) as Row[]).map((r) => this.#toApproval(r));
+  }
+
+  /**
    * Decide a pending approval. Returns false if it was already decided —
    * this is what makes approval exactly-once, so a draft cannot publish twice.
    */

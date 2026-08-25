@@ -53,6 +53,25 @@ try {
   db.prepare('UPDATE events SET actor=? WHERE actor=?').run(newId, oldId);
   db.prepare('UPDATE events SET subject=? WHERE subject=?').run(newId, oldId);
 
+  // Foreign keys are only half of it. The world keys folders by agent id, so
+  // every PATH holding `staff/<id>/` — inside approval payloads, targets, note
+  // index rows and event data — points at a folder that no longer exists once
+  // the directory moves. These live inside JSON blobs and free-text columns
+  // where no constraint can catch them, which is exactly why they rot quietly:
+  // an approval whose draftPath is stale looks fine until someone opens it.
+  if (oldId !== newId) {
+    const from = `staff/${oldId}/`, to = `staff/${newId}/`;
+    for (const [table, col] of [
+      ['approvals', 'payload_json'], ['approvals', 'target'],
+      ['events', 'data_json'], ['events', 'subject'],
+      ['notes_index', 'path'],
+    ] as const) {
+      db.prepare(
+        `UPDATE ${table} SET ${col} = replace(${col}, ?, ?) WHERE ${col} LIKE ?`
+      ).run(from, to, `%${from}%`);
+    }
+  }
+
   if (oldId !== newId) db.prepare('DELETE FROM agents WHERE id=?').run(oldId);
   db.exec('COMMIT');
 } catch (e) {

@@ -6,6 +6,7 @@ import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { createTools } from './tools.ts';
 import { makeCanUseTool } from './permissions.ts';
+import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
   agent: Agent;
@@ -39,7 +40,7 @@ export type TickResult = {
 };
 
 /**
- * The stable half of the context. Persona and House Rules do not change between
+ * The stable half of the context. Persona and the rules do not change between
  * ticks, so they sit in the system prompt where the cache can hold them; the
  * volatile half (mail, events, tasks) goes in the user prompt below the
  * cache boundary.
@@ -52,7 +53,7 @@ const buildSystemPrompt = (d: TickDeps): string => {
 
   // Hand them the roster up front. Left to work it out, a cold-started staff
   // member spends ten turns reading ten colleagues' briefs before doing
-  // anything — which is exactly how the Steward's first shift died at its
+  // anything — which is exactly how the first CEO shift died at its
   // turn cap having produced nothing. Stable between ticks, so it caches.
   const roster = ledger.listAgents()
     .filter((a) => a.id !== agent.id)
@@ -67,17 +68,8 @@ const buildSystemPrompt = (d: TickDeps): string => {
     '## Who you are',
     persona || '(No brief on file yet. Write one to your own persona.md.)',
     '',
-    '## The House Rules',
-    '1. Work well together.',
-    '2. Get work done however you see fit, so long as the Steward approves what needs approving.',
-    '3. You may take work all the way out into the real world, but it always lands as a draft.',
-    `   Nothing goes live without the Inn Keeper. Use draft_to_outside — there is no other door.`,
-    `4. Only ${r.treasurers.join(' and ')} may spend, up to $${(r.dailyCapCents / 100).toFixed(2)} a day.`,
-    `5. If the Inn Keeper is not around, do not stop. Keep the work moving.`,
-    '',
-    'These rules are enforced by the Inn itself, not by your good intentions.',
-    'If a tool tells you something is held for approval, it is queued — do not retry it.',
-    'Move on to other work and let the approval land.',
+    '## The Rules',
+    RULES_TEXT(r),
     '',
     '## Who else works here',
     roster || '(You are the only one here.)',
@@ -98,6 +90,22 @@ const buildSystemPrompt = (d: TickDeps): string => {
 const buildTickPrompt = (d: TickDeps): string => {
   const { agent, ledger, clock } = d;
   const parts: string[] = [`It is ${clock.now().toLocaleString()}. You have woken up.`];
+
+  // Decisions come FIRST. A rejection you have to go looking for is a
+  // rejection that changes nothing.
+  const decisions = ledger.decisionsFor(agent.id, 3);
+  if (decisions.length) {
+    parts.push('', '## Decisions on your requests');
+    for (const d of decisions) {
+      parts.push(
+        '',
+        `**${d.state.toUpperCase()}** — ${d.summary}`,
+        `Decided by ${d.decidedBy ?? 'unknown'}.`,
+        ...(d.decisionReason ? ['', d.decisionReason] : ['', '(no reason given)']),
+      );
+    }
+    parts.push('', 'Answer what you agree with by changing the work, and say plainly where you disagree.');
+  }
 
   // Mail is marked read here: it has been handed over, and re-delivering it
   // every tick would make the staff answer the same message forever.
