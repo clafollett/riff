@@ -32,3 +32,67 @@ export const HOUSES: Building[] = [
 ];
 
 export const houseById = (id: string): Building | undefined => HOUSES.find((h) => h.id === id);
+
+// ------------------------------------------------------------------- roads
+
+export type Roads = {
+  /** "x,y" of every road tile. */
+  tiles: string[];
+  /** Tiles that are plaza rather than road — rendered as flagstone. */
+  plaza: string[];
+};
+
+/**
+ * A real road network rather than spokes.
+ *
+ * Straight-line interpolation from the fountain to each door produces diagonal
+ * staircases, which is why the old paths looked jagged: a diagonal drawn on a
+ * tile grid is a stack of steps, and no amount of texture hides that.
+ *
+ * Instead: a plaza at the centre, two trunk roads crossing it, and an
+ * ORTHOGONAL branch from each door to the nearest trunk. Every segment is
+ * axis-aligned, so every edge is straight.
+ */
+export const buildRoads = (): Roads => {
+  const tiles = new Set<string>();
+  const plaza = new Set<string>();
+  const add = (x: number, y: number) => {
+    if (x >= 0 && y >= 0 && x < MAP_W && y < MAP_H) tiles.add(`${x},${y}`);
+  };
+
+  const f = FOUNTAIN;
+  const TRUNK = 3;                       // trunk roads are three tiles wide
+  const trunkTop = f.y - 1, trunkLeft = f.x - 1;
+
+  // the plaza
+  for (let dx = -3; dx <= 3; dx++) {
+    for (let dy = -3; dy <= 3; dy++) {
+      add(f.x + dx, f.y + dy);
+      plaza.add(`${f.x + dx},${f.y + dy}`);
+    }
+  }
+
+  // trunk roads: one east-west, one north-south, crossing at the plaza
+  for (let x = 0; x < MAP_W; x++) for (let i = 0; i < TRUNK; i++) add(x, trunkTop + i);
+  for (let y = 0; y < MAP_H; y++) for (let i = 0; i < TRUNK; i++) add(trunkLeft + i, y);
+
+  // an orthogonal branch from every door to whichever trunk is nearer
+  for (const h of HOUSES) {
+    const dx = h.doorX, dy = h.doorY;
+    const toH = Math.min(Math.abs(dy - trunkTop), Math.abs(dy - (trunkTop + TRUNK - 1)));
+    const toV = Math.min(Math.abs(dx - trunkLeft), Math.abs(dx - (trunkLeft + TRUNK - 1)));
+
+    if (toH <= toV) {
+      // walk vertically onto the east-west trunk
+      const target = dy < trunkTop ? trunkTop : trunkTop + TRUNK - 1;
+      const [a, b] = dy < target ? [dy, target] : [target, dy];
+      for (let y = a; y <= b; y++) { add(dx, y); add(dx + 1, y); }
+    } else {
+      const target = dx < trunkLeft ? trunkLeft : trunkLeft + TRUNK - 1;
+      const [a, b] = dx < target ? [dx, target] : [target, dx];
+      for (let x = a; x <= b; x++) { add(x, dy); add(x, dy + 1); }
+    }
+  }
+
+  return { tiles: [...tiles], plaza: [...plaza] };
+};

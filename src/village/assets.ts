@@ -32,7 +32,16 @@ export type AssetEntry = {
 
 export type AssetManifest = { version: 1; assets: Record<string, AssetEntry> };
 
-const ALLOWED = new Set(['.png', '.webp', '.jpg', '.jpeg']);
+/**
+ * SVG is allowed because the village authors its own art, and SVG is the one
+ * image format a language model can write directly.
+ *
+ * Safe because the renderer loads every asset through `new Image()` / <img>,
+ * which sandboxes SVG: no script execution, no external fetches, no access to
+ * the parent document. Inlining agent-authored SVG into the DOM would NOT be
+ * safe, so the renderer must never do that.
+ */
+const ALLOWED = new Set(['.png', '.webp', '.jpg', '.jpeg', '.svg']);
 const EMPTY: AssetManifest = { version: 1, assets: {} };
 
 export const assetsDir = (world: World): string => join(world.root, 'assets');
@@ -58,7 +67,7 @@ const writeManifest = (world: World, m: AssetManifest): void => {
 
 /** Structural key check. Staff choose these, so they are validated, not trusted. */
 export const isValidKey = (key: string): boolean =>
-  /^(house\/[a-z0-9-]+|staff\/[a-z0-9-]+\/(up|down|left|right)|prop\/[a-z0-9-]+|tile\/[a-z0-9-]+)$/.test(key);
+  /^(house\/[a-z0-9-]+|staff\/[a-z0-9-]+\/(up|down|left|right)|prop\/[a-z0-9-]+|tile\/[a-z0-9-]+|wall\/(h|v))$/.test(key);
 
 /**
  * Record a finished piece. The file must already sit inside assets/ — staff

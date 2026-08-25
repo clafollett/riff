@@ -92,36 +92,106 @@ function worldToScreen(tx, ty) {
   return { x: Math.round(tx * T() - state.camera.x), y: Math.round(ty * T() - state.camera.y) };
 }
 
-/** Precomputed once: which tiles are path, and where the scenery stands. */
-let pathSet = new Set();
+/**
+ * Terrain, walls and props, all precomputed once.
+ *
+ * Roads come from the server (an orthogonal network — see buildRoads), so the
+ * client never interpolates a diagonal. Everything else is placed from
+ * deterministic noise or from deliberate rules, so nothing shimmers between
+ * frames.
+ */
+let roadSet = new Set();
+let plazaSet = new Set();
+let wallSegs = [];      // {x, y, dir}
+let props = [];         // {x, y, key, yOff}
 let scenery = [];
+
+const key = (x, y) => `${x},${y}`;
+
+function occupiedByHouse(x, y, pad = 0) {
+  return state.houses.some((h) =>
+    x >= h.x - pad && x < h.x + h.w + pad && y >= h.y - pad && y < h.y + h.h + pad);
+}
+
 function buildTerrain() {
-  pathSet = new Set();
-  const f = state.map.fountain;
-  const mark = (x, y) => pathSet.add(`${x},${y}`);
+  roadSet = new Set(state.roads?.tiles ?? []);
+  plazaSet = new Set(state.roads?.plaza ?? []);
+
+  // ---- plot walls -------------------------------------------------------
+  // Each house sits in a walled plot. This is most of the structure in the
+  // scene: without enclosures the grounds read as buildings dropped on a lawn.
+  wallSegs = [];
   for (const h of state.houses) {
-    const steps = Math.max(Math.abs(h.doorX - f.x), Math.abs(h.doorY - f.y)) || 1;
-    for (let i = 0; i <= steps; i++) {
-      const x = Math.round(f.x + ((h.doorX - f.x) * i) / steps);
-      const y = Math.round(f.y + ((h.doorY - f.y) * i) / steps);
-      mark(x, y); mark(x + 1, y);     // two tiles wide, so it reads as a road
+    const x0 = h.x - 2, x1 = h.x + h.w + 1;
+    const y0 = h.y - 1, y1 = h.y + h.h + 2;
+    for (let x = x0; x <= x1; x++) {
+      for (const y of [y0, y1]) {
+        if (roadSet.has(key(x, y))) continue;                 // roads cut through
+        if (x === h.doorX || x === h.doorX + 1) continue;      // leave the gateway
+        wallSegs.push({ x, y, dir: 'h' });
+      }
+    }
+    for (let y = y0 + 1; y < y1; y++) {
+      for (const x of [x0, x1]) {
+        if (roadSet.has(key(x, y))) continue;
+        wallSegs.push({ x, y, dir: 'v' });
+      }
     }
   }
-  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) mark(f.x + dx, f.y + dy);
 
-  const occupied = (x, y) => {
-    if (pathSet.has(`${x},${y}`)) return true;
-    return state.houses.some((h) =>
-      x >= h.x - 1 && x < h.x + h.w + 1 && y >= h.y - 2 && y < h.y + h.h + 2);
+  // ---- deliberate props -------------------------------------------------
+  props = [];
+  const free = (x, y) => !roadSet.has(key(x, y)) && !occupiedByHouse(x, y, 1)
+    && x > 0 && y > 0 && x < state.map.w - 1 && y < state.map.h - 1;
+
+  const f = state.map.fountain;
+  // lamps down the trunk roads
+  for (let y = 2; y < state.map.h - 2; y += 7) {
+    props.push({ x: f.x + 3, y, kk: 'prop/lamp' });
+    props.push({ x: f.x - 3, y: y + 3, kk: 'prop/lamp' });
+  }
+  for (let x = 3; x < state.map.w - 3; x += 9) {
+    if (Math.abs(x - f.x) < 4) continue;
+    props.push({ x, y: f.y + 3, kk: 'prop/lamp' });
+  }
+  // benches and a well around the plaza
+  props.push({ x: f.x - 4, y: f.y - 1, kk: 'prop/bench' });
+  props.push({ x: f.x + 3, y: f.y + 1, kk: 'prop/bench' });
+  props.push({ x: f.x + 4, y: f.y - 3, kk: 'prop/well' });
+  props.push({ x: f.x - 5, y: f.y + 3, kk: 'prop/signpost' });
+
+  // each house gets fittings that suit the work done there
+  const byDept = {
+    product: ['prop/stall', 'prop/crates'], craft: ['prop/crates', 'prop/barrels'],
+    money: ['prop/crates'], household: ['prop/barrels', 'prop/cart'],
+    family: ['prop/laundry'], civic: ['prop/bench'], inbox: ['prop/cart'],
+    outreach: ['prop/bench'], research: ['prop/crates'], studio: ['prop/crates'],
+    analytics: ['prop/barrels'],
   };
+  for (const h of state.houses) {
+    const list = byDept[h.department] ?? ['prop/crates'];
+    list.forEach((kk, i) => {
+      const px = h.x + (i === 0 ? -1 : h.w);
+      const py = h.y + h.h + (i === 0 ? 0 : 1);
+      if (free(px, py)) props.push({ x: px, y: py, kk });
+    });
+    if (free(h.x + h.w, h.y + h.h)) props.push({ x: h.x + h.w, y: h.y + h.h, kk: 'prop/flowerbed' });
+  }
+
+  // ---- scattered foliage -------------------------------------------------
   scenery = [];
   for (let y = 0; y < state.map.h; y++) {
     for (let x = 0; x < state.map.w; x++) {
-      if (occupied(x, y)) continue;
+      if (!free(x, y)) continue;
+      if (wallSegs.some((w) => w.x === x && w.y === y)) continue;
       const n = noise(x, y, 7);
-      if (n > 0.955) scenery.push({ x, y, kind: 'tree', v: noise(x, y, 11) });
-      else if (n > 0.90) scenery.push({ x, y, kind: 'bush', v: noise(x, y, 13) });
-      else if (n > 0.84) scenery.push({ x, y, kind: 'flower', v: noise(x, y, 17) });
+      // denser at the edges of the map, so the village feels held by woodland
+      const edge = Math.min(x, y, state.map.w - 1 - x, state.map.h - 1 - y);
+      const bias = edge < 4 ? 0.18 : edge < 7 ? 0.07 : 0;
+      if (n + bias > 0.90) scenery.push({ x, y, kk: noise(x, y, 11) > 0.5 ? 'prop/pine' : `prop/tree-${(noise(x, y, 12) * 3) | 0}` });
+      else if (n + bias > 0.83) scenery.push({ x, y, kk: 'prop/bush' });
+      else if (n + bias > 0.79) scenery.push({ x, y, kk: 'prop/stump' });
+      else if (n > 0.74) scenery.push({ x, y, kk: 'flower' });
     }
   }
 }
@@ -136,29 +206,48 @@ function drawGround() {
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const p = worldToScreen(x, y);
-      const isPath = pathSet.has(`${x},${y}`);
       const n = noise(x, y, 3);
+      const road = roadSet.has(key(x, y));
 
-      if (isPath) {
-        ctx.fillStyle = n > 0.7 ? '#cdae76' : n > 0.35 ? '#c4a46c' : '#bb9b63';
-        ctx.fillRect(p.x, p.y, t, t);
-        // scattered pebbles
-        if (n > 0.86) {
-          ctx.fillStyle = 'rgba(150,125,85,.55)';
-          ctx.fillRect(p.x + (n * 20 | 0), p.y + (n * 17 | 0), 3, 2);
-        }
-      } else {
+      if (!road) {
         ctx.fillStyle = n > 0.78 ? '#5d9450' : n > 0.5 ? '#568b49' : n > 0.22 ? '#4f8344' : '#4a7d40';
         ctx.fillRect(p.x, p.y, t, t);
-        // grass blades
         const g = noise(x, y, 23);
-        if (g > 0.55) {
-          ctx.fillStyle = 'rgba(120,175,95,.5)';
-          const gx = p.x + ((g * 26) | 0), gy = p.y + ((g * 22) | 0);
-          ctx.fillRect(gx, gy, 2, 4);
-          ctx.fillRect(gx + 4, gy + 2, 2, 3);
+        if (g > 0.62) {
+          ctx.fillStyle = 'rgba(120,175,95,.45)';
+          ctx.fillRect(p.x + ((g * 24) | 0), p.y + ((g * 20) | 0), 3, 5);
         }
+        continue;
       }
+
+      const plaza = plazaSet.has(key(x, y));
+      if (plaza) {
+        // flagstone
+        ctx.fillStyle = n > 0.5 ? '#9a958c' : '#928d84';
+        ctx.fillRect(p.x, p.y, t, t);
+        ctx.fillStyle = 'rgba(0,0,0,.12)';
+        ctx.fillRect(p.x, p.y + t - 2, t, 2);
+        ctx.fillRect(p.x + t - 2, p.y, 2, t);
+      } else {
+        ctx.fillStyle = n > 0.72 ? '#cdae76' : n > 0.4 ? '#c4a46c' : '#bb9b63';
+        ctx.fillRect(p.x, p.y, t, t);
+        if (n > 0.88) { ctx.fillStyle = 'rgba(150,125,85,.5)'; ctx.fillRect(p.x + ((n * 18) | 0), p.y + ((n * 15) | 0), 4, 3); }
+      }
+
+      // AUTOTILE: wear the edge wherever a road tile meets grass. This is what
+      // makes a road read as a road rather than a block of tan tiles.
+      const N = roadSet.has(key(x, y - 1)), S = roadSet.has(key(x, y + 1));
+      const W = roadSet.has(key(x - 1, y)), E = roadSet.has(key(x + 1, y));
+      ctx.fillStyle = 'rgba(92,74,48,.34)';
+      if (!N) ctx.fillRect(p.x, p.y, t, 3);
+      if (!S) ctx.fillRect(p.x, p.y + t - 3, t, 3);
+      if (!W) ctx.fillRect(p.x, p.y, 3, t);
+      if (!E) ctx.fillRect(p.x + t - 3, p.y, 3, t);
+      ctx.fillStyle = 'rgba(122,150,86,.30)';
+      if (!N) ctx.fillRect(p.x, p.y - 2, t, 3);
+      if (!S) ctx.fillRect(p.x, p.y + t - 1, t, 3);
+      if (!W) ctx.fillRect(p.x - 2, p.y, 3, t);
+      if (!E) ctx.fillRect(p.x + t - 1, p.y, 3, t);
     }
   }
   drawFountain();
@@ -168,65 +257,78 @@ function drawFountain() {
   const t = T(), f = state.map.fountain;
   const p = worldToScreen(f.x - 1, f.y - 1);
   const size = t * 3;
-  // stone rim with a bevel
-  ctx.fillStyle = '#9a968f'; ctx.fillRect(p.x, p.y, size, size);
-  ctx.fillStyle = '#b4b0a8'; ctx.fillRect(p.x, p.y, size, 5);
-  ctx.fillStyle = '#7d7a74'; ctx.fillRect(p.x, p.y + size - 6, size, 6);
-  ctx.fillStyle = '#6f6c66'; ctx.fillRect(p.x + 6, p.y + 6, size - 12, size - 12);
-
   const cx = p.x + size / 2, cy = p.y + size / 2;
-  const wob = Math.sin(Date.now() / 620) * 1.5;
+
+  // stone basin, stepped so it reads as masonry rather than a grey square
+  ctx.fillStyle = 'rgba(0,0,0,.22)';
+  ctx.fillRect(p.x + 4, p.y + 6, size, size);
+  ctx.fillStyle = '#8d8880'; ctx.fillRect(p.x, p.y, size, size);
+  ctx.fillStyle = '#a9a49b'; ctx.fillRect(p.x, p.y, size, 6);
+  ctx.fillStyle = '#7c766b'; ctx.fillRect(p.x, p.y + size - 7, size, 7);
+  ctx.fillStyle = '#6d675e'; ctx.fillRect(p.x + 8, p.y + 8, size - 16, size - 16);
+
+  // water, with a slow swell
+  const wob = Math.sin(Date.now() / 640) * 1.6;
   ctx.fillStyle = '#3f86bd';
-  ctx.beginPath(); ctx.arc(cx, cy, size * 0.31, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(p.x + 12, p.y + 12, size - 24, size - 24);
   ctx.fillStyle = '#5aa6dd';
-  ctx.beginPath(); ctx.arc(cx, cy - 1, size * 0.31 - 4 + wob, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(230,245,255,.75)';
-  ctx.beginPath(); ctx.arc(cx - 4, cy - 5, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(p.x + 14, p.y + 14 + wob, size - 28, size - 30);
+  ctx.fillStyle = 'rgba(230,245,255,.5)';
+  ctx.fillRect(p.x + 18, p.y + 18 + wob, 10, 4);
+
+  // spout
   ctx.fillStyle = '#cfcac0';
-  ctx.fillRect(cx - 3, cy - 14, 6, 14);
+  ctx.fillRect(cx - 4, cy - 18, 8, 18);
+  ctx.fillRect(cx - 8, cy - 22, 16, 5);
+  ctx.fillStyle = 'rgba(210,235,255,.7)';
+  ctx.fillRect(cx - 2, cy - 14, 4, 12 + wob);
+}
+
+function drawWalls() {
+  const t = T();
+  for (const w of wallSegs) {
+    const p = worldToScreen(w.x, w.y);
+    if (p.x < -t || p.y < -t || p.x > canvas.width || p.y > canvas.height) continue;
+    const img = art(w.dir === 'h' ? 'wall/h' : 'wall/v');
+    if (img) {
+      ctx.drawImage(img, p.x, p.y + (w.dir === 'h' ? t - 14 : 0), w.dir === 'h' ? t : 12, w.dir === 'h' ? 12 : t);
+    } else {
+      ctx.fillStyle = '#7c766b';
+      if (w.dir === 'h') ctx.fillRect(p.x, p.y + t - 12, t, 10);
+      else ctx.fillRect(p.x, p.y, 10, t);
+    }
+  }
+}
+
+function drawProp(x, y, kk) {
+  const t = T();
+  const p = worldToScreen(x, y);
+  if (p.x < -80 || p.y < -80 || p.x > canvas.width + 80 || p.y > canvas.height + 80) return;
+
+  if (kk === 'flower') {
+    const petals = ['#e8d24a', '#e07a9a', '#d8d8e8', '#e29a4a'];
+    ctx.fillStyle = petals[(noise(x, y, 17) * petals.length) | 0];
+    for (let i = 0; i < 3; i++) {
+      const fx = p.x + 4 + ((noise(x, y, 40 + i) * 22) | 0);
+      const fy = p.y + 6 + ((noise(x, y, 60 + i) * 18) | 0);
+      ctx.fillRect(fx, fy, 3, 3);
+    }
+    return;
+  }
+
+  const img = art(kk);
+  if (!img) return;
+  const w = img.naturalWidth, h = img.naturalHeight;
+  // anchored at the bottom of the tile so props sit ON the ground
+  ctx.drawImage(img, p.x + (t - w) / 2, p.y + t - h + 6, w, h);
 }
 
 function drawScenery() {
-  const t = T();
-  for (const s of scenery) {
-    const p = worldToScreen(s.x, s.y);
-    if (p.x < -t * 2 || p.y < -t * 2 || p.x > canvas.width + t || p.y > canvas.height + t) continue;
-    const cx = p.x + t / 2, cy = p.y + t / 2;
+  for (const s of scenery) drawProp(s.x, s.y, s.kk);
+}
 
-    if (s.kind === 'tree') {
-      ctx.fillStyle = 'rgba(0,0,0,.22)';
-      ctx.beginPath(); ctx.ellipse(cx + 3, cy + 12, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#5b3b22'; ctx.fillRect(cx - 3, cy - 2, 6, 15);
-      const dark = s.v > 0.5 ? '#2f6b33' : '#35773a';
-      const lite = s.v > 0.5 ? '#478f45' : '#4f9b4c';
-      ctx.fillStyle = dark;
-      ctx.beginPath(); ctx.arc(cx, cy - 10, 14, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx - 9, cy - 4, 10, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx + 9, cy - 4, 10, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = lite;
-      ctx.beginPath(); ctx.arc(cx - 4, cy - 14, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx + 6, cy - 11, 7, 0, Math.PI * 2); ctx.fill();
-    } else if (s.kind === 'bush') {
-      ctx.fillStyle = 'rgba(0,0,0,.18)';
-      ctx.beginPath(); ctx.ellipse(cx + 2, cy + 7, 9, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#3d7a3c';
-      ctx.beginPath(); ctx.arc(cx - 5, cy + 1, 7, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx + 5, cy + 1, 7, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx, cy - 4, 8, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#4d9149';
-      ctx.beginPath(); ctx.arc(cx - 2, cy - 6, 5, 0, Math.PI * 2); ctx.fill();
-    } else {
-      const petals = ['#e8d24a', '#e07a9a', '#d8d8e8', '#e29a4a'];
-      ctx.fillStyle = petals[(s.v * petals.length) | 0];
-      for (let i = 0; i < 3; i++) {
-        const fx = cx - 8 + ((noise(s.x, s.y, 40 + i) * 18) | 0);
-        const fy = cy - 6 + ((noise(s.x, s.y, 60 + i) * 14) | 0);
-        ctx.fillRect(fx, fy, 3, 3);
-        ctx.fillStyle = 'rgba(90,150,80,.85)'; ctx.fillRect(fx + 1, fy + 3, 1, 3);
-        ctx.fillStyle = petals[(s.v * petals.length) | 0];
-      }
-    }
-  }
+function drawProps() {
+  for (const p of props) drawProp(p.x, p.y, p.kk);
 }
 
 function drawHouses() {
@@ -453,6 +555,8 @@ function render() {
   ctx.fillStyle = '#3f6b38';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawGround();
+  drawWalls();
+  drawProps();
   drawScenery();
   drawHouses();
 
@@ -683,6 +787,7 @@ async function refreshPanels() {
 async function boot() {
   const st = await fetch('/api/state').then((r) => r.json());
   state.map = st.map; state.houses = st.houses; state.staff = st.staff;
+  state.roads = st.roads ?? { tiles: [], plaza: [] };
   state.me = st.inn.rules.innkeeper;
   for (const p of st.positions) state.positions.set(p.agentId, { x: p.x, y: p.y, activity: p.activity });
   $('n-spend').textContent = '$0.00';

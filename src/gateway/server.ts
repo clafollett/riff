@@ -8,7 +8,7 @@ import { systemClock } from '../core/clock.ts';
 import { computeMorale } from './morale.ts';
 import { openTheInn } from '../village/open.ts';
 import { readManifest, assetsDir } from '../village/assets.ts';
-import { HOUSES, MAP_W, MAP_H, TILE, FOUNTAIN } from '../village/map.ts';
+import { HOUSES, MAP_W, MAP_H, TILE, FOUNTAIN, buildRoads } from '../village/map.ts';
 import type { Event } from '../core/types.ts';
 
 import { resolveConfig } from '../core/config.ts';
@@ -16,6 +16,8 @@ import { resolveConfig } from '../core/config.ts';
 const PORT = Number(process.env['PORT'] ?? 4173);
 const cfg = resolveConfig();
 const CLIENT_DIR = resolve('client');
+// Computed once: the road network is a pure function of the map.
+const ROADS = buildRoads();
 
 const clock = systemClock;
 // Bootstrap on first boot: a fresh clone on any machine becomes a working
@@ -123,6 +125,7 @@ const server = createServer(async (req, res) => {
     if (p === '/api/state' && method === 'GET') {
       return json(res, {
         map: { w: MAP_W, h: MAP_H, tile: TILE, fountain: FOUNTAIN },
+        roads: ROADS,
         houses: HOUSES,
         staff: ledger.listAgents(),
         positions: ledger.listPositions(),
