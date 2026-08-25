@@ -45,6 +45,38 @@ export type TickResult = {
  * volatile half (mail, events, tasks) goes in the user prompt below the
  * cache boundary.
  */
+/**
+ * Whether anything this company writes can actually reach anyone.
+ *
+ * This exists because it went wrong. Two posts were approved to go out, the
+ * approval was recorded, and nothing sent them anywhere — so the company
+ * believed it had published, and wrote a first-contact letter telling a
+ * stranger its instrument and corrections were public. They were in a private
+ * repo on one machine. The board caught it at the last gate, which is one gate
+ * too late: nobody in the company had any way to know.
+ *
+ * An approval means releasable. It does not mean released.
+ */
+const outwardState = (d: TickDeps): string => {
+  const channels = Object.keys(d.connectors ?? {});
+  if (channels.length) {
+    return [
+      `Connected channels: ${channels.join(', ')}. Approved work can reach them.`,
+      'Everything still lands as a draft first — approval is what releases it.',
+    ].join('\n');
+  }
+  return [
+    'There is no connected channel. Nothing this company writes reaches anyone',
+    'outside it, and nothing it has written has ever been published.',
+    '',
+    'An approved draft is APPROVED, not SENT. It sits in your drafts folder.',
+    'Do not describe any of our work as public, published, or citable, and do',
+    'not promise an outsider that they can check something. They cannot.',
+    'If publishing matters to what you are doing, say so — deciding where this',
+    'company publishes is a decision the board has to make, and it has not.',
+  ].join('\n');
+};
+
 const buildSystemPrompt = (d: TickDeps): string => {
   const { agent, world, gate, ledger } = d;
   const r = gate.constitution;
@@ -78,11 +110,14 @@ const buildSystemPrompt = (d: TickDeps): string => {
     memory || '(Nothing yet. As you learn things worth keeping, use `remember`.)',
     '',
     '## How to work',
-    '- Your quarters are staff/' + agent.id + '/. Write freely there.',
-    '- commons/ is shared ground. It has no fixed format — if the Inn needs something',
-    '  that does not exist yet, invent it there.',
+    '- Your own files are staff/' + agent.id + '/. Write freely there.',
+    '- commons/ is shared ground. It has no fixed format — if the company needs',
+    '  something that does not exist yet, invent it there.',
     "- You may read colleagues' briefs and memory. They can see that you did.",
     '- Prefer finishing one real thing over starting three.',
+    '',
+    '## What the outside world can and cannot see',
+    outwardState(d),
   ].filter(Boolean).join('\n');
 };
 

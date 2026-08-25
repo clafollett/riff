@@ -201,7 +201,7 @@ export class Scheduler {
 
       // Approved work is applied by the Inn, never by the requester — so a
       // staff member cannot enact its own escalation.
-      applyApproved(this.#d.ledger, this.#d.world, this.#d.clock);
+      applyApproved(this.#d.ledger, this.#d.world, this.#d.clock, Object.keys(this.#d.connectors ?? {}));
 
       await sleep(2_000, this.#abort.signal);
     }

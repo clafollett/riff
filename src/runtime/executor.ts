@@ -7,14 +7,16 @@ import type { Clock } from '../core/clock.ts';
  * Applies approvals that have been said yes to.
  *
  * Deliberately separate from the staff member who asked. An escalation is
- * enacted by the Inn, after a decision, by code that never ran inside the
+ * enacted by the company, after a decision, by code that never ran inside the
  * requester's session — so "get it approved" and "do it" cannot collapse into
  * one step that an agent could drive on its own.
  *
  * Idempotent: each approval is stamped applied in the event log, and already
  * applied ones are skipped.
  */
-export const applyApproved = (ledger: Ledger, world: World, clock: Clock): number => {
+export const applyApproved = (
+  ledger: Ledger, world: World, clock: Clock, connectors: string[] = [],
+): number => {
   const approved = ledger.listApprovals('approved');
   let applied = 0;
 
@@ -44,13 +46,19 @@ export const applyApproved = (ledger: Ledger, world: World, clock: Clock): numbe
         }
 
         case 'external.write': {
-          // Rule 3's landing point. Approval marks the draft releasable; the
-          // connector that actually sends it reads from here. Until one is
-          // wired up, an approved draft is exactly that — approved, and still
-          // sitting in the staff member's drafts folder.
+          // Rule 3's landing point. Approval marks the draft RELEASABLE. The
+          // connector that would actually send it reads from here — and when
+          // none is wired, nothing sends it and the draft stays where it is.
+          //
+          // The event says which of those happened, because the difference is
+          // invisible from inside a session and the company once wrote to a
+          // stranger claiming work was public on the strength of an approval.
           const p = JSON.parse(ap.payloadJson ?? '{}') as { channel?: string; draftPath?: string };
-          ledger.emit('inn', 'external.released', ap.requestedBy, {
+          const wired = p.channel != null && connectors.includes(p.channel);
+          ledger.emit('company', 'external.released', ap.requestedBy, {
             channel: p.channel, draftPath: p.draftPath, approvalId: ap.id,
+            delivered: wired,
+            ...(wired ? {} : { note: 'approved, not sent — no channel is connected' }),
           });
           applied++;
           break;
@@ -64,7 +72,7 @@ export const applyApproved = (ledger: Ledger, world: World, clock: Clock): numbe
               purpose: `[approved exception] ${ap.summary}`,
               capCents: Number.MAX_SAFE_INTEGER, approvalId: ap.id,
             });
-            ledger.emit('inn', 'spend.exception', ap.requestedBy, {
+            ledger.emit('company', 'spend.exception', ap.requestedBy, {
               amountCents: ap.amountCents, approvalId: ap.id,
             });
             applied++;
@@ -73,11 +81,11 @@ export const applyApproved = (ledger: Ledger, world: World, clock: Clock): numbe
         }
 
         default:
-          ledger.emit('inn', 'approval.applied_noop', ap.id, { capability: ap.capability });
+          ledger.emit('company', 'approval.applied_noop', ap.id, { capability: ap.capability });
       }
       ledger.setMeta(`applied:${ap.id}`, clock.iso());
     } catch (err) {
-      ledger.emit('inn', 'approval.apply_failed', ap.id, {
+      ledger.emit('company', 'approval.apply_failed', ap.id, {
         error: err instanceof Error ? err.message : String(err),
       });
       ledger.setMeta(`applied:${ap.id}`, `failed:${clock.iso()}`);
