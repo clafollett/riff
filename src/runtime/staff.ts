@@ -34,7 +34,7 @@ export type TickResult = {
   costUsd: number;
   turns: number;
   /** Subscription rate-limit state, when the run reported any. On a Claude
-   *  subscription this — not dollars — is what actually governs the village. */
+   *  subscription this — not dollars — is what actually governs the company. */
   rateLimit?: SDKRateLimitInfo;
   error?: string;
 };
@@ -174,7 +174,7 @@ const buildTickPrompt = (d: TickDeps): string => {
     ));
   }
 
-  parts.push('', 'Do what the Inn needs from you now. Be concrete and finish something.');
+  parts.push('', 'Do what the company needs from you now. Be concrete and finish something.');
   return parts.join('\n');
 };
 

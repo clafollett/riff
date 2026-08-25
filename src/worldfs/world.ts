@@ -8,7 +8,7 @@ import type { AgentId } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
 
 /**
- * world/ — the staff-authored half of the Inn.
+ * world/ — the staff-authored half of a company.
  *
  *   world/
  *     house-rules.md            the five rules, readable by everyone
@@ -101,7 +101,7 @@ export class World {
    * with a `---` block. Without this, their fence and ours stack, the parser
    * reads only the first, and the second becomes prose in the middle of the
    * page. Their keys fill gaps; ours win on conflict, since ours are the ones
-   * the Inn relies on.
+   * the company relies on.
    */
   writeDoc(rel: string, doc: Doc): void {
     const abs = this.path(rel);

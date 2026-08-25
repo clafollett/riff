@@ -14,7 +14,7 @@ let world: World;
 const clock = fixedClock('2026-08-24T14:30:00.000Z');
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'inn-'));
+  dir = mkdtempSync(join(tmpdir(), 'helmsted-'));
   world = new World(join(dir, 'world'), clock);
   world.ensure();
 });
@@ -47,7 +47,7 @@ describe('path containment — staff choose these strings, so this is a trust bo
   });
 });
 
-describe('frontmatter is total — a fumbled brief must not take the village down', () => {
+describe('frontmatter is total — a fumbled brief must not take the company down', () => {
   test('round-trips scalars, arrays and booleans', () => {
     const doc = { data: { author: 'greg', count: 42, active: true, tags: ['etsy', 'listings'] }, body: '# Hello\n' };
     const back = parse(stringify(doc));
@@ -183,10 +183,10 @@ describe('documents the staff wrote themselves', () => {
 
   test('our keys win on conflict', () => {
     world.writeDoc('commons/clash.md', {
-      data: { author: 'the-inn' },
+      data: { author: 'the-company' },
       body: '---\nauthor: someone-else\n---\ntext\n',
     });
-    assert.equal(world.readDoc('commons/clash.md')!.data['author'], 'the-inn');
+    assert.equal(world.readDoc('commons/clash.md')!.data['author'], 'the-company');
   });
 
   test('a body with no frontmatter is untouched', () => {

@@ -263,3 +263,38 @@ describe('naming a company when several exist', () => {
     assert.equal(r['named'], 'Beta Works');
   });
 });
+
+describe('opening a company is not something that happened to it', () => {
+  test('open and close leaves no trace in the log; a real pause still does', () => {
+    // `stop` announced itself unconditionally, so every restart of the server
+    // appended a `work.paused` describing nothing. An append-only log is only
+    // worth reading if everything in it is an event.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Quiet Co', business: 'x', ceo: 'Quill', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      const mark = a.company.ledger.latestSeq();
+      await r.close('quiet-co');
+
+      const kinds = [];
+      for (let i = 0; i < 3; i++) {
+        const again = new Registry(systemClock);
+        const c = again.get('quiet-co');
+        kinds.push(...c.ledger.eventsSince(mark).map((e) => e.kind));
+        await again.close('quiet-co');
+      }
+
+      const last = new Registry(systemClock);
+      await last.setRunning('quiet-co', true);
+      await last.setRunning('quiet-co', false);
+      const real = last.get('quiet-co').ledger.eventsSince(mark).map((e) => e.kind);
+      console.log(JSON.stringify({ onOpen: kinds, real }));
+    `);
+    const r = JSON.parse(out) as { onOpen: string[]; real: string[] };
+    assert.deepEqual(r.onOpen, [], 'opening a paused company must write nothing');
+    assert.ok(r.real.includes('work.started'), 'starting is still recorded');
+    assert.ok(r.real.includes('work.paused'), 'pausing something that was running is still recorded');
+  });
+});

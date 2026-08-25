@@ -1,4 +1,4 @@
-/** Injectable time. Tests freeze it; the Inn runs on the real one. */
+/** Injectable time. Tests freeze it; a running company uses the real one. */
 export type Clock = {
   now(): Date;
   iso(): string;

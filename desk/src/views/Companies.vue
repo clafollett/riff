@@ -73,6 +73,41 @@ const archive = (c: CompanyRef) => run(async () => {
 // every tool that moves a repository asks for, and for the same reason.
 const armed = computed(() =>
   mode.value?.kind === 'archive' && confirmName.value.trim() === mode.value.c.name);
+
+/**
+ * Export is a plain navigation rather than fetch-then-blob: the server already
+ * sets the filename in Content-Disposition, and letting the browser stream it
+ * to disk keeps a company's whole git history out of a JavaScript string.
+ */
+const exportCompany = (c: CompanyRef) => {
+  window.location.href = `/api/companies/${encodeURIComponent(c.slug)}/export`;
+};
+
+const file = ref<HTMLInputElement | null>(null);
+const importing = ref(false);
+const imported = ref('');
+
+const chooseFile = () => { err.value = ''; imported.value = ''; file.value?.click(); };
+
+const receive = async (e: Event) => {
+  const input = e.target as HTMLInputElement;
+  const f = input.files?.[0];
+  if (!f) return;
+  importing.value = true;
+  err.value = ''; imported.value = '';
+  try {
+    const r = await api.importCompany(f);
+    imported.value = r.renamed
+      ? `${r.manifest.name} arrived as “${r.slug}” — a company already had its old folder name.`
+      : `${r.manifest.name} arrived, paused. Start it when you are ready.`;
+    emit('changed');
+  } catch (e2) {
+    err.value = (e2 as Error).message;
+  } finally {
+    importing.value = false;
+    input.value = '';   // so choosing the same file twice fires again
+  }
+};
 </script>
 
 <template>
@@ -86,8 +121,18 @@ const armed = computed(() =>
           be working at the same time.
         </p>
       </div>
-      <button class="go" @click="openFound">Found a company</button>
+      <div class="headtools">
+        <button class="ghost" :disabled="importing" @click="chooseFile">
+          {{ importing ? 'Importing…' : 'Import' }}
+        </button>
+        <button class="go" @click="openFound">Found a company</button>
+      </div>
+      <input ref="file" type="file" accept=".gz,.tgz,application/gzip"
+             class="hidden" aria-label="Company export file" @change="receive" />
     </header>
+
+    <p v-if="imported" class="landed">{{ imported }}</p>
+    <p v-if="err && !mode" class="oops">{{ err }}</p>
 
     <div v-for="c in list" :key="c.slug" class="card" :class="{ on: c.slug === active }">
       <button class="pick" @click="emit('switch', c.slug)">
@@ -107,6 +152,10 @@ const armed = computed(() =>
           {{ c.running ? 'Pause' : 'Start' }}
         </button>
         <button class="ghost" @click="openRename(c)">Rename</button>
+        <button class="ghost" :disabled="busy" @click="exportCompany(c)"
+                title="Download the whole company — ledger, world and git history — as one file.">
+          Export
+        </button>
         <button class="ghost danger" @click="openArchive(c)">Archive</button>
       </div>
     </div>
@@ -179,6 +228,12 @@ const armed = computed(() =>
 h1 { font-size: 30px; }
 .lede { margin: 6px 0 26px; font-size: 14px; max-width: 58ch; }
 .empty { font-size: 15px; margin-top: 20px; }
+.headtools { display: flex; gap: 8px; align-items: flex-start; }
+.hidden { display: none; }
+.landed { margin: 0 0 14px; padding: 9px 12px; border-radius: 5px; font-size: 13px;
+  background: #14200f; border: 1px solid #2c4022; color: var(--ink); }
+.oops { margin: 0 0 14px; padding: 9px 12px; border-radius: 5px; font-size: 13px;
+  background: #24110f; border: 1px solid var(--alert); color: var(--ink); }
 .card { display: flex; align-items: stretch; border: 1px solid var(--line);
   border-radius: 6px; background: var(--panel); margin-bottom: 8px; overflow: hidden; }
 .card.on { border-color: var(--accent); }

@@ -2,7 +2,7 @@
  * A deliberately small frontmatter reader.
  *
  * These files are written BY the staff, so parsing has to be total: a director
- * fumbling its YAML must not crash the indexer and take the village down.
+ * fumbling its YAML must not crash the indexer and take the company down.
  * Reading therefore never throws — anything it cannot confidently interpret
  * stays a string. Writing is strict, because that side we control.
  *

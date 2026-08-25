@@ -4,7 +4,11 @@ import {
   guessKeeperName, listCompanies, migrateLegacyLayout, resolveSlug,
 } from '../core/config.ts';
 import { Registry, type Company } from '../company/registry.ts';
+import { exportCompany, exportName, importCompany } from '../company/transfer.ts';
+import { isOperatorError, installRoot } from '../core/config.ts';
 import { readFile } from 'node:fs/promises';
+import { createReadStream, createWriteStream, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { extname, join, resolve, sep } from 'node:path';
 
 const PORT = Number(process.env['PORT'] ?? 4173);
@@ -55,6 +59,32 @@ const json = (res: ServerResponse, body: unknown, status = 200): void => {
   const s = JSON.stringify(body);
   res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(s) });
   res.end(s);
+};
+
+/** An upload of at most this. A company is megabytes; a mistake is gigabytes. */
+const MAX_UPLOAD = 512 * 1024 * 1024;
+
+/**
+ * Spool a raw request body to a file.
+ *
+ * An exported company carries its whole git history, so this is tens of
+ * megabytes on a good day. Buffering that in memory to write it straight back
+ * out helps nobody.
+ */
+const spool = async (req: IncomingMessage, to: string): Promise<number> => {
+  let size = 0;
+  const out = createWriteStream(to);
+  await pipeline(
+    (async function* () {
+      for await (const c of req) {
+        size += (c as Buffer).length;
+        if (size > MAX_UPLOAD) throw new Error('upload too large');
+        yield c as Buffer;
+      }
+    })(),
+    out,
+  );
+  return size;
 };
 
 const readBody = async (req: IncomingMessage): Promise<Record<string, unknown>> => {
@@ -129,6 +159,67 @@ const server = createServer(async (req, res) => {
         ceo: r.company.cfg.ceo,
         running: true,
       }, 201);
+    }
+
+    /*
+     * Carrying a company off this machine and back onto another.
+     *
+     * The export is a snapshot taken while the company may still be working —
+     * the ledger copy is consistent because VACUUM INTO makes it so, but a
+     * file a staff member is halfway through writing is caught halfway. Pause
+     * first if that matters.
+     */
+    if (p.startsWith('/api/companies/') && p.endsWith('/export') && method === 'GET') {
+      const target = p.slice('/api/companies/'.length, -'/export'.length);
+      const dir = join(installRoot(), '.transfer');
+      mkdirSync(dir, { recursive: true });
+      const work = mkdtempSync(join(dir, 'download-'));
+      const file = join(work, exportName(target));
+      try {
+        exportCompany(target, file);
+        res.writeHead(200, {
+          'content-type': 'application/gzip',
+          'content-length': String(statSync(file).size),
+          'content-disposition': `attachment; filename="${exportName(target)}"`,
+        });
+        await pipeline(createReadStream(file), res);
+      } catch (e) {
+        if (!res.headersSent) {
+          const known = isOperatorError(e);
+          return json(res, { error: known ? (e as Error).message : 'export failed' }, known ? 404 : 500);
+        }
+        res.destroy();
+      } finally {
+        rmSync(work, { recursive: true, force: true });
+      }
+      return;
+    }
+
+    /*
+     * The other direction. The body is the archive itself rather than a
+     * multipart form: there is exactly one file, and parsing multipart to
+     * discover that would be work for its own sake.
+     */
+    if (p === '/api/companies/import' && method === 'POST') {
+      const dir = join(installRoot(), '.transfer');
+      mkdirSync(dir, { recursive: true });
+      const work = mkdtempSync(join(dir, 'upload-'));
+      const file = join(work, 'incoming.tar.gz');
+      try {
+        const size = await spool(req, file);
+        if (!size) return json(res, { error: 'nothing was uploaded' }, 400);
+        const name = url.searchParams.get('name')?.trim();
+        const landed = importCompany(file, { ...(name ? { name } : {}) });
+        return json(res, {
+          slug: landed.slug, renamed: landed.renamed, manifest: landed.manifest,
+        }, 201);
+      } catch (e) {
+        const known = isOperatorError(e);
+        return json(res, { error: known ? (e as Error).message : String((e as Error).message ?? e) },
+          known ? 422 : 500);
+      } finally {
+        rmSync(work, { recursive: true, force: true });
+      }
     }
 
     // Start or pause a company without switching to it, so the operator can

@@ -1,5 +1,0 @@
-{
-  "_comment": "Optional. Drop this in as inn.config.json to point the Inn somewhere else — useful for running a throwaway village while developing. Env vars INN_HOME / INN_WORLD / INN_LEDGER override it.",
-  "version": 1,
-  "home": "./var/dev-inn"
-}

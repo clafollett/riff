@@ -513,21 +513,76 @@ test.describe('many companies, one console', () => {
     await expect(page.locator('.doc')).toHaveCount(0);
   });
 
-  test('archiving asks for the name, then removes it from the list', async ({ page }) => {
+  test('a company can be carried out as one file and back in', async ({ page }) => {
+    // Sending a company to someone else was a folder-copy and a conversation
+    // about which absolute paths to fix by hand.
     await page.locator('.switcher').click();
     await page.getByRole('button', { name: 'Manage companies…' }).click();
+    await expect(page.getByRole('heading', { name: 'Companies' })).toBeVisible();
+    const card = page.locator('.card').first();
+    const name = await card.locator('.name').innerText();
+    // The copy keeps its old display name, so the slug is the only thing that
+    // tells the two apart on screen.
+    const slug = (await card.locator('.meta').innerText()).split('·').pop()!.trim();
 
-    await page.locator('.card', { hasText: 'Kestrel' }).getByRole('button', { name: 'Archive' }).click();
-    const confirm = page.getByRole('button', { name: 'Archive it' });
+    const download = await Promise.all([
+      page.waitForEvent('download'),
+      card.getByRole('button', { name: 'Export' }).click(),
+    ]).then(([d]) => d);
+    expect(download.suggestedFilename()).toMatch(/\.helmsted\.tar\.gz$/);
+    const file = await download.path();
 
-    // Armed only by typing the name — the same friction any tool asks for
-    // before it moves a repository.
-    await expect(confirm).toBeDisabled();
-    await page.locator('.dialog input').fill('Wrong Name');
-    await expect(confirm).toBeDisabled();
-    await page.locator('.dialog input').fill('Kestrel Provisioning');
-    await expect(confirm).toBeEnabled();
-    await confirm.click();
+    const before = await page.locator('.card').count();
+    await page.getByLabel('Company export file').setInputFiles(file);
+
+    // It arrives paused and beside the original, never on top of it.
+    await expect(page.locator('.landed')).toContainText(name);
+    await expect(page.locator('.card')).toHaveCount(before + 1);
+    const arrived = page.locator('.card').filter({ hasText: `${slug}-2` });
+    await expect(arrived).toHaveCount(1);
+    await expect(arrived.locator('.name')).toHaveText(name);
+    await expect(arrived.locator('.state')).toHaveText('paused');
+  });
+
+  test('a file that is not a company is refused in words', async ({ page }) => {
+    await page.locator('.switcher').click();
+    await page.getByRole('button', { name: 'Manage companies…' }).click();
+    await expect(page.getByRole('heading', { name: 'Companies' })).toBeVisible();
+    await page.getByLabel('Company export file').setInputFiles({
+      name: 'holiday.tar.gz', mimeType: 'application/gzip', buffer: Buffer.from('not a company at all'),
+    });
+    await expect(page.locator('.oops')).toContainText('not a Helmsted export');
+    await expect(page.locator('.landed')).toHaveCount(0);
+  });
+
+  test('archiving asks for the name, then removes it from the list', async ({ page }) => {
+    const manage = async () => {
+      await page.locator('.switcher').click();
+      await page.getByRole('button', { name: 'Manage companies…' }).click();
+      await expect(page.getByRole('heading', { name: 'Companies' })).toBeVisible();
+    };
+
+    // The export test left a copy beside the original, under the same display
+    // name. Both go — and archiving whichever one is active switches the
+    // console away, so the view has to be reopened between them.
+    await manage();
+    const kestrels = page.locator('.card', { hasText: 'Kestrel' });
+    for (let left = await kestrels.count(); left > 0; left--) {
+      await kestrels.first().getByRole('button', { name: 'Archive' }).click();
+      const confirm = page.getByRole('button', { name: 'Archive it' });
+
+      // Armed only by typing the name — the same friction any tool asks for
+      // before it moves a repository.
+      await expect(confirm).toBeDisabled();
+      await page.locator('.dialog input').fill('Wrong Name');
+      await expect(confirm).toBeDisabled();
+      await page.locator('.dialog input').fill('Kestrel Provisioning');
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
+
+      await manage();
+      await expect(kestrels).toHaveCount(left - 1);
+    }
 
     await expect(page.locator('.card')).toHaveCount(1);
     await expect(page.locator('.card')).toContainText('Testwright Co');

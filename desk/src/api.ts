@@ -123,6 +123,21 @@ export const api = {
     send<{ slug: string }>(`/api/companies/${encodeURIComponent(slug)}`, 'PATCH', patch),
   archiveCompany: (slug: string) =>
     send<{ archived: string; at: string }>(`/api/companies/${encodeURIComponent(slug)}`, 'DELETE'),
+  /**
+   * The archive itself is the body. There is exactly one file, so a multipart
+   * form would be ceremony around a single blob — and the browser streams it
+   * rather than building one in memory.
+   */
+  importCompany: async (f: File, name?: string) => {
+    const q = name?.trim() ? `?name=${encodeURIComponent(name.trim())}` : '';
+    const r = await fetch(`/api/companies/import${q}`, {
+      method: 'POST', headers: { 'content-type': 'application/gzip' }, body: f,
+    });
+    const data = await r.json().catch(() => ({})) as
+      { slug: string; renamed: boolean; manifest: { name: string }; error?: string };
+    if (!r.ok) throw new Error(data.error ?? `import → ${r.status}`);
+    return data;
+  },
 
   state: () => get<State>('/api/state'),
   approvals: () => get<Approval[]>('/api/approvals'),

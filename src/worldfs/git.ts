@@ -84,7 +84,7 @@ export class WorldGit {
 
     this.#git([
       '-c', `user.name=${actor.name}`,
-      '-c', `user.email=${actor.id}@inn.local`,
+      '-c', `user.email=${actor.id}@helmsted.local`,
       'commit', '-q', '-m', message,
     ]);
     return this.#git(['rev-parse', 'HEAD']);

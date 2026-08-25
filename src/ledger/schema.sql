@@ -1,4 +1,4 @@
--- ledger.db — the machine-authored half of the Inn.
+-- ledger.db — the machine-authored half of a company.
 -- Small on purpose. If a rule or a render frame does not depend on it,
 -- it belongs in world/ as markdown the staff can invent for themselves.
 

@@ -5,16 +5,13 @@ dist/
 .env.*
 !.env.example
 
-# The living Inn lives OUTSIDE this repo (~/.lafollett-bnb by default) —
-# it is data, not source, and it must survive this folder being moved.
-# These two only exist if you deliberately point INN_HOME back in here
-# for development; they are ignored so village history never mixes with
+# Companies live OUTSIDE this repo (~/.helmsted by default) — they are data,
+# not source, and they must survive this folder being moved or deleted. These
+# two only exist if you deliberately point HELMSTED_ROOT back in here while
+# developing; they are ignored so a company's history never mixes with the
 # source history.
 /world/
 /var/
-
-# Machine-specific. Holds absolute paths; run `node scripts/init.ts` instead.
-/inn.config.json
 
 # Playwright output — traces, screenshots and HTML reports are build artefacts.
 /test-results/

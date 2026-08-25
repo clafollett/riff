@@ -12,9 +12,6 @@ const SYSTEM: Record<string, string> = {
   company: 'The company',
   board: 'The board',
   system: 'The company',
-  // Events already written cannot be renamed, and 'inn' is two renames stale.
-  // Translating on the way out beats rewriting history.
-  inn: 'The company',
 };
 
 export const namer = (state: State | null): ((id: string | null | undefined) => string) => {

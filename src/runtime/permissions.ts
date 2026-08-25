@@ -131,7 +131,7 @@ export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
       return ask('external.read', `${toolName}: ${t}`.slice(0, 200), t.slice(0, 200));
     }
 
-    // In-process village tools declare their own capability at definition time.
+    // In-process company tools declare their own capability at definition time.
     const bare = toolName.startsWith(TOOL_PREFIX) ? toolName.slice(TOOL_PREFIX.length) : null;
     if (bare) {
       const cap = toolCapabilities[bare];

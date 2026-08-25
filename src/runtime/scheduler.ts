@@ -16,7 +16,7 @@ export type SchedulerOptions = {
    *  and keeps the feed legible. */
   concurrency: number;
   /**
-   * Hard stop for the whole village, in USD per local day — inference cost,
+   * Hard stop for the whole company, in USD per local day — inference cost,
    * NOT the staff's Rule 4 spending money. Null on a Claude subscription,
    * where inference is covered and the real constraint is the rate limiter
    * below. Keep a number here only when running on metered API billing.
@@ -27,7 +27,7 @@ export type SchedulerOptions = {
   /**
    * Start stretching intervals once subscription utilization passes this.
    * Coasting to the limit and getting rejected wastes a whole window; slowing
-   * down early keeps the village alive across it.
+   * down early keeps the company alive across it.
    */
   throttleAboveUtilization: number;
   maxTurns: number;
@@ -63,11 +63,11 @@ type Deps = {
 
 /**
  * House Rule 5, as a property of the system rather than a request in a prompt:
- * the Inn keeps working whether or not anyone is watching.
+ * the company keeps working whether or not anyone is watching.
  *
  * Staff are woken on a stagger rather than all at once — partly for rate
  * limits and cost, partly because twenty-two agents waking simultaneously
- * makes the village look like a seizure instead of a place where people work.
+ * makes the company look like a seizure instead of a place where people work.
  */
 export class Scheduler {
   #d: Deps;
@@ -83,7 +83,7 @@ export class Scheduler {
   #ticks = 0;
   /** >1 stretches every interval. Raised as the subscription window fills. */
   #throttle = 1;
-  /** Epoch ms. The village rests until the rate-limit window resets. */
+  /** Epoch ms. The company rests until the rate-limit window resets. */
   #pausedUntil = 0;
   #lastRateLimit: SDKRateLimitInfo | null = null;
 
@@ -175,10 +175,19 @@ export class Scheduler {
    * exactly what a server shutdown used to do to whoever was working.
    */
   async stop(): Promise<void> {
+    // Stopping what was never started is not an event. `start` has always
+    // guarded against announcing itself twice; `stop` did not, so every open
+    // and close of a paused company appended a `work.paused` describing
+    // nothing that happened. Restart the server ten times and the log grew
+    // ten entries. The wait below still runs unconditionally — a second
+    // caller must not return while a shift is in flight.
+    const wasRunning = this.#running;
     this.#running = false;
     this.#abort.abort();
     if (this.#flights.size) await Promise.allSettled([...this.#flights]);
-    this.#d.ledger.emit('company', 'work.paused', null, { spentTodayUsd: this.#spentToday });
+    if (wasRunning) {
+      this.#d.ledger.emit('company', 'work.paused', null, { spentTodayUsd: this.#spentToday });
+    }
   }
 
   #track(p: Promise<void>): void {
