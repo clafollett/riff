@@ -1,0 +1,60 @@
+# Development, in the box.
+#
+#   docker compose -f docker/compose.yaml -f docker/compose.dev.yaml up
+#
+# Everything from compose.yaml still applies — the walled network, the egress
+# allowlist, the shared ~/.helmsted. This only changes how the code gets in and
+# how fast it comes back:
+#
+#   the working tree is MOUNTED, not copied, so edits land immediately
+#   the server runs under `node --watch` and restarts itself on save
+#   the Desk runs under Vite, so the console hot-reloads without a refresh
+#
+# Use it when you want to work on Helmsted while agents have a real shell.
+# Editing Helmsted on its own is faster on the host — tsgo, node --test and
+# Playwright all run natively there, and none of them need a container.
+services:
+  factory:
+    build:
+      target: dev
+    # Restarts itself on save. One process, so tini's SIGTERM reaches it —
+    # backgrounding it behind `sh -c` meant shutdown never reached the server
+    # and it left its installation lock behind every time.
+    command: ['node', '--watch', 'src/gateway/server.ts']
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ${HELMSTED_DATA:-${HOME}/.helmsted}:/data
+      # The working tree, live. node_modules stays the container's own — the
+      # host's may hold binaries built for a different platform.
+      - ..:/app
+      - /app/node_modules
+    # Vite writes a dependency cache and node --watch needs a writable tree.
+    read_only: false
+
+  # Vite, as its own service. The console hot-reloads and proxies /api across
+  # to the gateway — and each process gets its own signals and its own logs.
+  desk:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: dev
+    depends_on: [factory]
+    networks: [walled]
+    command: ['npx', 'vite', '--config', 'desk/vite.config.ts', '--host', '0.0.0.0', '--port', '5173']
+    environment:
+      NODE_ENV: development
+      # Where the gateway is, now that it is a different container.
+      HELMSTED_API: http://factory:4173
+    volumes:
+      - ..:/app
+      - /app/node_modules
+    entrypoint: ['/usr/bin/tini', '--']
+    read_only: false
+    restart: unless-stopped
+
+  ingress:
+    depends_on: [desk]
+    # Forward to Vite rather than the gateway, so the console is the one with
+    # hot reload. Vite proxies /api back to the gateway.
+    command: ['-d', 'TCP-LISTEN:4173,fork,reuseaddr', 'TCP:desk:5173']

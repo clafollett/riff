@@ -61,10 +61,12 @@ describe('the container writes where the volume is', () => {
     assert.match(compose, new RegExp(`:${MOUNT}\\b`), 'the volume must be mounted at the root');
   });
 
-  test('the data path is the operator\'s, not root\'s', () => {
+  test('the container and the host share one installation', () => {
     // Compose interpolates ${HOME} client-side, in the process that runs the
-    // command — so it is the invoking user's home, never the daemon's.
-    assert.match(compose, /\$\{HELMSTED_DATA:-\$\{HOME\}\/helmsted-data\}/);
+    // command — so it is the invoking user's home, never the daemon's. And it
+    // points at the SAME ~/.helmsted the host uses: a second directory would
+    // mean a company founded one way is invisible the other.
+    assert.match(compose, /\$\{HELMSTED_DATA:-\$\{HOME\}\/\.helmsted\}/);
   });
 
   test('it checks it can write the mount before doing anything', () => {

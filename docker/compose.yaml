@@ -48,11 +48,15 @@ services:
     # docker/.env to run as yourself. The entrypoint says so if it matters.
     # user: "${UID:-10001}:${GID:-10001}"
     volumes:
-      # A BIND MOUNT, not a named volume, so every company is an ordinary
-      # directory on your disk: readable without Docker, backed up by whatever
-      # already backs up your home folder, and recoverable if the container is
-      # thrown away. This is the only writable state the factory has.
-      - ${HELMSTED_DATA:-${HOME}/helmsted-data}:/data
+      # THE SAME ~/.helmsted the host uses. One installation, not two — the
+      # layout is identical either way, so a company founded on the host is
+      # simply there when you start the container, and the other way round.
+      #
+      # A bind mount rather than a named volume, so every company stays an
+      # ordinary directory on your disk: readable without Docker, backed up by
+      # whatever already backs up your home folder, and still there when the
+      # container is thrown away.
+      - ${HELMSTED_DATA:-${HOME}/.helmsted}:/data
     restart: unless-stopped
     # An agent shell should not be able to fork-bomb the host or read the
     # kernel keyring on the way to a privilege escalation.

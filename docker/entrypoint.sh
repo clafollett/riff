@@ -29,7 +29,7 @@ if ! touch /data/.write-test 2>/dev/null; then
   The host directory behind the mount is owned by someone else. On Linux,
   either give it to this user:
 
-      sudo chown -R $(id -u):$(id -g) "\${HELMSTED_DATA:-\$HOME/helmsted-data}"
+      sudo chown -R $(id -u):$(id -g) "\${HELMSTED_DATA:-\$HOME/.helmsted}"
 
   or run the container as yourself, by adding to docker/.env:
 

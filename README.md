@@ -197,11 +197,16 @@ Companies live in a **bind mount**, not a named volume, so every one of them is
 an ordinary directory on your disk:
 
 ```
-~/helmsted-data/companies/<slug>/world/    a git repo you can read without Docker
+~/.helmsted/companies/<slug>/world/    a git repo you can read without Docker
 ```
 
 Readable, greppable, and covered by whatever already backs up your home folder.
 Throw the container away and nothing is lost.
+
+It is the **same `~/.helmsted` the host uses** — one installation, not two, so
+a company founded on the host is simply there when you start the container.
+Only one of them may run it at a time; whichever starts second says so and
+stops rather than scheduling every agent twice.
 
 `${HOME}` there is interpolated by the `docker compose` process, not by the
 daemon, so it is **your** home directory rather than root's. On macOS, Docker
@@ -219,6 +224,20 @@ docker/backup.sh              # → ~/helmsted-backups/helmsted-<stamp>.tar.gz
 
 Run it from the host, on a schedule if you like. It keeps the last 30, and
 because each world is a git repository the history is inside the tarball too.
+
+### Working on Helmsted itself
+
+Editing Helmsted is faster on the host — tsgo, `node --test` and Playwright all
+run natively and none of them need a container. Reach for the box when you want
+agents to have a real shell while you work:
+
+```bash
+docker compose -f docker/compose.yaml -f docker/compose.dev.yaml up
+```
+
+The working tree is mounted rather than copied, the server runs under
+`node --watch`, and the console runs under Vite — so a saved `.vue` hot-reloads
+and a saved `.ts` restarts the server underneath it.
 
 The token is yours to generate and yours alone to see:
 

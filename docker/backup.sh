@@ -12,7 +12,7 @@
 # ordinary files on your disk whether the container is running or not.
 set -eu
 
-DATA="${HELMSTED_DATA:-$HOME/helmsted-data}"
+DATA="${HELMSTED_DATA:-$HOME/.helmsted}"
 DEST="${1:-$HOME/helmsted-backups}"
 STAMP=$(date +%Y-%m-%dT%H-%M-%S)
 

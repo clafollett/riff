@@ -17,6 +17,33 @@ RUN npm ci --no-fund --no-audit
 COPY desk ./desk
 RUN npx vite build --config desk/vite.config.ts
 
+# ----------------------------------------------------------------- dev stage
+# Same base and same tools, but keeps devDependencies so vite and tsgo are
+# there. No source is copied: compose.dev.yaml mounts the working tree over
+# /app, which is the whole point — edit on the host, reload in the box.
+FROM node:26-slim AS dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates curl ripgrep jq less procps tini \
+ && rm -rf /var/lib/apt/lists/*
+RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@latest
+RUN useradd -m -u 10001 -s /bin/bash labs && mkdir -p /data /app && chown -R labs:labs /data /app
+WORKDIR /app
+COPY --chown=labs:labs package*.json ./
+# npm runs as root here, so node_modules lands root-owned — and the anonymous
+# volume compose mounts over it inherits that ownership. Vite then cannot write
+# its own dependency cache and the dev server dies on first request.
+RUN npm ci --no-fund --no-audit \
+ && mkdir -p /app/node_modules/.vite \
+ && chown -R labs:labs /app/node_modules
+COPY --chown=labs:labs docker/entrypoint.sh /entrypoint.sh
+USER labs
+RUN git config --global user.name "Helmsted" \
+ && git config --global user.email "helmsted@localhost" \
+ && git config --global init.defaultBranch main \
+ && git config --global --add safe.directory '*'
+ENV NODE_ENV=development HELMSTED_ROOT=/data HELMSTED_CONTAINED=1 PORT=4173
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
+
 # ------------------------------------------------------------------- runtime
 FROM node:26-slim
 
