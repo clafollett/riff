@@ -15,3 +15,9 @@ dist/
 
 # Machine-specific. Holds absolute paths; run `node scripts/init.ts` instead.
 /inn.config.json
+
+# Playwright output — traces, screenshots and HTML reports are build artefacts.
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/

@@ -462,25 +462,137 @@ function render() {
 }
 
 // ------------------------------------------------------------------- walking
+
+/**
+ * Buildings are solid; their doorway is not.
+ *
+ * Walking through walls made the grounds feel like a diagram rather than a
+ * place, and it removed the only reason to use a path.
+ */
+function blocked(x, y) {
+  if (x < 0 || y < 0 || x >= state.map.w || y >= state.map.h) return true;
+  for (const h of state.houses) {
+    if (x === h.doorX && y === h.doorY) return false;          // the door is a way in
+    if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) return true;
+  }
+  return false;
+}
+
+function step(dx, dy) {
+  const me = state.positions.get(state.me);
+  if (!me) return;
+  me.facing = dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down';
+  // Try the diagonal, then each axis, so sliding along a wall still works.
+  const tries = dx && dy ? [[dx, dy], [dx, 0], [0, dy]] : [[dx, dy]];
+  for (const [ax, ay] of tries) {
+    const nx = me.x + ax, ny = me.y + ay;
+    if (!blocked(nx, ny)) { me.x = nx; me.y = ny; return; }
+  }
+}
+
+const KEYS = {
+  arrowup: [0, -1], w: [0, -1], arrowdown: [0, 1], s: [0, 1],
+  arrowleft: [-1, 0], a: [-1, 0], arrowright: [1, 0], d: [1, 0],
+};
+
 const held = new Set();
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  held.add(e.key.toLowerCase());
+  const k = e.key.toLowerCase();
+
+  if (k === 'e' || k === ' ') { e.preventDefault(); interact(); return; }
+  if (k === 'escape') { clearSelection(); return; }
+
+  const move = KEYS[k];
+  if (!move) return;
+  e.preventDefault();
+  // Step immediately on press. Draining a held-set from an interval alone
+  // means a quick tap falls between ticks and nothing happens at all.
+  if (!held.has(k)) step(move[0], move[1]);
+  held.add(k);
 });
 addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
+addEventListener('blur', () => held.clear());
 
+// Continued movement while a key stays down.
 setInterval(() => {
-  const me = state.positions.get(state.me);
-  if (!me) return;
   let dx = 0, dy = 0;
-  if (held.has('arrowup') || held.has('w')) dy = -1;
-  if (held.has('arrowdown') || held.has('s')) dy = 1;
-  if (held.has('arrowleft') || held.has('a')) dx = -1;
-  if (held.has('arrowright') || held.has('d')) dx = 1;
-  if (!dx && !dy) return;
-  me.x = Math.max(0, Math.min(state.map.w - 1, me.x + dx));
-  me.y = Math.max(0, Math.min(state.map.h - 1, me.y + dy));
-}, 110);
+  for (const k of held) { const m = KEYS[k]; if (m) { dx += m[0]; dy += m[1]; } }
+  if (dx || dy) step(Math.sign(dx), Math.sign(dy));
+}, 115);
+
+// --------------------------------------------------------------- interacting
+
+/** Whatever the Keeper is standing next to, if anything. */
+function nearby() {
+  const me = state.positions.get(state.me);
+  if (!me) return null;
+
+  let person = null, pd = 1.9;
+  for (const a of state.staff) {
+    if (a.id === state.me) continue;
+    const p = state.positions.get(a.id);
+    if (!p) continue;
+    const d = Math.hypot(p.x - me.x, p.y - me.y);
+    if (d < pd) { pd = d; person = a; }
+  }
+  if (person) return { kind: 'person', agent: person };
+
+  for (const h of state.houses) {
+    if (Math.hypot(h.doorX - me.x, h.doorY - me.y) < 1.9) return { kind: 'house', house: h };
+  }
+  const f = state.map.fountain;
+  if (Math.hypot(f.x - me.x, f.y - me.y) < 2.6) return { kind: 'fountain' };
+  return null;
+}
+
+function clearSelection() {
+  selected = null;
+  $('sel').classList.remove('on');
+}
+
+function showSelection(agent) {
+  selected = agent;
+  const el = $('sel');
+  el.querySelector('.nm').textContent = agent.name;
+  el.querySelector('.ti').textContent = `${agent.title} · ${agent.building}`;
+  el.classList.add('on');
+}
+
+async function interact() {
+  const near = nearby();
+  if (!near) { toast('Nothing here. Walk up to someone, or to a door.'); return; }
+
+  if (near.kind === 'person') { showSelection(near.agent); $('btn-talk').click(); return; }
+
+  if (near.kind === 'house') {
+    const h = near.house;
+    if (h.id === 'the-inn') { $('btn-meeting').click(); return; }
+
+    const who = state.staff.filter((a) => a.building === h.id);
+    if (h.id === 'the-house') {
+      const st = await fetch('/api/state').then((r) => r.json()).catch(() => null);
+      toast(st
+        ? `Your house. ${st.pendingApprovals} thing${st.pendingApprovals === 1 ? '' : 's'} waiting in the envelope.`
+        : 'Your house.');
+      return;
+    }
+    toast(who.length ? `${h.name} — ${who.map((a) => a.name).join(', ')}` : `${h.name} — nobody works here yet.`);
+    return;
+  }
+
+  toast('The fountain. Somebody put a coin in it.');
+}
+
+// A quiet prompt for whatever is in reach, so the grounds tell you what they do.
+setInterval(() => {
+  const near = nearby();
+  const el = $('hint');
+  if (!near) { el.textContent = 'arrows / WASD to walk · E to interact'; return; }
+  if (near.kind === 'person') el.textContent = `E — talk to ${near.agent.name}`;
+  else if (near.kind === 'house') el.textContent = `E — ${near.house.id === 'the-inn' ? 'call a meeting' : near.house.name}`;
+  else el.textContent = 'E — the fountain';
+}, 220);
 
 // ---------------------------------------------------------------- the panels
 function renderApprovals(list) {
@@ -560,6 +672,11 @@ async function boot() {
   buildTerrain(); await loadArt(); resize(); render(); refreshPanels();
 
   const es = new EventSource('/api/stream');
+  es.onerror = () => {
+    $('n-inn').textContent = 'disconnected';
+    $('chip-inn').classList.add('alert');
+  };
+  es.onopen = () => $('chip-inn').classList.remove('alert');
   es.addEventListener('tick', (ev) => {
     const d = JSON.parse(ev.data);
     for (const p of d.positions) {
@@ -582,19 +699,107 @@ async function boot() {
   setInterval(refreshPanels, 15000);
 }
 
+/**
+ * In-page dialog. Native prompt()/confirm() THROW in embedded browsers
+ * ("prompt() is not supported"), which killed the meeting handler on its very
+ * first line and made every button look dead. The village never depends on
+ * them now.
+ */
+let selected = null;
+
+function ask({ title, sub, placeholder, value = '' }) {
+  return new Promise((resolve) => {
+    const veil = $('veil'), ta = $('dlg-text');
+    $('dlg').querySelector('h3').textContent = title;
+    $('dlg').querySelector('.sub').textContent = sub ?? '';
+    ta.placeholder = placeholder ?? '';
+    ta.value = value;
+    veil.classList.add('on');
+    setTimeout(() => ta.focus(), 30);
+
+    const done = (result) => {
+      veil.classList.remove('on');
+      $('dlg-ok').removeEventListener('click', ok);
+      $('dlg-cancel').removeEventListener('click', no);
+      ta.removeEventListener('keydown', key);
+      resolve(result);
+    };
+    const ok = () => done(ta.value.trim() || null);
+    const no = () => done(null);
+    const key = (e) => {
+      if (e.key === 'Escape') no();
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ok();
+    };
+    $('dlg-ok').addEventListener('click', ok);
+    $('dlg-cancel').addEventListener('click', no);
+    ta.addEventListener('keydown', key);
+  });
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 2600);
+}
+
+// ---- click a staff member to select them ----
+canvas.addEventListener('click', (e) => {
+  const r = canvas.getBoundingClientRect();
+  const t = T();
+  const wx = (e.clientX - r.left + state.camera.x) / t;
+  const wy = (e.clientY - r.top + state.camera.y) / t;
+
+  let best = null, bestD = 1.6;   // tiles
+  for (const a of state.staff) {
+    if (a.id === state.me) continue;
+    const p = state.positions.get(a.id);
+    if (!p) continue;
+    const d = Math.hypot(p.x - wx, p.y - wy);
+    if (d < bestD) { bestD = d; best = a; }
+  }
+  if (!best) { clearSelection(); return; }
+  showSelection(best);
+});
+
+$('btn-talk').addEventListener('click', async () => {
+  if (!selected) return;
+  const text = await ask({
+    title: `Say something to ${selected.name}`,
+    sub: `${selected.title}. They read it when they next wake — ⌘/Ctrl+Enter to send.`,
+    placeholder: 'What do you need from them?',
+  });
+  if (!text) return;
+  const r = await fetch('/api/say', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ to: selected.id, text }),
+  }).then((x) => x.json()).catch(() => null);
+  toast(r ? `Sent to ${selected.name}. They will read it when they wake.` : 'Could not reach the Inn.');
+});
+
 $('btn-open').addEventListener('click', async () => {
   const running = state.inn?.running;
-  await fetch(running ? '/api/inn/close' : '/api/inn/open', { method: 'POST' });
+  const r = await fetch(running ? '/api/inn/close' : '/api/inn/open', { method: 'POST' })
+    .then((x) => x.json()).catch(() => null);
+  if (!r) { toast('Could not reach the Inn — is the server running?'); return; }
+  toast(r.running ? 'The Inn is open. The staff are waking.' : 'The Inn is closed.');
   refreshPanels();
 });
 
 $('btn-meeting').addEventListener('click', async () => {
-  const topic = prompt('What is the meeting about?');
+  const topic = await ask({
+    title: 'Call everyone to the Inn',
+    sub: 'They stop what they are doing, walk over, and wake to read this.',
+    placeholder: 'What do you want to ask them?',
+  });
   if (!topic) return;
-  await fetch('/api/meeting', {
+  const r = await fetch('/api/meeting', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ topic }),
-  });
+  }).then((x) => x.json()).catch(() => null);
+  toast(r ? `Summoned ${r.summoned} to the Inn.` : 'Could not reach the Inn.');
 });
 
 boot();
