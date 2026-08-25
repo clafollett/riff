@@ -155,6 +155,31 @@ test('a doubled commons prefix still resolves to one document', async ({ page })
   expect(shelves.some((s) => s.includes('commons'))).toBe(false);
 });
 
+test('work in flight is visible without opening a terminal', async ({ page }) => {
+  // status.ts showed tasks, note counts and broken reporting lines, and the
+  // console showed none of them — so the briefing had to tell the board to go
+  // run a script. A console you have to leave is not finished.
+  await go(page, 'Work');
+  await expect(page.locator('.task')).toHaveCount(3);
+  await expect(page.locator('.wrap h2')).toHaveText(['In flight', 'Dropped on purpose', 'Finished']);
+
+  // Dropped is neither finished nor in flight — for a company whose weakest
+  // seam is removal, that distinction is the whole point.
+  const dropped = page.locator('.task.gone');
+  await expect(dropped).toHaveCount(1);
+  await expect(dropped.locator('.title')).toHaveText('Grade ourselves under v0.1 again');
+  await expect(page.locator('section', { hasText: 'In flight' }).locator('.task.gone')).toHaveCount(0);
+
+  await expect(page.locator('.tally')).toContainText('1 in flight');
+  await expect(page.locator('.tally')).toContainText('1 dropped');
+});
+
+test('opening a task shows the body its author wrote', async ({ page }) => {
+  await go(page, 'Work');
+  await page.locator('.task', { hasText: 'Score a system we do not own' }).locator('header').click();
+  await expect(page.locator('.task .detail')).toContainText('Track B, from published artifacts.');
+});
+
 test('the record reads the git log, not the event stream', async ({ page }) => {
   await go(page, 'Record');
   await expect(page.locator('.log li').first()).toBeVisible();

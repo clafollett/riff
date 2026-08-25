@@ -147,6 +147,19 @@ const server = createServer(async (req, res) => {
       });
     }
 
+    // Work in flight, and the two health checks that used to need a terminal.
+    if (p === '/api/work' && method === 'GET') {
+      const agents = ledger.listAgents();
+      return json(res, {
+        tasks: ledger.listTasks(),
+        notes: ledger.countNotes(),
+        // A reporting line pointing at nobody is the shape a bad rename leaves.
+        orphans: agents
+          .filter((a) => a.reportsTo && !ledger.getAgent(a.reportsTo))
+          .map((a) => ({ id: a.id, name: a.name, reportsTo: a.reportsTo })),
+      });
+    }
+
     // Read any document in the world. The board could not review what it
     // could not open — the whole point of the Desk.
     if (p === '/api/doc' && method === 'GET') {

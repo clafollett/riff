@@ -7,12 +7,15 @@ const props = defineProps<{ state: State }>();
 const emit = defineEmits<{ changed: [] }>();
 
 const items = ref<Approval[]>([]);
+const elsewhere = ref<Approval[]>([]);
 const drafts = ref<Record<string, string>>({});
 const reason = ref('');
 const busy = ref('');
 
 const load = async () => {
-  items.value = (await api.approvals()).filter((a) => a.tier === 'board');
+  const all = await api.approvals();
+  items.value = all.filter((a) => a.tier === 'board');
+  elsewhere.value = all.filter((a) => a.tier !== 'board');
   // Pull each draft's full text. A review gate whose contents you have to go
   // hunting for gets rubber-stamped, which is worse than no gate.
   for (const a of items.value) {
@@ -70,6 +73,18 @@ watch(() => props.state.pendingBoard, load);
         <span class="faint mono">{{ a.id }}</span>
       </div>
     </article>
+
+    <!-- Not the board's to decide, but the board should be able to see what it
+         is not being asked about. Reading it is not the same as signing it. -->
+    <section v-if="elsewhere.length" class="elsewhere">
+      <h2>Waiting on the CEO</h2>
+      <p class="muted note">Yours to watch, not to sign.</p>
+      <div v-for="a in elsewhere" :key="a.id" class="row">
+        <span class="who">{{ a.requestedBy }}</span>
+        <span class="faint mono cap">{{ a.capability }}</span>
+        <span class="summary-line">{{ a.summary }}</span>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -93,4 +108,12 @@ textarea {
   color: var(--ink); border: 1px solid var(--line-2); border-radius: 5px; padding: 10px; resize: vertical;
 }
 .actions { display: flex; align-items: center; gap: 9px; margin-top: 12px; }
+.elsewhere { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 22px; }
+.elsewhere h2 { font-size: 13px; font-family: var(--sans); text-transform: uppercase;
+  letter-spacing: .1em; color: var(--faint); margin: 0; }
+.elsewhere .note { font-size: 13px; margin: 4px 0 14px; }
+.elsewhere .row { display: flex; align-items: baseline; gap: 12px; padding: 9px 0;
+  border-bottom: 1px solid var(--line); }
+.summary-line { font-size: 14px; color: var(--muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
 </style>

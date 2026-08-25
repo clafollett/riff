@@ -32,6 +32,24 @@ export default async function globalSetup(): Promise<void> {
     { title: 'Scores, including ours', author: 'fen', updated: systemClock.iso() },
     '# Scores\n\n| subject | score |\n| - | - |\n| us | 5/24 |\n');
 
+  // Work in three states, so the Work view is not only ever tested empty.
+  const t1 = ledger.createTask({
+    id: 'tsk_open', title: 'Score a system we do not own', body: 'Track B, from published artifacts.',
+    status: 'open', createdBy: cfg.ceo.id, assignedTo: 'fen', parentId: null, priority: 2,
+  });
+  ledger.createTask({
+    id: 'tsk_done', title: 'Write the removal criterion before anyone needs it',
+    body: 'Done.', status: 'open', createdBy: cfg.ceo.id, assignedTo: cfg.ceo.id, parentId: null, priority: 1,
+  });
+  ledger.updateTaskStatus('tsk_done', 'done');
+  ledger.createTask({
+    id: 'tsk_gone', title: 'Grade ourselves under v0.1 again',
+    body: 'Dropped: the grader would have been the author.',
+    status: 'open', createdBy: cfg.ceo.id, assignedTo: null, parentId: null, priority: 0,
+  });
+  ledger.updateTaskStatus('tsk_gone', 'dropped');
+  void t1;
+
   // A draft waiting on the board, so the Envelope has something to render.
   const draftPath = 'staff/fen/drafts/2026-01-01-first-contact.md';
   world.writeDoc(draftPath, {

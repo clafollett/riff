@@ -13,6 +13,18 @@ export type Approval = {
   decidedAt: string | null; decisionReason: string | null;
 };
 
+export type Task = {
+  id: string; title: string; body: string; status: string;
+  createdBy: string; assignedTo: string | null;
+  priority: number; createdAt: string; updatedAt: string;
+};
+
+export type Work = {
+  tasks: Task[];
+  notes: number;
+  orphans: Array<{ id: string; name: string; reportsTo: string | null }>;
+};
+
 export type CommonsDoc = {
   path: string; title: string; author: string | null; updated: string | null;
 };
@@ -47,6 +59,7 @@ const get = async <T>(path: string): Promise<T> => {
 export const api = {
   state: () => get<State>('/api/state'),
   approvals: () => get<Approval[]>('/api/approvals'),
+  work: () => get<Work>('/api/work'),
   commons: () => get<{ held: number; ceiling: number; documents: CommonsDoc[] }>('/api/commons'),
   happened: (since = '3.days') =>
     get<{ commits: Array<{ sha: string; author: string; at: string; subject: string }>;

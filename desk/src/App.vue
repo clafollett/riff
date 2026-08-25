@@ -6,11 +6,13 @@ import Record from './views/Record.vue';
 import Staff from './views/Staff.vue';
 import Feed from './views/Feed.vue';
 import Commons from './views/Commons.vue';
+import Work from './views/Work.vue';
 
 const VIEWS = [
   { id: 'envelope', label: 'Envelope', comp: Envelope },
   { id: 'record',   label: 'Record',   comp: Record },
   { id: 'staff',    label: 'Staff',    comp: Staff },
+  { id: 'work',     label: 'Work',     comp: Work },
   { id: 'commons',  label: 'Commons',  comp: Commons },
   { id: 'feed',     label: 'Feed',     comp: Feed },
 ] as const;
@@ -60,6 +62,7 @@ const util = computed(() => {
         <span>{{ v.label }}</span>
         <span v-if="v.id === 'envelope' && state?.pendingBoard" class="pill">{{ state.pendingBoard }}</span>
         <span v-else-if="v.id === 'staff' && state" class="faint">{{ state.headcount }}</span>
+      <span v-else-if="v.id === 'work' && state?.tasks" class="faint">{{ state.tasks }}</span>
         <span v-else-if="v.id === 'commons' && state" class="faint">
           {{ state.commons.held }}/{{ state.commons.ceiling }}
         </span>
