@@ -66,6 +66,26 @@ export class Ledger {
       .map((r) => this.#toEvent(r));
   }
 
+  /**
+   * When each commons document first appeared, and how often it has been
+   * rewritten since.
+   *
+   * The frontmatter carries `updated`, which is the last edit — useless for
+   * working out what to read first. A commons of forty documents listed
+   * alphabetically gives a reader no way in. The event log knows the real
+   * order because every posting was recorded as it happened.
+   */
+  commonsHistory(): Map<string, { created: string; revisions: number }> {
+    const rows = this.#db.prepare(
+      `SELECT subject, MIN(at) AS created, COUNT(*) AS n
+       FROM events WHERE kind='commons.posted' AND subject IS NOT NULL
+       GROUP BY subject`
+    ).all() as Row[];
+    return new Map(rows.map((r) => [
+      String(r['subject']), { created: String(r['created']), revisions: num(r['n']) },
+    ]));
+  }
+
   latestSeq(): number {
     const r = this.#db.prepare('SELECT COALESCE(MAX(seq),0) AS s FROM events').get() as Row;
     return num(r['s']);

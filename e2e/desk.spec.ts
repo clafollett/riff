@@ -143,8 +143,8 @@ test('a wrapped sentence is one paragraph, not one per source line', async ({ pa
   await page.locator('.doc', { hasText: 'What we are for' }).click();
   // The fixture writes this as a single line; the real documents wrap at ~80
   // columns, and the renderer must join those back before the CSS sees them.
-  const text = await page.locator('.reader .body p').first().innerText();
-  expect(text).toContain('testable');
+  // toContainText auto-waits; innerText() would read the loading placeholder.
+  await expect(page.locator('.reader .body p').first()).toContainText('testable');
   expect(await page.locator('.reader .body p').count()).toBeLessThan(4);
 });
 
@@ -228,18 +228,40 @@ test('the feed shows what already happened, then keeps up', async ({ page }) => 
   expect(await page.locator('.feed li').count()).toBeGreaterThan(seeded);
 });
 
+test('the commons reads in the order it was written', async ({ page }) => {
+  // Listed alphabetically, forty documents give a newcomer no way in — there
+  // was nothing on screen saying which came first.
+  await go(page, 'Commons');
+  await expect(page.locator('.doc').first()).toBeVisible();
+
+  const numbers = await page.locator('.doc .n').allInnerTexts();
+  expect(numbers.map(Number)).toEqual(numbers.map((_, i) => i + 1));
+  await expect(page.locator('.doc .stamp').first()).toBeVisible();
+
+  // Re-sorting reorders the list but not the numbering — #1 is still the
+  // first thing the company wrote, wherever it now sits.
+  await page.getByRole('button', { name: 'A–Z' }).click();
+  const titles = await page.locator('.doc .t').allInnerTexts();
+  expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b)));
+  const resorted = (await page.locator('.doc .n').allInnerTexts()).map(Number);
+  expect([...resorted].sort((a, b) => a - b)).toEqual(numbers.map(Number));
+
+  await page.getByRole('button', { name: 'Order written' }).click();
+  await expect(page.locator('.doc .n').first()).toHaveText('1');
+});
+
 test('mail addressed to the board is readable, and says so before you look', async ({ page }) => {
   // Agents wrote to the chair from the first hour and the console had no
   // inbox at all — the message existed and the only way in was a SQL query.
   await expect(page).toHaveTitle(/^\(\d+\) The Desk$/);
-  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('3');
+  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('19');
 
   await go(page, 'Inbox');
-  await expect(page.locator('.msg')).toHaveCount(3);
-  await expect(page.locator('.msg.unread')).toHaveCount(3);
-  // The body renders as prose, not as raw markdown.
-  await expect(page.locator('.msg .body h2').first()).toHaveText('The noise floor is real');
-  await expect(page.locator('.msg .body strong').first()).toHaveText('Nothing needs you yet');
+  await expect(page.locator('.bar')).toContainText('19 messages');
+  // Opened, the body renders as prose rather than raw markdown.
+  await page.getByLabel('Filter messages').fill('noise floor');
+  await page.locator('.msg').first().locator('.row').click();
+  await expect(page.locator('.msg.open .body h2').first()).toHaveText('The noise floor is real');
 });
 
 test('a message can be put back to unread, to keep it in front of you', async ({ page }) => {
@@ -247,45 +269,96 @@ test('a message can be put back to unread, to keep it in front of you', async ({
   await go(page, 'Inbox');
   const m = page.locator('.msg').first();
   await expect(m).toBeVisible();
+  await m.locator('.row').click();
   await m.getByRole('button', { name: 'Mark read' }).click();
   await expect(m).not.toHaveClass(/unread/);
-  await expect(m.locator('header .new')).toHaveCount(0);
+  await expect(m.locator('.new')).toHaveCount(0);
 
   await m.getByRole('button', { name: 'Mark unread' }).click();
   await expect(m).toHaveClass(/unread/);
-  await expect(m.locator('header .new')).toHaveText('New');
+  await expect(m.locator('.new')).toHaveText('New');
   await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toBeVisible();
+});
+
+test('messages are collapsed by default, and page rather than pile up', async ({ page }) => {
+  await go(page, 'Inbox');
+  await expect(page.locator('.msg').first()).toBeVisible();
+
+  // Collapsed: a one-line preview each, no bodies, and a page that fits.
+  await expect(page.locator('.msg.open')).toHaveCount(0);
+  await expect(page.locator('.msg .body')).toHaveCount(0);
+  await expect(page.locator('.msg .preview').first()).toBeVisible();
+
+  // Paged rather than endless.
+  const perPage = await page.locator('.msg').count();
+  expect(perPage).toBeLessThanOrEqual(15);
+  await expect(page.locator('.pager')).toContainText('page 1 of 2');
+
+  await page.getByRole('button', { name: 'Older' }).click();
+  await expect(page.locator('.pager')).toContainText('page 2 of 2');
+  await expect(page.locator('.msg').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Newer' }).click();
+  await expect(page.locator('.pager')).toContainText('page 1 of 2');
+});
+
+test('opening a message shows it, and does not quietly mark it read', async ({ page }) => {
+  await go(page, 'Inbox');
+  const first = page.locator('.msg').first();
+  await expect(first).toBeVisible();
+  const unreadBefore = await page.locator('.msg.unread').count();
+
+  await first.locator('.row').click();
+  await expect(first).toHaveClass(/open/);
+  await expect(first.locator('.row')).toHaveAttribute('aria-expanded', 'true');
+  await expect(first.locator('.body')).toBeVisible();
+  await expect(first.locator('.preview')).toHaveCount(0);
+
+  // Reading and marking read are separate decisions — expanding must not
+  // spend the one the operator controls.
+  await expect(page.locator('.msg.unread')).toHaveCount(unreadBefore);
+
+  await first.locator('.row').click();
+  await expect(page.locator('.msg.open')).toHaveCount(0);
+});
+
+test('filtering narrows the list and resets to the first page', async ({ page }) => {
+  await go(page, 'Inbox');
+  await page.getByLabel('Filter messages').fill('noise floor');
+  await expect(page.locator('.msg')).toHaveCount(1);
+  await expect(page.locator('.pager')).toHaveCount(0);
+  await page.getByLabel('Filter messages').fill('');
+  await expect(page.locator('.pager')).toContainText('page 1 of 2');
 });
 
 test('marking read is an explicit act, and nothing else does it by accident', async ({ page }) => {
   await go(page, 'Inbox');
   // count() does not auto-wait, and the messages arrive after the heading.
   await expect(page.locator('.msg').first()).toBeVisible();
-  const before = await page.locator('.msg.unread').count();
+  const pill = page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill');
+  const before = Number(await pill.innerText());
   expect(before).toBeGreaterThan(1);
 
   // The broadcast label looks like a chip and is not a control. Clicking it
   // used to silently mark the message read, which read as a toggle that had
   // broken — the unread bar vanished and clicking again did nothing.
+  await page.getByLabel('Filter messages').fill('whole company');
   const broadcast = page.locator('.msg', { has: page.locator('.to-all') }).first();
+  await expect(broadcast).toHaveClass(/unread/);
   await broadcast.locator('.to-all').click();
-  await expect(page.locator('.msg.unread')).toHaveCount(before);
-
-  // Neither does clicking the header, or the body.
-  await broadcast.locator('header').click();
-  await broadcast.locator('.body').click({ position: { x: 5, y: 5 } });
-  await expect(page.locator('.msg.unread')).toHaveCount(before);
+  // It sits inside the row, so it opens the message — which is all it does.
+  await expect(broadcast).toHaveClass(/open/);
+  await expect(broadcast).toHaveClass(/unread/);
 
   // Unread says so in words, not only in a coloured edge.
-  await expect(broadcast.locator('header .new')).toHaveText('New');
+  await expect(broadcast.locator('.new')).toHaveText('New');
 
   // The explicit control is the only thing that does it.
   await broadcast.getByRole('button', { name: 'Mark read' }).click();
-  await expect(page.locator('.msg.unread')).toHaveCount(before - 1);
-  await expect(broadcast.locator('header .new')).toHaveCount(0);
-  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill'))
-    .toHaveText(String(before - 1));
+  await expect(broadcast).not.toHaveClass(/unread/);
+  await expect(broadcast.locator('.new')).toHaveCount(0);
+  await expect(pill).toHaveText(String(before - 1));
 
+  await page.getByLabel('Filter messages').fill('');
   await page.getByRole('button', { name: /Mark all read/ }).click();
   await expect(page.locator('.msg.unread')).toHaveCount(0);
   await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveCount(0);
@@ -300,7 +373,7 @@ test('marking read is an explicit act, and nothing else does it by accident', as
 test('a reply reaches the person who wrote to you', async ({ page }) => {
   await go(page, 'Inbox');
   const first = page.locator('.msg').first();
-  await first.locator('header').click();
+  await first.locator('.row').click();
   await first.getByRole('button', { name: 'Reply' }).click();
   await first.locator('textarea').fill('Understood — publish the detection floor beside it.');
   await first.getByRole('button', { name: 'Send' }).click();

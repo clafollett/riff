@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { api, type CommonsDoc, type Event, type State } from '../api';
 import { render } from '../markdown';
 import { onEvents } from '../live';
@@ -15,6 +15,50 @@ const body = ref('');
 const html = computed(() => render(body.value));
 
 const load = async () => { docs.value = (await api.commons()).documents; };
+
+/**
+ * The commons arrives in the order it was written. That is the order a
+ * newcomer should read it in, so it is the default — but someone catching up
+ * after a week away wants the other end, and someone hunting a half-remembered
+ * title wants neither.
+ */
+type Order = 'written' | 'recent' | 'title';
+const ORDERS: Array<{ key: Order; label: string }> = [
+  { key: 'written', label: 'Order written' },
+  { key: 'recent', label: 'Recently changed' },
+  { key: 'title', label: 'A–Z' },
+];
+const order = ref<Order>(
+  (localStorage.getItem('helmsted.commonsOrder') as Order | null) ?? 'written');
+watch(order, (o) => localStorage.setItem('helmsted.commonsOrder', o));
+
+const stamp = (d: CommonsDoc) => d.updated ?? d.created ?? '';
+const sorted = computed(() => {
+  const list = [...docs.value];
+  if (order.value === 'title') list.sort((a, b) => a.title.localeCompare(b.title));
+  if (order.value === 'recent') list.sort((a, b) => stamp(b).localeCompare(stamp(a)));
+  return list;  // 'written' is the order the server sends
+});
+
+/** Its place in the sequence, which does not change when you re-sort. */
+const seq = computed(() => new Map(docs.value.map((d, i) => [d.path, i + 1])));
+
+/**
+ * A company can write its whole commons between breakfast and dinner, so
+ * "today" on all thirty-three tells the reader nothing. Same day gets a
+ * clock; anything older gets a date.
+ */
+const day = (iso: string | null) => {
+  if (!iso) return 'before the log';
+  const d = new Date(iso);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  if (sameDay) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const days = Math.floor((today.getTime() - d.getTime()) / 86_400_000);
+  if (days < 2) return 'yesterday';
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
 const read = async (d: CommonsDoc) => {
   open.value = d; body.value = '…';
   try { body.value = (await api.doc(d.path)).body; } catch (e) { body.value = String(e); }
@@ -44,9 +88,19 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
           A ceiling, not a quota. At the top, adding means removing something that stopped being true.
         </p>
       </header>
-      <button v-for="d in docs" :key="d.path" class="doc" :class="{ on: open?.path === d.path }" @click="read(d)">
-        <span class="shelf faint mono">{{ shelf(d.path) }}</span>
-        <span class="t">{{ d.title }}</span>
+      <div class="sorts">
+        <button v-for="o in ORDERS" :key="o.key" class="sort" :class="{ on: order === o.key }"
+                @click="order = o.key">{{ o.label }}</button>
+      </div>
+      <button v-for="d in sorted" :key="d.path" class="doc" :class="{ on: open?.path === d.path }" @click="read(d)">
+        <span class="n faint mono">{{ seq.get(d.path) }}</span>
+        <span class="lines">
+          <span class="shelf faint mono">{{ shelf(d.path) }}</span>
+          <span class="t">{{ d.title }}</span>
+          <span class="stamp faint mono">
+            {{ day(d.created) }}<template v-if="d.revisions > 1"> · revised {{ d.revisions - 1 }}×</template>
+          </span>
+        </span>
       </button>
       <p v-if="!docs.length" class="muted note">Nothing posted yet.</p>
     </aside>
@@ -58,9 +112,10 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
       <template v-if="open">
         <h2 class="title">{{ open.title }}</h2>
         <div class="faint mono meta">
-          {{ open.path }}
+          #{{ seq.get(open.path) }} of {{ docs.length }} · {{ open.path }}
           <template v-if="open.author"> · {{ who(open.author) }}</template>
-          <template v-if="open.updated"> · {{ new Date(open.updated).toLocaleString() }}</template>
+          <template v-if="open.created"> · written {{ new Date(open.created).toLocaleString() }}</template>
+          <template v-if="open.revisions > 1"> · revised {{ open.revisions - 1 }}×</template>
         </div>
         <div class="body" v-html="html" />
       </template>
@@ -88,7 +143,17 @@ h1 { font-size: 24px; }
 .bar { flex: 1; height: 5px; background: #2a221c; border-radius: 3px; overflow: hidden; }
 .fill { display: block; height: 100%; }
 .note { font-size: 12px; line-height: 1.6; margin-top: 10px; }
-.doc { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 0; padding: 8px 22px; }
+.sorts { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 18px 10px; }
+.sort { font: inherit; font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); background: none; border: 1px solid transparent; border-radius: 4px;
+  padding: 3px 6px; cursor: pointer; white-space: nowrap; }
+.sort:hover { color: var(--ink); }
+.sort.on { color: var(--gold); border-color: var(--line-2); }
+.doc { display: flex; gap: 10px; width: 100%; text-align: left; background: none; border: 0; border-radius: 0; padding: 8px 22px; }
+.n { flex: none; width: 2.2ch; text-align: right; font-size: 11px; padding-top: 3px; }
+.doc.on .n { color: var(--accent); }
+.lines { display: flex; flex-direction: column; min-width: 0; }
+.stamp { font-size: 10px; margin-top: 2px; }
 .doc:hover { background: #1a1512; }
 .doc.on { background: var(--panel); box-shadow: inset 2px 0 0 var(--accent); }
 .doc.on .t { color: var(--accent); }

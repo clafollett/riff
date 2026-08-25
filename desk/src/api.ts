@@ -34,6 +34,10 @@ export type Work = {
 
 export type CommonsDoc = {
   path: string; title: string; author: string | null; updated: string | null;
+  /** When it first landed, from the event log. Null for anything older than it. */
+  created: string | null;
+  /** How many times it has been posted over — 1 means written once. */
+  revisions: number;
 };
 
 export type Event = {

@@ -245,18 +245,27 @@ const server = createServer(async (req, res) => {
       }
 
       if (p === '/api/commons' && method === 'GET') {
+        // Alphabetical order is an accident of filenames. The event log knows
+        // when each document actually landed, which is the order a newcomer
+        // should read them in.
+        const history = ledger.commonsHistory();
+        const documents = world.listCommons().map((path) => {
+          const doc = world.readDoc(path);
+          const seen = history.get(path);
+          return {
+            path,
+            // The title an author chose beats anything derivable from a filename.
+            title: String(doc?.data['title'] ?? path.split('/').pop()?.replace(/\.md$/, '') ?? path),
+            author: doc?.data['author'] == null ? null : String(doc.data['author']),
+            updated: doc?.data['updated'] == null ? null : String(doc.data['updated']),
+            created: seen?.created ?? null,
+            revisions: seen?.revisions ?? 0,
+          };
+        });
+        // Undated documents predate the log; they are the oldest thing here.
+        documents.sort((a, b) => (a.created ?? '').localeCompare(b.created ?? ''));
         return json(res, {
-          held: world.commonsCount(), ceiling: constitution.commonsCeiling,
-          // The title an author chose beats anything derivable from a filename.
-          documents: world.listCommons().map((path) => {
-            const doc = world.readDoc(path);
-            return {
-              path,
-              title: String(doc?.data['title'] ?? path.split('/').pop()?.replace(/\.md$/, '') ?? path),
-              author: doc?.data['author'] == null ? null : String(doc.data['author']),
-              updated: doc?.data['updated'] == null ? null : String(doc.data['updated']),
-            };
-          }),
+          held: world.commonsCount(), ceiling: constitution.commonsCeiling, documents,
         });
       }
 

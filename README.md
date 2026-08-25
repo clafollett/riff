@@ -256,8 +256,8 @@ it and says so.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 93 unit tests |
-| `npm run test:ui` | 28 Playwright tests against a throwaway installation |
+| `npm test` | 95 unit tests |
+| `npm run test:ui` | 32 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |
 | `--company <slug>` | any script, when more than one company exists |

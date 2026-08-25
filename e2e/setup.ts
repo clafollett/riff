@@ -59,6 +59,12 @@ export default async function globalSetup(): Promise<void> {
     'Second report. **Nothing needs you yet** — this is so you can see it coming.');
   // A broadcast, so the "to everyone" label exists to be mis-clicked.
   ledger.sendMessage('fen', null, 'Posted to the whole company, not only the board.');
+  // Enough to page. Real inboxes fill up fast — twenty-six messages at three
+  // thousand characters each is ninety thousand characters of scroll if they
+  // all render at once.
+  for (let i = 1; i <= 16; i++) {
+    ledger.sendMessage('fen', cfg.board[0]!.id, `Routine report ${i}.\n\nNothing needs you.`);
+  }
 
   // A draft waiting on the board, so the Envelope has something to render.
   const draftPath = 'staff/fen/drafts/2026-01-01-first-contact.md';
