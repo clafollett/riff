@@ -9,7 +9,9 @@ import { test, expect, type Page } from '@playwright/test';
 
 const go = async (page: Page, view: string) => {
   await page.getByRole('button', { name: new RegExp(`^${view}`) }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText(new RegExp(view, 'i'));
+  // The view's own heading is the first one. Rendered agent prose contributes
+  // headings of its own further down the page.
+  await expect(page.locator('main h1').first()).toContainText(new RegExp(view, 'i'));
 };
 
 /**
@@ -36,13 +38,14 @@ test.beforeEach(async ({ page }) => {
 
 test('the rail names the company and counts what is waiting', async ({ page }) => {
   await expect(page.locator('.brand .biz')).toHaveText('proving the console renders');
-  await expect(page.locator('.navitem .pill')).toHaveText('1');
+  await expect(page.locator('.navitem').filter({ hasText: 'Envelope' }).locator('.pill')).toHaveText('1');
   await expect(page.locator('.status')).toContainText('1 waiting on you');
 });
 
 test('the envelope shows the whole draft, not a summary of it', async ({ page }) => {
   const item = page.locator('.item').first();
-  await expect(item.locator('.who')).toHaveText('fen');
+  // The name a person is called by, not the tool handle.
+  await expect(item.locator('.who')).toHaveText('Fen');
   await expect(item.locator('.cap')).toHaveText('external.write');
   // The body of the draft, not just the one-line summary the requester wrote.
   await expect(item.locator('.draft')).toContainText('We would like to run the test on you.');
@@ -61,7 +64,7 @@ test('a decision clears the queue and the reason is kept', async ({ page, reques
   await page.getByRole('button', { name: 'Send back' }).click();
 
   await expect(page.locator('.item')).toHaveCount(0);
-  await expect(page.locator('.navitem .pill')).toHaveCount(0);
+  await expect(page.locator('.navitem').filter({ hasText: 'Envelope' }).locator('.pill')).toHaveCount(0);
   await expect(page.locator('.status')).toContainText('0 waiting on you');
 
   // The reason is the whole point of the gate — a rejection that does not
@@ -102,8 +105,8 @@ test('the commons lists documents under the titles their authors chose', async (
 test('a commons document opens as prose, with no frontmatter to skim past', async ({ page }) => {
   await go(page, 'Commons');
   await page.locator('.doc', { hasText: 'What we are for' }).click();
-  await expect(page.locator('.reader h2')).toHaveText('What we are for');
-  await expect(page.locator('.reader .body h1')).toHaveText('What we are for');
+  await expect(page.locator('.reader .title')).toHaveText('What we are for');
+  await expect(page.locator('.reader .body h2').first()).toHaveText('What we are for');
   await expect(page.locator('.reader .body li')).toHaveCount(2);
   await expect(page.locator('.reader .body')).not.toContainText('author:');
   await expect(page.locator('.reader .body')).not.toContainText('---');
@@ -205,11 +208,14 @@ test('the record reads the git log, not the event stream', async ({ page }) => {
   await expect(page.locator('.log li').first()).toBeVisible();
 });
 
-test('the feed picks up an event live, without a reload', async ({ page }) => {
+test('the feed shows what already happened, then keeps up', async ({ page }) => {
   await go(page, 'Feed');
-  // A company that has only just been founded has an empty tail, and the
-  // stream carries new events only. Saying so beats an empty <ol>.
-  await expect(page.getByText('Quiet. Events appear as they happen.')).toBeVisible();
+  // The stream carries only what arrives while you watch, so the feed used to
+  // open blank however busy the company had been. It seeds from history now.
+  const seeded = await page.locator('.feed li').count();
+  expect(seeded).toBeGreaterThan(0);
+  // And it names people rather than printing their tool handles.
+  await expect(page.locator('.feed .actor').first()).not.toHaveText(/^[a-z_]+$/);
 
   await page.evaluate(async () => {
     await fetch('/api/say', {
@@ -218,8 +224,47 @@ test('the feed picks up an event live, without a reload', async ({ page }) => {
     });
   });
 
-  await expect(page.locator('.feed li').first()).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('.feed')).toContainText('A word from the board.');
+  await expect(page.locator('.feed')).toContainText('A word from the board.', { timeout: 15_000 });
+  expect(await page.locator('.feed li').count()).toBeGreaterThan(seeded);
+});
+
+test('mail addressed to the board is readable, and says so before you look', async ({ page }) => {
+  // Agents wrote to the chair from the first hour and the console had no
+  // inbox at all — the message existed and the only way in was a SQL query.
+  await expect(page).toHaveTitle(/^\(\d+\) The Desk$/);
+  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('2');
+
+  await go(page, 'Inbox');
+  await expect(page.locator('.msg')).toHaveCount(2);
+  await expect(page.locator('.msg.unread')).toHaveCount(2);
+  // The body renders as prose, not as raw markdown.
+  await expect(page.locator('.msg .body h2').first()).toHaveText('The noise floor is real');
+  await expect(page.locator('.msg .body strong').first()).toHaveText('Nothing needs you yet');
+});
+
+test('opening a message reads it, and the badge follows', async ({ page }) => {
+  await go(page, 'Inbox');
+  await page.locator('.msg').first().locator('header').click();
+  await expect(page.locator('.msg.unread')).toHaveCount(1);
+  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('1');
+
+  await page.getByRole('button', { name: /Mark all read/ }).click();
+  await expect(page.locator('.msg.unread')).toHaveCount(0);
+  await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveCount(0);
+  // Nothing outstanding, so the tab stops shouting.
+  await expect(page).toHaveTitle('The Desk');
+});
+
+test('a reply reaches the person who wrote to you', async ({ page }) => {
+  await go(page, 'Inbox');
+  const first = page.locator('.msg').first();
+  await first.locator('header').click();
+  await first.getByRole('button', { name: 'Reply' }).click();
+  await first.locator('textarea').fill('Understood — publish the detection floor beside it.');
+  await first.getByRole('button', { name: 'Send' }).click();
+
+  await go(page, 'Feed');
+  await expect(page.locator('.feed')).toContainText('publish the detection floor');
 });
 
 test('the console updates itself as the company works', async ({ page }) => {

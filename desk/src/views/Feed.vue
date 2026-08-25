@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { Event } from '../api';
+import type { Event, State } from '../api';
+import { namer } from '../names';
 
-const props = defineProps<{ events: Event[] }>();
+const props = defineProps<{ events: Event[]; state: State }>();
+const who = computed(() => namer(props.state));
 const filter = ref('');
 
 /**
@@ -15,7 +17,9 @@ const NOISE = /^$/;
 
 const shown = computed(() => props.events
   .filter((e) => !NOISE.test(e.kind))
-  .filter((e) => !filter.value || (e.actor + e.kind + (e.subject ?? '')).includes(filter.value)));
+  .filter((e) => !filter.value
+    || (who.value(e.actor) + e.kind + who.value(e.subject)).toLowerCase()
+         .includes(filter.value.toLowerCase())));
 
 const tone = (kind: string) =>
   kind.startsWith('gate.deny') || kind === 'agent.failed' ? 'deny'
@@ -44,9 +48,9 @@ const detail = (e: Event) => {
     <ol class="feed">
       <li v-for="e in shown" :key="e.id" :class="tone(e.kind)">
         <span class="t faint mono">{{ new Date(e.at).toLocaleTimeString() }}</span>
-        <span class="actor">{{ e.actor }}</span>
+        <span class="actor">{{ who(e.actor) }}</span>
         <span class="kind mono">{{ e.kind }}</span>
-        <span class="detail muted">{{ detail(e) || e.subject || '' }}</span>
+        <span class="detail muted">{{ detail(e) || who(e.subject) }}</span>
       </li>
     </ol>
     <p v-if="!shown.length" class="muted">Quiet. Events appear as they happen.</p>
@@ -61,7 +65,7 @@ h1 { font-size: 30px; }
 input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   border-radius: 5px; padding: 7px 10px; font: inherit; font-size: 13px; width: 180px; }
 .feed { list-style: none; }
-.feed li { display: grid; grid-template-columns: 74px 96px 168px 1fr; gap: 12px; align-items: baseline;
+.feed li { display: grid; grid-template-columns: 74px 116px 168px 1fr; gap: 12px; align-items: baseline;
   padding: 6px 8px; border-left: 2px solid transparent; }
 .feed li:hover { background: #1a1512; }
 .feed li.deny { border-left-color: var(--alert); }

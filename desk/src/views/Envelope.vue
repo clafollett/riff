@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { api, type Approval, type Event, type State } from '../api';
 import { render } from '../markdown';
 import { onEvents } from '../live';
+import { namer } from '../names';
 
 const props = defineProps<{ state: State; events: Event[] }>();
 const emit = defineEmits<{ changed: [] }>();
 
+const who = computed(() => namer(props.state));
 const items = ref<Approval[]>([]);
 const elsewhere = ref<Approval[]>([]);
 const drafts = ref<Record<string, string>>({});
@@ -55,7 +57,7 @@ onEvents(() => props.events, /^(gate\.escalate|approval\.)/, load);
 
     <article v-for="a in items" :key="a.id" class="item">
       <header>
-        <span class="who">{{ a.requestedBy }}</span>
+        <span class="who">{{ who(a.requestedBy) }}</span>
         <span class="faint mono cap">{{ a.capability }}</span>
         <span class="grow" />
         <span class="faint mono">{{ new Date(a.requestedAt).toLocaleString() }}</span>
@@ -82,7 +84,7 @@ onEvents(() => props.events, /^(gate\.escalate|approval\.)/, load);
       <h2>Waiting on the CEO</h2>
       <p class="muted note">Yours to watch, not to sign.</p>
       <div v-for="a in elsewhere" :key="a.id" class="row">
-        <span class="who">{{ a.requestedBy }}</span>
+        <span class="who">{{ who(a.requestedBy) }}</span>
         <span class="faint mono cap">{{ a.capability }}</span>
         <span class="summary-line">{{ a.summary }}</span>
       </div>

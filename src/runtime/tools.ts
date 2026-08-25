@@ -54,6 +54,9 @@ const gated = (
 export const createTools = (ctx: Ctx) => {
   const { actor, ledger, world, clock } = ctx;
 
+  /** The name a person is called by. Ids address; names read. */
+  const who = (id: AgentId): string => ledger.getAgent(id)?.name ?? id;
+
   // ------------------------------------------------------------- awareness
   const whoIsHere = tool(
     'who_is_here',
@@ -129,7 +132,9 @@ export const createTools = (ctx: Ctx) => {
     async ({ path, title, body }) => {
       const rel = commonsPath(path);
       return say(gated(ctx, 'world.write', `commons: ${title}`, rel, () => {
-        world.writeCommons(rel, { title, author: actor, updated: clock.iso() }, body);
+        // The author line is read by people, so it carries the name they are
+        // called by. The id is a filesystem handle, not a byline.
+        world.writeCommons(rel, { title, author: who(actor), updated: clock.iso() }, body);
         ledger.emit(actor, 'commons.posted', rel, { title });
         return `Posted to ${rel}.`;
       }));
@@ -280,7 +285,7 @@ export const createTools = (ctx: Ctx) => {
     { channel: z.string(), summary: z.string().max(300), content: z.string() },
     async ({ channel, summary, content }) => {
       const rel = `staff/${slug(actor)}/drafts/${clock.day()}-${slug(summary)}.md`;
-      world.writeDoc(rel, { data: { channel, author: actor, created: clock.iso() }, body: content });
+      world.writeDoc(rel, { data: { channel, author: who(actor), created: clock.iso() }, body: content });
       return say(gated(ctx, 'external.write', `[${channel}] ${summary}`, rel, () => 'queued',
         { payload: { channel, draftPath: rel } }));
     },

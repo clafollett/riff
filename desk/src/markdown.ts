@@ -33,6 +33,27 @@ const linkOpen: RendererRule = (tokens, idx, options, env, self) => {
 };
 md.renderer.rules.link_open = linkOpen;
 
+/**
+ * Agent prose is embedded INSIDE a page that already has its own heading, so
+ * its top level is h2, not h1. Two consequences, both visible: the commons
+ * reader was printing every document's title twice — once as the page heading
+ * and again as the body's own `#` — and a page showing several messages ended
+ * up with several h1s, which is a broken outline for anyone navigating by
+ * headings.
+ */
+const openHeading = md.renderer.rules.heading_open;
+const closeHeading = md.renderer.rules.heading_close;
+const demote = (tag: string): string => {
+  const level = Number(tag.slice(1));
+  return `h${Math.min(6, level + 1)}`;
+};
+const shift: RendererRule = (tokens, idx, options, env, self) => {
+  tokens[idx]!.tag = demote(tokens[idx]!.tag);
+  return self.renderToken(tokens, idx, options);
+};
+md.renderer.rules.heading_open = openHeading ?? shift;
+md.renderer.rules.heading_close = closeHeading ?? shift;
+
 /** Wide tables scroll inside their own box rather than widening the page. */
 const openTable = md.renderer.rules.table_open;
 const tableOpen: RendererRule = (tokens, idx, options, env, self) =>

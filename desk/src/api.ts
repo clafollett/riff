@@ -19,6 +19,13 @@ export type Task = {
   priority: number; createdAt: string; updatedAt: string;
 };
 
+export type Message = {
+  id: string; from: string; to: string; body: string;
+  broadcast: boolean; sentAt: string; readAt: string | null;
+};
+
+export type Inbox = { me: string; messages: Message[]; unread: number };
+
 export type Work = {
   tasks: Task[];
   notes: number;
@@ -44,6 +51,7 @@ export type State = {
   pending: number;
   pendingBoard: number;
   notes: number;
+  unread: number;
   commons: { held: number; ceiling: number };
   tasks: number;
   seq: number;
@@ -115,6 +123,9 @@ export const api = {
   state: () => get<State>('/api/state'),
   approvals: () => get<Approval[]>('/api/approvals'),
   work: () => get<Work>('/api/work'),
+  inbox: () => get<Inbox>('/api/inbox'),
+  recent: (limit = 200) => get<{ events: Event[] }>(`/api/events?limit=${limit}`),
+  markRead: (ids?: string[]) => send<{ marked: number }>('/api/inbox/read', 'POST', ids ? { ids } : {}),
   start: () => send<{ running: boolean }>('/api/open', 'POST'),
   pause: () => send<{ running: boolean }>('/api/close', 'POST'),
   wake: (who?: string) => send<{ waking: string }>('/api/wake', 'POST', who ? { who } : {}),

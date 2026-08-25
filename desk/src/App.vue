@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { api, stream, setCompany, type State, type Event, type CompanyRef } from './api';
 import Envelope from './views/Envelope.vue';
 import Record from './views/Record.vue';
@@ -8,9 +8,11 @@ import Feed from './views/Feed.vue';
 import Commons from './views/Commons.vue';
 import Work from './views/Work.vue';
 import Companies from './views/Companies.vue';
+import Inbox from './views/Inbox.vue';
 
 const VIEWS = [
   { id: 'envelope', label: 'Envelope', comp: Envelope },
+  { id: 'inbox',    label: 'Inbox',    comp: Inbox },
   { id: 'record',   label: 'Record',   comp: Record },
   { id: 'staff',    label: 'Staff',    comp: Staff },
   { id: 'work',     label: 'Work',     comp: Work },
@@ -78,6 +80,8 @@ const select = (slug: string) => {
   state.value = null;
   stop?.(); stop = null;
   if (slug) {
+    // Seed the feed with what already happened, then follow along live.
+    void api.recent().then((r) => { events.value = r.events.slice().reverse(); }).catch(() => {});
     stop = stream(onBatch);
     void refresh();
     // Switching away unmounts the Companies view, so anything it still had to
@@ -88,7 +92,23 @@ const select = (slug: string) => {
   }
 };
 
+const boardIds = computed(() => new Set((state.value?.board ?? []).map((b) => b.id)));
+const nameFor = (id: string) => state.value?.agents.find((a) => a.id === id)?.name ?? id;
+
 const onBatch = (batch: Event[]) => {
+  // Announce the things that are the operator's to act on, before the batch is
+  // reversed into the feed.
+  for (const e of batch) {
+    if (e.kind === 'message.sent' && e.subject && boardIds.value.has(e.subject)) {
+      let text = 'wrote to you';
+      try { text = String(JSON.parse(e.dataJson ?? '{}').text ?? text).slice(0, 140); } catch { /* no body */ }
+      notify('mail', nameFor(e.actor), text);
+    } else if (e.kind.startsWith('gate.escalate')) {
+      notify('board', nameFor(e.actor), 'needs a decision from the board');
+    } else if (e.kind === 'agent.failed') {
+      notify('note', nameFor(e.actor), 'a shift failed');
+    }
+  }
   events.value = [...batch.reverse(), ...events.value].slice(0, 300);
   // Any event at all. This drives the status bar, the rail counts and who is
   // awake — filtering to a few kinds meant the console sat visibly stale
@@ -122,6 +142,35 @@ const awakeNames = computed(() => {
 
 /** A company nobody has ever started looks identical to an idle one. */
 const neverRun = computed(() => !!state.value && state.value.ticks === 0 && !state.value.running);
+
+/**
+ * Everything the person at this desk has to deal with, across every company.
+ * The tab title carries it, because the whole problem was not knowing without
+ * looking — and the console is usually not the window you are looking at.
+ */
+const needsYou = computed(() => (state.value?.pendingBoard ?? 0) + (state.value?.unread ?? 0));
+
+watch(needsYou, (n) => {
+  document.title = n > 0 ? `(${n}) The Desk` : 'The Desk';
+}, { immediate: true });
+
+/** Transient arrival notices. They fade; the badges are the durable record. */
+type Toast = { id: number; kind: 'mail' | 'board' | 'note'; text: string; who: string };
+const toasts = ref<Toast[]>([]);
+let toastId = 0;
+
+const notify = (kind: Toast['kind'], who: string, text: string) => {
+  const t = { id: ++toastId, kind, who, text };
+  toasts.value = [...toasts.value, t].slice(-4);
+  setTimeout(() => { toasts.value = toasts.value.filter((x) => x.id !== t.id); }, 9000);
+};
+
+const dismiss = (id: number) => { toasts.value = toasts.value.filter((t) => t.id !== id); };
+
+const openFor = (t: Toast) => {
+  view.value = t.kind === 'board' ? 'envelope' : t.kind === 'mail' ? 'inbox' : 'feed';
+  dismiss(t.id);
+};
 
 const util = computed(() => {
   const u = state.value?.rateLimit?.utilization;
@@ -161,6 +210,7 @@ const util = computed(() => {
               :class="{ on: view === v.id }" @click="view = v.id">
         <span>{{ v.label }}</span>
         <span v-if="v.id === 'envelope' && state?.pendingBoard" class="pill">{{ state.pendingBoard }}</span>
+      <span v-else-if="v.id === 'inbox' && state?.unread" class="pill">{{ state.unread }}</span>
         <span v-else-if="v.id === 'staff' && state" class="faint">{{ state.headcount }}</span>
       <span v-else-if="v.id === 'work' && state?.tasks" class="faint">{{ state.tasks }}</span>
         <span v-else-if="v.id === 'commons' && state" class="faint">
@@ -184,6 +234,14 @@ const util = computed(() => {
       </div>
       <div v-else class="muted pad">Opening the books…</div>
     </main>
+
+    <div class="toasts" role="status" aria-live="polite">
+      <button v-for="t in toasts" :key="t.id" class="toast" :class="t.kind" @click="openFor(t)">
+        <span class="tkind mono">{{ t.kind === 'mail' ? 'message' : t.kind === 'board' ? 'for the board' : 'attention' }}</span>
+        <span class="twho">{{ t.who }}</span>
+        <span class="ttext">{{ t.text }}</span>
+      </button>
+    </div>
 
     <footer class="status mono" v-if="state">
       <button class="run" :class="{ on: state.running }" :disabled="working" @click="toggle">
@@ -249,6 +307,23 @@ const util = computed(() => {
 .grow { flex: 1; }
 .who { padding: 0 20px; font-size: 12px; line-height: 1.7; }
 .main { overflow-y: auto; }
+.toasts { position: fixed; right: 20px; bottom: 48px; z-index: 30;
+  display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.toast { display: flex; flex-direction: column; gap: 3px; text-align: left;
+  background: var(--panel); border: 1px solid var(--line-2);
+  border-left: 3px solid var(--accent); border-radius: 6px;
+  padding: 11px 14px; box-shadow: 0 8px 26px rgba(0,0,0,.45); }
+.toast:hover { border-color: var(--accent); }
+.toast.board { border-left-color: var(--gold); }
+.toast.note { border-left-color: var(--alert); }
+.tkind { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+.twho { font-family: var(--serif); font-size: 15px; color: var(--ink); }
+.ttext { font-size: 13px; color: var(--muted); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: slidein .28s cubic-bezier(.2,.9,.3,1) both; }
+  @keyframes slidein { from { transform: translateX(18px); opacity: 0; } }
+}
 .pad { padding: 40px; }
 .err { margin: 40px; padding: 16px; border: 1px solid #5c2f26; background: #241611; border-radius: 6px; }
 .status {

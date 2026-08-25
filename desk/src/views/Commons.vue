@@ -3,8 +3,10 @@ import { ref, onMounted, computed } from 'vue';
 import { api, type CommonsDoc, type Event, type State } from '../api';
 import { render } from '../markdown';
 import { onEvents } from '../live';
+import { namer } from '../names';
 
 const props = defineProps<{ state: State; events: Event[] }>();
+const who = computed(() => namer(props.state));
 const docs = ref<CommonsDoc[]>([]);
 const open = ref<CommonsDoc | null>(null);
 const body = ref('');
@@ -49,10 +51,10 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
 
     <article class="reader">
       <template v-if="open">
-        <h2>{{ open.title }}</h2>
+        <h2 class="title">{{ open.title }}</h2>
         <div class="faint mono meta">
           {{ open.path }}
-          <template v-if="open.author"> · {{ open.author }}</template>
+          <template v-if="open.author"> · {{ who(open.author) }}</template>
           <template v-if="open.updated"> · {{ new Date(open.updated).toLocaleString() }}</template>
         </div>
         <div class="body" v-html="html" />
@@ -86,7 +88,7 @@ h1 { font-size: 24px; }
 .t { display: block; font-family: var(--serif); font-size: 15px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
 .doc:hover .t { color: var(--ink); }
 .reader { overflow-y: auto; padding: 34px 46px 60px; }
-h2 { font-size: 26px; }
+.reader .title { font-size: 26px; margin-bottom: 0; }
 .meta { font-size: 11px; margin: 8px 0 22px; }
 /* Only the measure and size are local. Everything else comes from the shared
    .body rules — this used to carry white-space: pre-wrap from before the

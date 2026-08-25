@@ -89,12 +89,16 @@ const buildSystemPrompt = (d: TickDeps): string => {
   // turn cap having produced nothing. Stable between ticks, so it caches.
   const roster = ledger.listAgents()
     .filter((a) => a.id !== agent.id)
-    .map((a) => `- ${a.name} (${a.id}) — ${a.role}, ${a.tier}${a.department ? ` · ${a.department}` : ''}`)
+    .map((a) => `- ${a.name} — ${a.role}, ${a.tier}${a.department ? ` · ${a.department}` : ''}`
+      + ` (address tools to "${a.id}")`)
     .join('\n');
 
   return [
     `You are ${agent.name}. Your role is ${agent.role}.`,
-    `Your agent id is "${agent.id}"${agent.department ? `, in ${agent.department}` : ''}.`,
+    `Your agent id is "${agent.id}"${agent.department ? `, in ${agent.department}` : ''}. ` +
+    'Ids are handles for tools. In anything a person reads — documents, ' +
+    `messages, commit subjects — write people's names: you are ${agent.name}, ` +
+    'and your colleagues are the names on the roster below.',
     agent.reportsTo ? `You report to ${agent.reportsTo}.` : '',
     '',
     '## Who you are',

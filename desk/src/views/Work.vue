@@ -3,9 +3,11 @@ import { ref, onMounted, computed } from 'vue';
 import { api, type Task, type Work, type State, type Event } from '../api';
 import { render } from '../markdown';
 import { onEvents } from '../live';
+import { namer } from '../names';
 
 const props = defineProps<{ state: State; events: Event[] }>();
 
+const who = computed(() => namer(props.state));
 const work = ref<Work | null>(null);
 const open = ref<string | null>(null);
 
@@ -69,7 +71,7 @@ const gone = computed(() => byStatus.value.filter((t) => GONE.has(t.status)));
           <span class="status">{{ t.status.replace('_', ' ') }}</span>
           <span class="title">{{ t.title }}</span>
           <span class="grow" />
-          <span class="who faint mono">{{ t.assignedTo ?? t.createdBy }}</span>
+          <span class="who faint">{{ who(t.assignedTo ?? t.createdBy) }}</span>
         </header>
         <div v-if="open === t.id && t.body" class="body detail" v-html="render(t.body)" />
       </article>
@@ -82,7 +84,7 @@ const gone = computed(() => byStatus.value.filter((t) => GONE.has(t.status)));
           <span class="status">{{ t.status.replace('_', ' ') }}</span>
           <span class="title">{{ t.title }}</span>
           <span class="grow" />
-          <span class="who faint mono">{{ t.assignedTo ?? t.createdBy }}</span>
+          <span class="who faint">{{ who(t.assignedTo ?? t.createdBy) }}</span>
         </header>
         <div v-if="open === t.id && t.body" class="body detail" v-html="render(t.body)" />
       </article>
@@ -95,7 +97,7 @@ const gone = computed(() => byStatus.value.filter((t) => GONE.has(t.status)));
           <span class="status">done</span>
           <span class="title">{{ t.title }}</span>
           <span class="grow" />
-          <span class="who faint mono">{{ t.assignedTo ?? t.createdBy }}</span>
+          <span class="who faint">{{ who(t.assignedTo ?? t.createdBy) }}</span>
         </header>
         <div v-if="open === t.id && t.body" class="body detail" v-html="render(t.body)" />
       </article>

@@ -50,6 +50,14 @@ export default async function globalSetup(): Promise<void> {
   ledger.updateTaskStatus('tsk_gone', 'dropped');
   void t1;
 
+  // Mail addressed to the chair. Agents write to the board constantly and
+  // there was nowhere to read it, so this must never be tested empty.
+  ledger.sendMessage('fen', cfg.board[0]!.id,
+    '# The noise floor is real\n\nSix probes disagree with twelve on the same subject.'
+    + ' I would rather you heard it from me than found it in the log.');
+  ledger.sendMessage(cfg.ceo.id, cfg.board[0]!.id,
+    'Second report. **Nothing needs you yet** — this is so you can see it coming.');
+
   // A draft waiting on the board, so the Envelope has something to render.
   const draftPath = 'staff/fen/drafts/2026-01-01-first-contact.md';
   world.writeDoc(draftPath, {

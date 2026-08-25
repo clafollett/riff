@@ -346,6 +346,45 @@ export class Ledger {
     return msgs;
   }
 
+  /**
+   * Everything addressed to someone, read or not.
+   *
+   * inbox() deliberately returns only what is unread, because an agent waking
+   * up wants what it has not seen. A person reading their own mail wants the
+   * conversation, so this is the other half.
+   */
+  messagesFor(agentId: AgentId, limit = 200): Message[] {
+    const rows = this.#db.prepare(
+      'SELECT * FROM messages WHERE to_agent=? ORDER BY sent_at DESC LIMIT ?'
+    ).all(agentId, limit) as Row[];
+    return rows.map((r) => ({
+      id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']),
+      body: str(r['body']), broadcast: num(r['broadcast']) === 1,
+      sentAt: str(r['sent_at']), readAt: nstr(r['read_at']),
+    }));
+  }
+
+  unreadCount(agentId: AgentId): number {
+    const r = this.#db.prepare(
+      'SELECT COUNT(*) AS c FROM messages WHERE to_agent=? AND read_at IS NULL'
+    ).get(agentId) as Row;
+    return num(r['c']);
+  }
+
+  /** Mark specific messages read, or everything addressed to someone. */
+  markRead(agentId: AgentId, ids?: string[]): number {
+    const now = this.#clock.iso();
+    if (ids?.length) {
+      const upd = this.#db.prepare('UPDATE messages SET read_at=? WHERE id=? AND to_agent=? AND read_at IS NULL');
+      let n = 0;
+      for (const id of ids) n += upd.run(now, id, agentId).changes as number;
+      return n;
+    }
+    const r = this.#db.prepare('UPDATE messages SET read_at=? WHERE to_agent=? AND read_at IS NULL')
+      .run(now, agentId);
+    return r.changes as number;
+  }
+
   // ------------------------------------------------------------ notes index
   indexNote(n: { path: string; author: AgentId; subject: string | null; title: string; writtenAt: string }): void {
     this.#db.prepare(

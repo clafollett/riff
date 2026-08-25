@@ -87,12 +87,25 @@ describe('the shapes agents actually write', () => {
 
   test('headings, rules, quotes and emphasis all come out as structure', () => {
     const html = render('# Title\n\nSome _prose_ and **bold**.\n\n---\n\n> quoted\n\n1. first\n2. second');
-    assert.match(html, /<h1>Title<\/h1>/);
+    // Demoted: this prose is embedded in a page that owns the h1.
+    assert.match(html, /<h2>Title<\/h2>/);
     assert.match(html, /<em>prose<\/em>/);
     assert.match(html, /<strong>bold<\/strong>/);
     assert.match(html, /<hr>/);
     assert.match(html, /<blockquote>/);
     assert.match(html, /<ol>[\s\S]*<li>second<\/li>/);
+  });
+
+  test('headings are demoted, so embedded prose cannot own the page outline', () => {
+    // The commons reader printed every document's title twice — once as the
+    // page heading and again as the body's own `#` — and a page showing
+    // several messages ended up with several h1s.
+    assert.match(render('# One'), /<h2>One<\/h2>/);
+    assert.match(render('## Two'), /<h3>Two<\/h3>/);
+    assert.match(render('##### Five'), /<h6>Five<\/h6>/);
+    // h6 is the floor; there is nothing below it to demote into.
+    assert.match(render('###### Six'), /<h6>Six<\/h6>/);
+    assert.ok(!/<h1>/.test(render('# One\n\n## Two')));
   });
 
   test('empty and missing input render to nothing rather than throwing', () => {

@@ -8,7 +8,7 @@
     "node": ">=26"
   },
   "scripts": {
-    "check": "tsgo --noEmit && tsgo --noEmit -p desk/tsconfig.json && tsgo --noEmit -p e2e/tsconfig.json",
+    "check": "node scripts/check-sfc-imports.mjs && tsgo --noEmit && tsgo --noEmit -p desk/tsconfig.json && tsgo --noEmit -p e2e/tsconfig.json",
     "test": "node --test test/**/*.test.ts",
     "init": "node scripts/init.ts",
     "tick": "node scripts/tick.ts",

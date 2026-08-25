@@ -191,6 +191,8 @@ const server = createServer(async (req, res) => {
           pending: ledger.listApprovals('pending').length,
           pendingBoard: ledger.listApprovals('pending', 'board').length,
           notes: ledger.countNotes(),
+          // What is actually addressed to the person reading this console.
+          unread: ledger.unreadCount(cfg.board[0]?.id ?? 'board'),
           commons: { held: world.commonsCount(), ceiling: constitution.commonsCeiling },
           tasks: ledger.listTasks().length,
           seq: ledger.latestSeq(),
@@ -204,6 +206,15 @@ const server = createServer(async (req, res) => {
           ticks: scheduler.ticks,
           rateLimit: scheduler.rateLimit,
         });
+      }
+
+      // What just happened, for a console that was not open when it did.
+      // The stream carries only what arrives while you watch, so opening the
+      // Desk used to show a blank feed no matter how busy the company was.
+      if (p === '/api/events' && method === 'GET') {
+        const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit') ?? 200)));
+        const latest = ledger.latestSeq();
+        return json(res, { events: ledger.eventsSince(Math.max(0, latest - limit), limit) });
       }
 
       if (p === '/api/stream' && method === 'GET') {
@@ -249,12 +260,33 @@ const server = createServer(async (req, res) => {
         });
       }
 
+      // The board's own mail. Agents write to the chair constantly and there
+      // was nowhere to read it — the message existed, the console did not show
+      // it, and the only way in was a SQLite query.
+      if (p === '/api/inbox' && method === 'GET') {
+        const me = cfg.board[0]?.id ?? 'board';
+        return json(res, {
+          me,
+          messages: ledger.messagesFor(me),
+          unread: ledger.unreadCount(me),
+        });
+      }
+
+      if (p === '/api/inbox/read' && method === 'POST') {
+        const b = await readBody(req);
+        const me = cfg.board[0]?.id ?? 'board';
+        const ids = Array.isArray(b['ids']) ? (b['ids'] as unknown[]).map(String) : undefined;
+        return json(res, { marked: ledger.markRead(me, ids) });
+      }
+
       // Work in flight, and the two health checks that used to need a terminal.
       if (p === '/api/work' && method === 'GET') {
         const agents = ledger.listAgents();
         return json(res, {
           tasks: ledger.listTasks(),
           notes: ledger.countNotes(),
+          // What is actually addressed to the person reading this console.
+          unread: ledger.unreadCount(cfg.board[0]?.id ?? 'board'),
           // A reporting line pointing at nobody is the shape a bad rename leaves.
           orphans: agents
             .filter((a) => a.reportsTo && !ledger.getAgent(a.reportsTo))
