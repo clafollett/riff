@@ -79,7 +79,10 @@ export const createTools = (ctx: Ctx) => {
       tier: z.enum(['executive', 'lead', 'member']),
       department: z.string().max(60).default(''),
       mandate: z.string().describe('What this seat owns, and what goes undone without it'),
-      reportsTo: z.string().describe('Agent id they would report to'),
+      reportsTo: z.string().describe(
+        'Agent id they report to. Not a board member — the board governs, it does not manage. ' +
+        'Independence does not need a reporting line here: the commons, notes and the event log ' +
+        'are visible to the board regardless of who reports to whom.'),
     },
     async (p) => say(gated(ctx, 'hire', `${p.role}: ${p.name}`, slug(p.name), () => 'queued', {
       payload: { ...p, proposedBy: actor },

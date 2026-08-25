@@ -33,12 +33,29 @@ export const applyApproved = (ledger: Ledger, world: World, clock: Clock): numbe
             break;
           }
           if (!p['name'] || !p['role']) break;
+
+          // The board governs; it does not manage. Only the CEO reports to it.
+          // A seat reporting to a board member makes the chair a line manager
+          // and creates a shadow org — and the independence it appears to buy
+          // is already structural here: the commons, notes and the event log
+          // are visible to the board no matter who reports to whom, so the CEO
+          // cannot suppress an unflattering finding by owning the reporting
+          // line. Redirect rather than refuse; the seat is still worth filling.
+          const proposedBoss = p['reportsTo'] ?? ap.requestedBy;
+          const boss = ledger.getAgent(proposedBoss);
+          const reportsTo = boss?.tier === 'board' ? ap.requestedBy : proposedBoss;
+          if (boss?.tier === 'board') {
+            ledger.emit('company', 'org.reporting_redirected', slug(p['name']), {
+              proposed: proposedBoss, actual: reportsTo,
+              why: 'the board governs rather than manages; only the CEO reports to it',
+            });
+          }
           const id = slug(p['name']);
           if (ledger.getAgent(id)) break;
           ledger.upsertAgent({
             id, name: p['name'], tier: (p['tier'] ?? 'member') as 'executive' | 'lead' | 'member',
             role: p['role'], department: p['department'] ?? '',
-            reportsTo: p['reportsTo'] ?? ap.requestedBy, status: 'active',
+            reportsTo, status: 'active',
             activity: 'just arrived', mandate: p['mandate'] ?? '',
             hiredAt: clock.iso(), hiredBy: ap.requestedBy, model: 'claude-opus-5',
           });
