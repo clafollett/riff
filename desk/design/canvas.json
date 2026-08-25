@@ -1,0 +1,14 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "A · Terminal", "x": 0, "y": 0, "w": 1280, "h": 800 },
+    { "file": "Dossier.dc.html", "title": "B · Dossier", "x": 1360, "y": 0, "w": 1280, "h": 800 },
+    { "file": "Deck.dc.html", "title": "C · Deck", "x": 2720, "y": 0, "w": 1280, "h": 800 }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -190, "w": 620, "text": "The Desk — three directions for the same screen (The Envelope).\n\nSame data in all three so they compare honestly. Pick a direction, then I build it in Vue + TypeScript.\n\nAll three use the village's existing palette so the console feels native, not bolted on." },
+    { "id": "axis-a", "x": 0, "y": 830, "w": 420, "text": "A · TERMINAL\nMaximum density, keyboard-first. Queue on the left, full draft on the right, decide without lifting your hands.\n\nBest for: speed once you know the system.\nCost: least warm, most to learn." },
+    { "id": "axis-b", "x": 1360, "y": 830, "w": 420, "text": "B · DOSSIER\nReading-first. Serif, generous measure, the draft treated as prose worth reading.\n\nBest for: actually reading what the staff wrote — notes, memory, reasoning.\nCost: fewer things visible at once." },
+    { "id": "axis-c", "x": 2720, "y": 830, "w": 420, "text": "C · DECK\nCards and meters, with the village demoted to an ambient panel.\n\nBest for: glanceable state, and it keeps the map alive.\nCost: less room for long text; more chrome per item." }
+  ],
+  "launch": { "view": "canvas" }
+}

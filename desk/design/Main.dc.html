@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    body { margin:0; font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; }
+    a { color:#d9a83a; } a:hover { color:#efc55e; }
+  </style>
+</helmet>
+
+<div style="width:1280px; height:800px; background:#181310; color:#e6dccb; display:grid; grid-template-columns:172px 1fr; grid-template-rows:1fr 30px; font-size:13px;">
+
+  <!-- rail -->
+  <div style="grid-row:1 / span 2; background:#120e0c; border-right:1px solid #2e2620; display:flex; flex-direction:column; padding:14px 0;">
+    <div style="padding:0 16px 16px; font-size:11px; letter-spacing:.16em; color:#6f6154;">LFB&amp;B</div>
+    <sc-for list="{{nav}}" as="n" hint-placeholder-count="7">
+      <div style="display:flex; align-items:center; gap:10px; padding:8px 16px; color:{{n.fg}}; background:{{n.bg}}; border-left:2px solid {{n.edge}};">
+        <span style="flex-grow:1;">{{n.label}}</span>
+        <span style="font-size:11px; color:{{n.countFg}};">{{n.count}}</span>
+      </div>
+    </sc-for>
+    <div style="flex-grow:1;"></div>
+    <div style="padding:12px 16px; font-size:11px; color:#5d5147; line-height:1.7;">⌘K  jump<br>J/K  move<br>A/R  decide</div>
+  </div>
+
+  <!-- main -->
+  <div style="padding:18px 22px; overflow:hidden;">
+    <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:16px;">
+      <div style="font-size:17px; font-weight:700; letter-spacing:.02em;">THE ENVELOPE</div>
+      <div style="color:#8c7d6e; font-size:12px;">3 waiting · nothing goes out without you</div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:340px 1fr; gap:16px; height:672px;">
+      <!-- queue -->
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <sc-for list="{{queue}}" as="q" hint-placeholder-count="3">
+          <div style="border:1px solid {{q.edge}}; background:{{q.bg}}; padding:10px 12px; display:flex; flex-direction:column; gap:5px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <span style="width:6px; height:6px; background:{{q.dot}};"></span>
+              <span style="color:#d9a83a; font-weight:500;">{{q.who}}</span>
+              <span style="flex-grow:1;"></span>
+              <span style="font-size:10px; color:#7a6c5e; letter-spacing:.08em;">{{q.cap}}</span>
+            </div>
+            <div style="color:{{q.fg}}; line-height:1.5;">{{q.summary}}</div>
+            <div style="font-size:11px; color:#6f6154;">{{q.age}}</div>
+          </div>
+        </sc-for>
+        <div style="border:1px dashed #2e2620; padding:9px 12px; color:#5d5147; font-size:11px; text-align:center;">nothing else waiting</div>
+      </div>
+
+      <!-- draft -->
+      <div style="border:1px solid #2e2620; background:#1e1815; display:flex; flex-direction:column;">
+        <div style="padding:12px 16px; border-bottom:1px solid #2e2620; display:flex; gap:10px; align-items:center;">
+          <span style="color:#d9a83a; font-weight:700;">posy</span>
+          <span style="color:#8c7d6e;">→ etsy</span>
+          <span style="flex-grow:1;"></span>
+          <span style="font-size:11px; color:#7a6c5e;">staff/posy/drafts/2026-08-25-autumn-set.md</span>
+        </div>
+        <div style="padding:16px; line-height:1.75; color:#cfc2b0; flex-grow:1; overflow:hidden;">
+          <div style="color:#8c7d6e; font-size:11px; letter-spacing:.1em; margin-bottom:10px;">DRAFT</div>
+          <div style="font-weight:700; color:#e6dccb; margin-bottom:8px;">Autumn Set — 3 printable listings</div>
+          <div style="margin-bottom:14px;">Three digital downloads, priced at $4 each. Titles and descriptions below. Ansel made the artwork; Ida has not seen the pricing yet, which I flag because I set it from comparables rather than from anything we know about our own costs.</div>
+          <div style="border-left:2px solid #3a2f26; padding-left:12px; color:#a8998a; font-size:12px; line-height:1.7;">1 · Autumn Ledger Pages — $4.00<br>2 · Harvest Planner Set — $4.00<br>3 · Woodsmoke Recipe Cards — $4.00</div>
+        </div>
+        <div style="padding:12px 16px; border-top:1px solid #2e2620; display:flex; gap:8px; align-items:center;">
+          <div style="background:#3f6432; color:#e6f0dc; padding:7px 16px; font-weight:500;">A  Approve</div>
+          <div style="border:1px solid #4a3a30; color:#c0a898; padding:7px 16px;">R  Send back</div>
+          <span style="flex-grow:1;"></span>
+          <span style="font-size:11px; color:#6f6154;">2 more after this</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- status -->
+  <div style="grid-column:2; background:#120e0c; border-top:1px solid #2e2620; display:flex; align-items:center; gap:20px; padding:0 22px; font-size:11px; color:#7a6c5e;">
+    <span style="color:#5c9e58;">● inn awake</span>
+    <span>3 waiting</span>
+    <span>$0.00 today of $5.00</span>
+    <span>five_hour 12%</span>
+    <span style="flex-grow:1;"></span>
+    <span>12 staff · 1/11 done</span>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    const nav = [
+      ['Envelope', '3'], ['Feed', ''], ['Staff', '12'], ['Board', '10'],
+      ['Record', ''], ['Commons', '4'], ['Village', ''],
+    ].map(([label, count], i) => ({
+      label, count,
+      fg: i === 0 ? '#f2e6d2' : '#8c7d6e',
+      bg: i === 0 ? '#241c17' : 'transparent',
+      edge: i === 0 ? '#d9a83a' : 'transparent',
+      countFg: i === 0 ? '#d9a83a' : '#5d5147',
+    }));
+    const queue = [
+      { who: 'posy', cap: 'EXTERNAL', summary: 'Publish 3 Etsy listings for the autumn set', age: '11 minutes ago', sel: true },
+      { who: 'hollis', cap: 'HIRE', summary: 'Hire a listings assistant for the Market', age: '40 minutes ago' },
+      { who: 'ansel', cap: 'SPEND', summary: '$2.40 — image credits for 6 building sprites', age: '1 hour ago' },
+    ].map((q) => ({
+      ...q,
+      edge: q.sel ? '#d9a83a' : '#2e2620',
+      bg: q.sel ? '#241c17' : '#1a1512',
+      fg: q.sel ? '#e6dccb' : '#a2937f',
+      dot: q.cap === 'EXTERNAL' ? '#c0553f' : q.cap === 'SPEND' ? '#d9a83a' : '#5b6d8c',
+    }));
+    return { nav, queue };
+  }
+}
+</script>
+</body>
+</html>
