@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE TABLE IF NOT EXISTS agents (
   id          TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
-  role        TEXT NOT NULL CHECK (role IN ('innkeeper','chief_of_staff','house_manager','house_assistant')),
+  role        TEXT NOT NULL CHECK (role IN ('innkeeper','steward','house_manager','house_assistant')),
   title       TEXT NOT NULL,
   reports_to  TEXT REFERENCES agents(id),
   building    TEXT NOT NULL,
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS approvals (
   id              TEXT PRIMARY KEY,
   requested_by    TEXT NOT NULL REFERENCES agents(id),
   capability      TEXT NOT NULL,
-  tier            TEXT NOT NULL CHECK (tier IN ('chief_of_staff','innkeeper')),
+  tier            TEXT NOT NULL CHECK (tier IN ('steward','innkeeper')),
   state           TEXT NOT NULL DEFAULT 'pending'
                   CHECK (state IN ('pending','approved','rejected','expired')),
   summary         TEXT NOT NULL,
@@ -108,6 +108,22 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_seq  ON events(seq);
 CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind, at);
 CREATE INDEX IF NOT EXISTS idx_events_actor ON events(actor, at);
+
+-- Staff-to-staff mail. Deliberately ASYNCHRONOUS: a message is a row the
+-- recipient picks up on their NEXT tick, never a blocking call into another
+-- agent. With 22 staff, synchronous messaging deadlocks (A waits on B waits
+-- on A) and bills a full turn per message. A broadcast fans out to one row
+-- per recipient at send time, which keeps read-tracking per-person trivial.
+CREATE TABLE IF NOT EXISTS messages (
+  id         TEXT PRIMARY KEY,
+  from_agent TEXT NOT NULL REFERENCES agents(id),
+  to_agent   TEXT NOT NULL REFERENCES agents(id),
+  body       TEXT NOT NULL,
+  broadcast  INTEGER NOT NULL DEFAULT 0,
+  sent_at    TEXT NOT NULL,
+  read_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_messages_inbox ON messages(to_agent, read_at, sent_at);
 
 -- DERIVED, never authoritative. Notes are markdown files the staff wrote about
 -- each other; this is only an index so the UI can count and sort them.

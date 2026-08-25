@@ -21,12 +21,12 @@ export type HouseRules = {
    *  'deny'     — hard wall, no appeal
    */
   overCap: 'escalate' | 'deny';
-  /** R2: capabilities a director may not self-authorise. Chief of Staff signs. */
-  chiefApproves: Capability[];
+  /** R2: capabilities a house manager may not self-authorise. The Steward signs. */
+  stewardApproves: Capability[];
   /** R3: capabilities that can never be self-authorised by anyone but you. */
   innkeeperApproves: Capability[];
-  /** Who plays Chief of Staff. Receives R2 escalations. */
-  chiefOfStaff: AgentId;
+  /** Who plays Steward — runs the Inn on your behalf. Receives R2 escalations. */
+  steward: AgentId;
   /** You. Receives R3 escalations, bypasses the gate entirely. */
   innkeeper: AgentId;
 };
@@ -35,10 +35,10 @@ export const DEFAULT_HOUSE_RULES: HouseRules = {
   treasurers: ['matt'],
   dailyCapCents: 500, // $5.00/day. Rule 4, to the cent.
   overCap: 'escalate',
-  chiefApproves: ['hire', 'world.write_other'],
+  stewardApproves: ['hire', 'world.write_other'],
   // R3: "you can take work all the way out into the real world, but it always
   // lands as a draft." One capability, no exceptions, no config to loosen it.
   innkeeperApproves: ['external.write'],
-  chiefOfStaff: 'matt',
+  steward: 'matt',
   innkeeper: 'cali',
 };

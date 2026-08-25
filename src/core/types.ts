@@ -16,13 +16,13 @@ export type ApprovalId = string;
 export type EventId = string;
 
 /** Staff hierarchy. The Innkeeper is you; you are in the world, not above it. */
-export const ROLES = ['innkeeper', 'chief_of_staff', 'house_manager', 'house_assistant'] as const;
+export const ROLES = ['innkeeper', 'steward', 'house_manager', 'house_assistant'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Lower rank number = more authority. Used by the gate to test standing. */
 export const RANK: Record<Role, number> = {
   innkeeper: 0,
-  chief_of_staff: 1,
+  steward: 1,
   house_manager: 2,
   house_assistant: 3,
 };
@@ -86,8 +86,8 @@ export type Decision =
   | { kind: 'deny'; rule: string; reason: string }
   | { kind: 'escalate'; rule: string; tier: ApprovalTier; approvalId: ApprovalId; reason: string };
 
-/** Who has to sign off. `human` means it waits in your envelope. */
-export type ApprovalTier = 'chief_of_staff' | 'innkeeper';
+/** Who has to sign off. `innkeeper` means it waits in your envelope. */
+export type ApprovalTier = 'steward' | 'innkeeper';
 
 export type ApprovalState = 'pending' | 'approved' | 'rejected' | 'expired';
 
@@ -150,6 +150,16 @@ export type Building = {
   h: number;
   doorX: number;
   doorY: number;
+};
+
+export type Message = {
+  id: string;
+  from: AgentId;
+  to: AgentId;
+  body: string;
+  broadcast: boolean;
+  sentAt: string;
+  readAt: string | null;
 };
 
 // ---------------------------------------------------------------- event log

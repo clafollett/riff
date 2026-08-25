@@ -15,7 +15,7 @@ const staff = (id: string, role: Agent['role'], reportsTo: string | null = 'matt
 let clock: ReturnType<typeof fixedClock>;
 let ledger: Ledger;
 let gate: PolicyGate;
-const rules: HouseRules = { ...DEFAULT_HOUSE_RULES, innkeeper: 'cali', chiefOfStaff: 'matt' };
+const rules: HouseRules = { ...DEFAULT_HOUSE_RULES, innkeeper: 'cali', steward: 'matt' };
 
 beforeEach(() => {
   clock = fixedClock('2026-08-24T09:00:00.000Z');
@@ -23,7 +23,7 @@ beforeEach(() => {
   // The Innkeeper is a resident of the world, not an admin outside it —
   // they occupy a row, stand on the map, and can be referenced by approvals.
   ledger.upsertAgent({ ...staff('cali', 'innkeeper', null), building: 'the-house' });
-  ledger.upsertAgent(staff('matt', 'chief_of_staff', 'cali'));
+  ledger.upsertAgent(staff('matt', 'steward', 'cali'));
   ledger.upsertAgent(staff('greg', 'house_manager'));
   ledger.upsertAgent(staff('dennis', 'house_manager'));
   gate = new PolicyGate(ledger, rules);
@@ -40,7 +40,7 @@ describe('R3 — the outside world always lands as a draft', () => {
     assert.equal(d.rule, 'R3.drafts_only');
   });
 
-  test('holds even for the Chief of Staff — nobody self-authorises going live', () => {
+  test('holds even for the Steward — nobody self-authorises going live', () => {
     const d = gate.request({ actor: 'matt', capability: 'external.write', summary: 'send outreach email' });
     assert.equal(d.kind, 'escalate');
     assert.equal(d.kind === 'escalate' && d.tier, 'innkeeper');
@@ -115,17 +115,17 @@ describe('R4 — money', () => {
   });
 });
 
-describe('R2 — the Chief of Staff signs', () => {
-  test('a director hiring escalates to the Chief', () => {
+describe('R2 — the Steward signs', () => {
+  test('a house manager hiring escalates to the Steward', () => {
     const d = gate.request({ actor: 'greg', capability: 'hire', summary: 'hire a listings assistant' });
     assert.equal(d.kind, 'escalate');
-    assert.equal(d.kind === 'escalate' && d.tier, 'chief_of_staff');
+    assert.equal(d.kind === 'escalate' && d.tier, 'steward');
   });
 
-  test('the Chief does not need their own signature', () => {
+  test('the Steward does not need their own signature', () => {
     const d = gate.request({ actor: 'matt', capability: 'hire', summary: 'hire a listings assistant' });
     assert.equal(d.kind, 'allow');
-    assert.equal(d.rule, 'R2.chief_self');
+    assert.equal(d.rule, 'R2.steward_self');
   });
 
   test('tampering with a colleague&apos;s files escalates', () => {
@@ -134,7 +134,7 @@ describe('R2 — the Chief of Staff signs', () => {
       target: 'agents/greg/persona.md', summary: 'correct Greg&apos;s brief',
     });
     assert.equal(d.kind, 'escalate');
-    assert.equal(d.kind === 'escalate' && d.tier, 'chief_of_staff');
+    assert.equal(d.kind === 'escalate' && d.tier, 'steward');
   });
 });
 
@@ -193,14 +193,14 @@ describe('approvals are exactly-once', () => {
     assert.equal(ledger.getApproval(id)!.state, 'rejected');
   });
 
-  test('the Chief cannot sign off on something addressed to the Innkeeper', () => {
+  test('the Steward cannot sign off on something addressed to the Inn Keeper', () => {
     const d = gate.request({ actor: 'greg', capability: 'external.write', summary: 'publish listing' });
     const id = d.kind === 'escalate' ? d.approvalId : '';
     assert.equal(gate.decide(id, 'matt', true, 'I got this'), false);
     assert.equal(ledger.getApproval(id)!.state, 'pending', 'must still be waiting for the Innkeeper');
   });
 
-  test('the Chief can sign off on Chief-tier work', () => {
+  test('the Steward can sign off on Steward-tier work', () => {
     const d = gate.request({ actor: 'greg', capability: 'hire', summary: 'hire an assistant' });
     const id = d.kind === 'escalate' ? d.approvalId : '';
     assert.equal(gate.decide(id, 'matt', true, 'approved'), true);

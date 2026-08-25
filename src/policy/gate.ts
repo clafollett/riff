@@ -104,17 +104,17 @@ export class PolicyGate {
       };
     }
 
-    // ------------------- R2: the Chief of Staff signs -------------------
-    if (r.chiefApproves.includes(capability)) {
-      // The Chief does not need their own signature.
-      if (actor === r.chiefOfStaff) return { kind: 'allow', rule: 'R2.chief_self' };
+    // ---------------------- R2: the Steward signs ----------------------
+    if (r.stewardApproves.includes(capability)) {
+      // The Steward does not need their own signature.
+      if (actor === r.steward) return { kind: 'allow', rule: 'R2.steward_self' };
       const ap = this.#ledger.createApproval({
-        requestedBy: actor, capability, tier: 'chief_of_staff', summary: req.summary,
+        requestedBy: actor, capability, tier: 'steward', summary: req.summary,
         target: req.target ?? null, amountCents: req.amountCents ?? null, payload: req.payload,
       });
       return {
-        kind: 'escalate', rule: 'R2.chief_approves', tier: 'chief_of_staff', approvalId: ap.id,
-        reason: `${capability} needs the Chief of Staff's sign-off`,
+        kind: 'escalate', rule: 'R2.steward_approves', tier: 'steward', approvalId: ap.id,
+        reason: `${capability} needs the Steward's sign-off`,
       };
     }
 
@@ -141,7 +141,7 @@ export class PolicyGate {
     // Standing check: only the tier that was asked may answer.
     const permitted = ap.tier === 'innkeeper'
       ? decidedBy === this.#rules.innkeeper
-      : decidedBy === this.#rules.chiefOfStaff || decidedBy === this.#rules.innkeeper;
+      : decidedBy === this.#rules.steward || decidedBy === this.#rules.innkeeper;
     if (!permitted) {
       this.#ledger.emit(decidedBy, 'gate.decide_refused', approvalId, {
         reason: `${decidedBy} lacks standing to answer a ${ap.tier} approval`,

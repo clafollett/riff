@@ -1,0 +1,99 @@
+import { slug } from '../core/ids.ts';
+import { titleFor, titleMatchesRole } from '../core/titles.ts';
+import type { Ledger } from '../ledger/ledger.ts';
+import type { World } from '../worldfs/world.ts';
+import type { Clock } from '../core/clock.ts';
+
+/**
+ * Applies approvals that have been said yes to.
+ *
+ * Deliberately separate from the staff member who asked. An escalation is
+ * enacted by the Inn, after a decision, by code that never ran inside the
+ * requester's session — so "get it approved" and "do it" cannot collapse into
+ * one step that an agent could drive on its own.
+ *
+ * Idempotent: each approval is stamped applied in the event log, and already
+ * applied ones are skipped.
+ */
+export const applyApproved = (ledger: Ledger, world: World, clock: Clock): number => {
+  const approved = ledger.listApprovals('approved');
+  let applied = 0;
+
+  for (const ap of approved) {
+    if (ledger.getMeta(`applied:${ap.id}`)) continue;
+
+    try {
+      switch (ap.capability) {
+        case 'hire': {
+          const p = JSON.parse(ap.payloadJson ?? '{}') as
+            { name?: string; house?: string; title?: string; why?: string };
+          if (!p.name || !p.house) break;
+
+          const id = slug(p.name);
+          if (ledger.getAgent(id)) break; // already works here
+
+          const role = 'house_assistant' as const;
+          const title = p.title && titleMatchesRole(role, p.title)
+            ? p.title
+            : titleFor(role, p.house);
+
+          ledger.upsertAgent({
+            id, name: p.name, role, title,
+            reportsTo: ap.requestedBy, building: p.house,
+            department: p.house, status: 'active',
+            hiredAt: clock.iso(), hiredBy: ap.requestedBy,
+            model: 'claude-opus-5',
+          });
+          world.ensureStaff(id);
+          world.writeDoc(world.personaPath(id), {
+            data: { agent: id, role, hired_by: ap.requestedBy, hired_at: clock.iso() },
+            body: `# ${p.name}\n\n${title}, working out of ${p.house}.\n\n` +
+                  `Hired because: ${p.why ?? 'the house needed the help.'}\n`,
+          });
+          ledger.emit('inn', 'agent.hired', id, { by: ap.requestedBy, title });
+          applied++;
+          break;
+        }
+
+        case 'external.write': {
+          // Rule 3's landing point. Approval marks the draft releasable; the
+          // connector that actually sends it reads from here. Until one is
+          // wired up, an approved draft is exactly that — approved, and still
+          // sitting in the staff member's drafts folder.
+          const p = JSON.parse(ap.payloadJson ?? '{}') as { channel?: string; draftPath?: string };
+          ledger.emit('inn', 'external.released', ap.requestedBy, {
+            channel: p.channel, draftPath: p.draftPath, approvalId: ap.id,
+          });
+          applied++;
+          break;
+        }
+
+        case 'spend': {
+          // An over-cap spend the Inn Keeper allowed as an exception.
+          if (ap.amountCents != null) {
+            ledger.trySpend({
+              agentId: ap.requestedBy, amountCents: ap.amountCents,
+              purpose: `[approved exception] ${ap.summary}`,
+              capCents: Number.MAX_SAFE_INTEGER, approvalId: ap.id,
+            });
+            ledger.emit('inn', 'spend.exception', ap.requestedBy, {
+              amountCents: ap.amountCents, approvalId: ap.id,
+            });
+            applied++;
+          }
+          break;
+        }
+
+        default:
+          ledger.emit('inn', 'approval.applied_noop', ap.id, { capability: ap.capability });
+      }
+      ledger.setMeta(`applied:${ap.id}`, clock.iso());
+    } catch (err) {
+      ledger.emit('inn', 'approval.apply_failed', ap.id, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      ledger.setMeta(`applied:${ap.id}`, `failed:${clock.iso()}`);
+    }
+  }
+  return applied;
+};

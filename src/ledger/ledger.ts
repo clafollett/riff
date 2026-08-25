@@ -6,7 +6,7 @@ import { newId } from '../core/ids.ts';
 import { systemClock, type Clock } from '../core/clock.ts';
 import type {
   Agent, AgentId, Approval, ApprovalId, ApprovalTier, Building, Capability,
-  Event, Position, SpendRecord, Task, TaskId, TaskStatus,
+  Event, Message, Position, SpendRecord, Task, TaskId, TaskStatus,
 } from '../core/types.ts';
 
 const SCHEMA = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
@@ -312,6 +312,51 @@ export class Ledger {
       try { this.#db.exec('ROLLBACK'); } catch { /* already unwound */ }
       throw err;
     }
+  }
+
+  // -------------------------------------------------------------- messages
+  /**
+   * Deliver mail. `to: null` broadcasts to every active staff member except
+   * the sender. Returns how many people it reached.
+   *
+   * Delivery is a row, not a call — nobody blocks, and the recipient reads it
+   * on their next tick. This is what keeps 22 staff from deadlocking on each
+   * other.
+   */
+  sendMessage(from: AgentId, to: AgentId | null, body: string): number {
+    const at = this.#clock.iso();
+    const recipients = to
+      ? [to]
+      : this.listAgents().map((a) => a.id).filter((id) => id !== from);
+
+    const stmt = this.#db.prepare(
+      'INSERT INTO messages(id,from_agent,to_agent,body,broadcast,sent_at) VALUES(?,?,?,?,?,?)'
+    );
+    for (const r of recipients) {
+      stmt.run(newId('msg', this.#clock.now()), from, r, body, to ? 0 : 1, at);
+    }
+    return recipients.length;
+  }
+
+  /** Unread mail, oldest first. Marking read is the caller's choice so a
+   *  failed tick does not silently swallow someone's message. */
+  inbox(agentId: AgentId, markRead = false): Message[] {
+    const rows = this.#db.prepare(
+      'SELECT * FROM messages WHERE to_agent=? AND read_at IS NULL ORDER BY sent_at'
+    ).all(agentId) as Row[];
+
+    const msgs = rows.map((r) => ({
+      id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']),
+      body: str(r['body']), broadcast: num(r['broadcast']) === 1,
+      sentAt: str(r['sent_at']), readAt: nstr(r['read_at']),
+    }));
+
+    if (markRead && msgs.length > 0) {
+      const now = this.#clock.iso();
+      const upd = this.#db.prepare('UPDATE messages SET read_at=? WHERE id=?');
+      for (const m of msgs) upd.run(now, m.id);
+    }
+    return msgs;
   }
 
   // ------------------------------------------------------------ notes index
