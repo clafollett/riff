@@ -31,6 +31,15 @@ export type SchedulerOptions = {
    */
   throttleAboveUtilization: number;
   maxTurns: number;
+  /**
+   * Hard ceilings for an unattended run. Neither is a cost estimate — they are
+   * stops. Leaving something unbounded running on somebody's machine overnight
+   * is not a thing to do, and a subscription that gets exhausted at 3am means
+   * they cannot work in the morning.
+   */
+  maxTicks: number | null;
+  /** Epoch ms. The scheduler stops itself here regardless of anything else. */
+  until: number | null;
 };
 
 /** Defaults assume a Claude subscription: no dollar caps, paced by rate limit. */
@@ -39,6 +48,8 @@ export const DEFAULT_SCHEDULE: SchedulerOptions = {
   concurrency: 3,
   dailyBudgetUsd: null,
   perTickBudgetUsd: null,
+  maxTicks: null,
+  until: null,
   throttleAboveUtilization: 0.7,
   maxTurns: 24,
 };
@@ -67,6 +78,7 @@ export class Scheduler {
   #inFlight = new Set<AgentId>();
   #spentToday = 0;
   #spendDay: string;
+  #ticks = 0;
   /** >1 stretches every interval. Raised as the subscription window fills. */
   #throttle = 1;
   /** Epoch ms. The village rests until the rate-limit window resets. */
@@ -81,6 +93,7 @@ export class Scheduler {
 
   get running(): boolean { return this.#running; }
   get spentTodayUsd(): number { return this.#spentToday; }
+  get ticks(): number { return this.#ticks; }
   get rateLimit(): SDKRateLimitInfo | null { return this.#lastRateLimit; }
   get pausedUntil(): number { return this.#pausedUntil; }
 
@@ -151,7 +164,21 @@ export class Scheduler {
     while (this.#running) {
       this.#rolloverIfNewDay();
 
-      // Rate-limited: the Inn rests rather than hammering a spent window.
+      // Hard stops first, before anything else is considered.
+      if (this.#opts.maxTicks != null && this.#ticks >= this.#opts.maxTicks) {
+        this.#d.ledger.emit('company', 'scheduler.stopped', null,
+          { why: 'tick ceiling reached', ticks: this.#ticks });
+        await this.stop();
+        break;
+      }
+      if (this.#opts.until != null && Date.now() >= this.#opts.until) {
+        this.#d.ledger.emit('company', 'scheduler.stopped', null,
+          { why: 'deadline reached', ticks: this.#ticks });
+        await this.stop();
+        break;
+      }
+
+      // Rate-limited: rest rather than hammering a spent window.
       if (Date.now() < this.#pausedUntil) {
         await sleep(30_000, this.#abort.signal);
         continue;
@@ -182,6 +209,7 @@ export class Scheduler {
 
   async #wake(a: Agent): Promise<void> {
     this.#inFlight.add(a.id);
+    this.#ticks++;
     try {
       const r = await tick({
         agent: a, ledger: this.#d.ledger, gate: this.#d.gate,
