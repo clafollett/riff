@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -121,14 +121,15 @@ describe('git — the world owns its own history', () => {
     nested.writeNote('greg', null, 'first', 'a note');
     nested.git.commitAs({ id: 'greg', name: 'Greg' }, 'greg writes');
 
-    // The parent repo must be entirely untouched by village activity.
+    // The parent repo must be entirely untouched by world activity.
     // rev-list --count works on an empty repo; `git log` exits 128 there.
     const outerCommits = execFileSync('git', ['-C', outer, 'rev-list', '--count', '--all'], { encoding: 'utf8' }).trim();
-    assert.equal(outerCommits, '0', 'village commits leaked into the parent repo');
+    assert.equal(outerCommits, '0', 'world commits leaked into the parent repo');
 
-    // ...and the world's own history has exactly the one commit Greg made.
-    const innerCommits = execFileSync('git', ['-C', nested.root, 'rev-list', '--count', '--all'], { encoding: 'utf8' }).trim();
-    assert.equal(innerCommits, '1');
+    // ...and the world's own history holds Greg's work. Asserting on authors
+    // rather than a raw count, so setup commits do not make this brittle.
+    const authors = nested.git.since('1.hour').map((c) => c.author);
+    assert.deepEqual(authors.filter((a) => a === 'Greg'), ['Greg']);
     rmSync(outer, { recursive: true, force: true });
   });
 });
@@ -141,7 +142,7 @@ describe('git — attribution is the audit trail', () => {
     assert.ok(sha, 'expected a commit');
 
     const log = world.git.since('1.hour');
-    assert.equal(log.length, 1);
+    assert.ok(sha.startsWith(log[0]!.sha), 'the newest commit should be the one just made');
     assert.equal(log[0]!.author, 'Greg', 'commit must be attributed to the staff member');
   });
 
@@ -201,4 +202,26 @@ test('commons paths normalize whether or not the agent prefixes them', () => {
   assert.equal(commonsPath('commons/doctrine/seats.md'), 'commons/doctrine/seats.md');
   assert.equal(commonsPath('commons/commons/doctrine/seats.md'), 'commons/doctrine/seats.md');
   assert.equal(commonsPath('/doctrine/seats.md'), 'commons/doctrine/seats.md');
+});
+
+test('a new world ignores what the operating system drops in it', () => {
+  // Finder writes .DS_Store into any folder someone opens, and `git add -A`
+  // picks it up — so browsing the world in a file manager silently authors
+  // commits in a staff member's name and inflates the artifact count they are
+  // measured on.
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'helmsted-ignore-'));
+  try {
+    const w = new World(join(dir, 'world'), fixedClock('2026-08-25T00:00:00.000Z'));
+    w.ensure();
+    const ignore = join(w.root, '.gitignore');
+    assert.ok(existsSync(ignore), '.gitignore should exist');
+    assert.match(readFileSync(ignore, 'utf8'), /^\.DS_Store$/m);
+
+    assert.equal(w.git.isDirty(), false, 'a fresh world is clean, ignore file included');
+
+    writeFileSync(join(w.root, '.DS_Store'), 'finder');
+    assert.equal(w.git.isDirty(), false, 'a dropping must not make the world dirty');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { realpathSync, existsSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 /**
- * The village's own git repo.
+ * The world's own git repo.
  *
  * The point of this file: commits are authored AS the staff member who made
  * the change. `git log` in world/ is therefore a complete, attributed,
@@ -42,8 +43,30 @@ export class WorldGit {
       // Not inside any repo. Fall through and initialise.
     }
     this.#git(['init', '-q', '-b', 'main']);
-    this.#git(['config', 'user.name', 'The Inn']);
-    this.#git(['config', 'user.email', 'inn@localhost']);
+    this.#git(['config', 'user.name', 'Helmsted']);
+    this.#git(['config', 'user.email', 'helmsted@localhost']);
+    this.#ignoreDroppings();
+  }
+
+  /**
+   * The world's git log is the company's record of what it did, and every
+   * artifact count is drawn from it. Finder writes .DS_Store into any folder
+   * someone opens, and `git add -A` picks them up — so the operator browsing
+   * the world in a file manager silently authors commits in the staff's name
+   * and inflates the created-artifact count they are measured on.
+   */
+  #ignoreDroppings(): void {
+    const path = join(this.#dir, '.gitignore');
+    if (existsSync(path)) return;
+    writeFileSync(path, ['.DS_Store', 'Thumbs.db', 'desktop.ini', ''].join('\n'), 'utf8');
+    // Committed here rather than left in the tree: an uncommitted file is
+    // swept up by whoever commits next, and infrastructure must not land in a
+    // staff member's name or count toward what they made.
+    this.#git(['add', '.gitignore']);
+    this.#git([
+      '-c', 'user.name=Helmsted', '-c', 'user.email=helmsted@localhost',
+      'commit', '-q', '-m', 'Ignore what the operating system drops here',
+    ]);
   }
 
   isDirty(): boolean {
