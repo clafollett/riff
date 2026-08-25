@@ -30,6 +30,16 @@ export type InnConfig = {
    * Inn Keeper is configuration, never a name in the source.
    */
   innkeeper: { id: string; name: string };
+  /**
+   * External MCP servers handed to every staff session — an image generator,
+   * a calendar, an inbox. The Inn knows nothing about any specific provider;
+   * plugging one in is a config change, not a code change.
+   *
+   * Credentials belong in headers here, and this file is gitignored. Anything
+   * these tools reach still crosses the gate: touching the outside world is
+   * `external.write`, which always lands as a draft.
+   */
+  connectors: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
 };
 
 /** Best guess at who is running this, for the first-run prompt to confirm. */
@@ -63,6 +73,7 @@ const fromHome = (home: string): InnConfig => {
     worldDir: join(home, 'world'),
     ledgerPath: join(home, 'ledger.db'),
     innkeeper: { id: keeperId(name), name },
+    connectors: {},
   };
 };
 
@@ -99,6 +110,7 @@ export const resolveConfig = (cwd = process.cwd()): InnConfig => {
     worldDir: env['INN_WORLD'] ? abs(cwd, env['INN_WORLD']) : abs(base, merged.worldDir ?? 'world'),
     ledgerPath: env['INN_LEDGER'] ? abs(cwd, env['INN_LEDGER']) : abs(base, merged.ledgerPath ?? 'ledger.db'),
     innkeeper: { id: storedKeeper?.id ?? keeperId(keeperName), name: keeperName },
+    connectors: merged.connectors ?? {},
   };
 };
 

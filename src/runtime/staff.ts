@@ -17,6 +17,9 @@ export type TickDeps = {
    *  The spend cap governs the staff's money; this governs yours. */
   maxBudgetUsd?: number;
   maxTurns?: number;
+  /** External MCP servers (image generation, calendar, inbox). Everything they
+   *  reach still crosses the gate — canUseTool sees these calls too. */
+  connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
   signal?: AbortSignal;
 };
 
@@ -149,7 +152,7 @@ export const tick = async (d: TickDeps): Promise<TickResult> => {
         // ---- isolation ----
         settingSources: [],          // no ~/.claude/settings.json, no CLAUDE.md
         strictMcpConfig: true,       // only the tools we hand them
-        mcpServers: { inn: server },
+        mcpServers: { inn: server, ...(d.connectors ?? {}) },
         canUseTool: makeCanUseTool({ actor: agent.id, world, gate, toolCapabilities: capabilities }),
         disallowedTools: ['Bash', 'BashOutput', 'KillShell'],
         permissionMode: 'default',   // 'default' is what consults canUseTool

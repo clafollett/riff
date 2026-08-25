@@ -7,6 +7,7 @@ import { Scheduler } from '../runtime/scheduler.ts';
 import { systemClock } from '../core/clock.ts';
 import { computeMorale } from './morale.ts';
 import { openTheInn } from '../village/open.ts';
+import { readManifest, assetsDir } from '../village/assets.ts';
 import { HOUSES, MAP_W, MAP_H, TILE, FOUNTAIN } from '../village/map.ts';
 import type { Event } from '../core/types.ts';
 
@@ -22,7 +23,7 @@ const clock = systemClock;
 const { ledger, world, firstRun } = openTheInn(cfg, clock);
 const rules = houseRulesFor(cfg.innkeeper.id);
 const gate = new PolicyGate(ledger, rules);
-const scheduler = new Scheduler({ ledger, gate, world, clock });
+const scheduler = new Scheduler({ ledger, gate, world, clock, connectors: cfg.connectors });
 
 // ---------------------------------------------------------------- SSE fan-out
 /**
@@ -67,10 +68,31 @@ const readBody = async (req: IncomingMessage): Promise<Record<string, unknown>> 
   catch { return {}; }
 };
 
+/** Serve a file from a directory that is the entire world this handler may see. */
+const serveFrom = async (res: ServerResponse, rootDir: string, rel: string): Promise<void> => {
+  const root = resolve(rootDir);
+  const abs = resolve(root, rel.replace(/^\/+/, ''));
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    res.writeHead(403).end('forbidden');
+    return;
+  }
+  try {
+    const buf = await readFile(abs);
+    res.writeHead(200, {
+      'content-type': MIME[extname(abs)] ?? 'application/octet-stream',
+      'cache-control': 'no-cache',
+    });
+    res.end(buf);
+  } catch {
+    res.writeHead(404).end('not found');
+  }
+};
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json',
   '.png': 'image/png', '.svg': 'image/svg+xml', '.webp': 'image/webp',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
 };
 
 const serveStatic = async (res: ServerResponse, urlPath: string): Promise<void> => {
@@ -147,6 +169,14 @@ const server = createServer(async (req, res) => {
       const reason = typeof body['reason'] === 'string' ? body['reason'] : '';
       const ok = gate.decide(id, rules.innkeeper, approved, reason);
       return json(res, { ok }, ok ? 200 : 409);
+    }
+
+    // ---- the village's own art ----
+    if (p === '/api/assets' && method === 'GET') {
+      return json(res, readManifest(world));
+    }
+    if (p.startsWith('/assets/') && method === 'GET') {
+      return await serveFrom(res, assetsDir(world), p.slice('/assets'.length));
     }
 
     // ---- morale, recomputed from the log every time ----

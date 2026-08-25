@@ -11,6 +11,30 @@
  */
 
 const $ = (id) => document.getElementById(id);
+
+/**
+ * The village's own art, when it has made any.
+ *
+ * Every draw call asks `art(key)` first and falls back to drawn geometry, so
+ * the staff can hang one building at a time and the map improves piece by
+ * piece with no rebuild and no code change.
+ */
+const ART = new Map();
+function art(key) {
+  const img = ART.get(key);
+  return img && img.complete && img.naturalWidth > 0 ? img : null;
+}
+async function loadArt() {
+  try {
+    const m = await fetch('/api/assets').then((r) => r.json());
+    for (const [key, entry] of Object.entries(m.assets ?? {})) {
+      if (ART.has(key)) continue;
+      const img = new Image();
+      img.src = '/assets/' + entry.file;
+      ART.set(key, img);
+    }
+  } catch { /* no art yet — geometry it is */ }
+}
 const canvas = $('c');
 const ctx = canvas.getContext('2d');
 
@@ -212,6 +236,19 @@ function drawHouses() {
     const w = h.w * t, ht = h.h * t;
     if (p.x + w < -60 || p.y + ht < -60 || p.x > canvas.width + 60 || p.y > canvas.height + 60) continue;
 
+    // Real art wins when the village has made it.
+    const sprite = art(`house/${h.id}`);
+    if (sprite) {
+      ctx.fillStyle = 'rgba(0,0,0,.26)';
+      ctx.beginPath();
+      ctx.ellipse(p.x + w / 2 + 6, p.y + ht + 4, w * 0.52, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const sh = (sprite.naturalHeight / sprite.naturalWidth) * w;
+      ctx.drawImage(sprite, p.x, p.y + ht - sh, w, sh);
+      drawHouseSign(h, p, w, p.y + ht - sh - 26);
+      continue;
+    }
+
     const [roofA, roofB] = DEPT_ROOF[h.department] ?? ['#8c4b3f', '#743d33'];
     const wallY = p.y + ht * 0.44;
     const wallH = ht - ht * 0.44;
@@ -280,15 +317,19 @@ function drawHouses() {
     ctx.fillStyle = '#d8b34a'; ctx.fillRect(dx + 17, dy + 20, 3, 3);
 
     // ---- sign, hung above the roofline so nobody in the doorway covers it ----
-    ctx.font = 'bold 11px ui-monospace, monospace';
-    ctx.textAlign = 'center';
-    const lw = ctx.measureText(h.name).width + 16;
-    const sx = p.x + w / 2 - lw / 2, sy = apexY - 26;
-    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(sx + 2, sy + 2, lw, 19);
-    ctx.fillStyle = '#3a2a1c'; ctx.fillRect(sx, sy, lw, 19);
-    ctx.fillStyle = '#6b4a2c'; ctx.fillRect(sx, sy, lw, 3);
-    ctx.fillStyle = '#f0e2c6'; ctx.fillText(h.name, p.x + w / 2, sy + 14);
+    drawHouseSign(h, p, w, apexY - 26);
   }
+}
+
+function drawHouseSign(h, p, w, sy) {
+  ctx.font = 'bold 11px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  const lw = ctx.measureText(h.name).width + 16;
+  const sx = p.x + w / 2 - lw / 2;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(sx + 2, sy + 2, lw, 19);
+  ctx.fillStyle = '#3a2a1c'; ctx.fillRect(sx, sy, lw, 19);
+  ctx.fillStyle = '#6b4a2c'; ctx.fillRect(sx, sy, lw, 3);
+  ctx.fillStyle = '#f0e2c6'; ctx.fillText(h.name, p.x + w / 2, sy + 14);
 }
 
 function drawPerson(agent, pos) {
@@ -296,6 +337,19 @@ function drawPerson(agent, pos) {
   const p = worldToScreen(pos.x, pos.y);
   const cx = p.x + t / 2, cy = p.y + t / 2;
   const isMe = agent.id === state.me;
+
+  const facing = pos.facing ?? 'down';
+  const sprite = art(`staff/${agent.id}/${facing}`) ?? art(`staff/${agent.id}/down`);
+  if (sprite) {
+    ctx.fillStyle = 'rgba(0,0,0,.3)';
+    ctx.beginPath(); ctx.ellipse(cx, cy + 11, 8, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    const sw = t * 1.1, sh = (sprite.naturalHeight / sprite.naturalWidth) * sw;
+    ctx.drawImage(sprite, cx - sw / 2, cy + 11 - sh, sw, sh);
+    drawNameTag(agent, cx, cy - sh + 14, isMe);
+    drawBubble(agent, cx, cy - sh + 4);
+    return;
+  }
+
   const seed = agent.id.charCodeAt(0) + agent.id.length * 7;
   const skin = SKIN[seed % SKIN.length];
   const hair = HAIR[(seed * 3) % HAIR.length];
@@ -327,29 +381,36 @@ function drawPerson(agent, pos) {
     ctx.fillStyle = '#e8e04a'; ctx.fillRect(cx - 6, top - 3, 12, 4);
   }
 
+  drawNameTag(agent, cx, top - 38, isMe);
+  drawBubble(agent, cx, top - 48);
+}
+
+function drawNameTag(agent, cx, y, isMe) {
   ctx.font = '10px ui-monospace, monospace';
   ctx.textAlign = 'center';
   const nw = ctx.measureText(agent.name).width + 10;
   ctx.fillStyle = isMe ? 'rgba(184,69,47,.92)' : 'rgba(24,18,12,.8)';
-  roundRect(cx - nw / 2, top - 38, nw, 14, 3); ctx.fill();
+  roundRect(cx - nw / 2, y, nw, 14, 3); ctx.fill();
   ctx.fillStyle = '#f4ead6';
-  ctx.fillText(agent.name, cx, top - 28);
+  ctx.fillText(agent.name, cx, y + 10);
+}
 
+function drawBubble(agent, cx, y) {
   const bubble = state.bubbles.get(agent.id);
-  if (bubble && bubble.until > Date.now()) {
-    ctx.font = '11px ui-monospace, monospace';
-    const text = bubble.text.slice(0, 46);
-    const bw = ctx.measureText(text).width + 18;
-    ctx.fillStyle = 'rgba(0,0,0,.25)';
-    roundRect(cx - bw / 2 + 2, top - 62, bw, 22, 6); ctx.fill();
-    ctx.fillStyle = 'rgba(248,240,225,.98)';
-    roundRect(cx - bw / 2, top - 64, bw, 22, 6); ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(cx - 5, top - 43); ctx.lineTo(cx + 5, top - 43); ctx.lineTo(cx, top - 36);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#241c17';
-    ctx.fillText(text, cx, top - 49);
-  }
+  if (!bubble || bubble.until <= Date.now()) return;
+  ctx.font = '11px ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  const text = bubble.text.slice(0, 46);
+  const bw = ctx.measureText(text).width + 18;
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  roundRect(cx - bw / 2 + 2, y - 24, bw, 22, 6); ctx.fill();
+  ctx.fillStyle = 'rgba(248,240,225,.98)';
+  roundRect(cx - bw / 2, y - 26, bw, 22, 6); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - 5, y - 5); ctx.lineTo(cx + 5, y - 5); ctx.lineTo(cx, y + 2);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#241c17';
+  ctx.fillText(text, cx, y - 11);
 }
 
 function roundRect(x, y, w, h, r) {
@@ -496,7 +557,7 @@ async function boot() {
   state.me = st.inn.rules.innkeeper;
   for (const p of st.positions) state.positions.set(p.agentId, { x: p.x, y: p.y, activity: p.activity });
   $('n-spend').textContent = '$0.00';
-  buildTerrain(); resize(); render(); refreshPanels();
+  buildTerrain(); await loadArt(); resize(); render(); refreshPanels();
 
   const es = new EventSource('/api/stream');
   es.addEventListener('tick', (ev) => {
@@ -512,6 +573,7 @@ async function boot() {
         const data = e.dataJson ? JSON.parse(e.dataJson) : {};
         state.bubbles.set(e.actor, { text: data.text ?? '', until: Date.now() + 7000 });
       }
+      if (e.kind === 'art.hung') loadArt();   // pick up new art the moment it is hung
       if (e.kind.startsWith('gate.escalate') || e.kind.startsWith('approval.') ||
           e.kind === 'agent.hired' || e.kind === 'note.written') touched = true;
     }

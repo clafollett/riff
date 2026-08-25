@@ -6,6 +6,7 @@ import type { Ledger } from '../ledger/ledger.ts';
 import type { PolicyGate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
+import { registerAsset, writeSpec, readManifest, isValidKey, assetsDir } from '../village/assets.ts';
 
 export type InnContext = {
   actor: AgentId;
@@ -268,6 +269,61 @@ export const createInnTools = (ctx: InnContext) => {
     },
   );
 
+  // --------------------------------------------------------------- the art
+  const commissionArt = tool(
+    'commission_art',
+    'Commission a piece of art for the village — a building, a character, a prop. Write the brief first; generating it costs credits, so this passes the money gate before anything is made.',
+    {
+      key: z.string().describe('house/<building-id>, staff/<agent-id>/<up|down|left|right>, prop/<name> or tile/<name>'),
+      brief: z.string().describe('Exactly what it should look like. Be specific about style, palette, angle and size.'),
+      estimateCents: z.number().int().positive().describe('What you expect this to cost, in whole cents.'),
+    },
+    async ({ key, brief, estimateCents }) => {
+      if (!isValidKey(key)) return say(`'${key}' is not a valid asset key.`);
+      return say(gated(ctx, 'spend', `art: ${key}`, key, () => {
+        const spec = writeSpec(world, key, brief, actor, clock.iso());
+        ledger.emit(actor, 'art.commissioned', key, { spec, estimateCents });
+        return [
+          `Commissioned. Brief saved at ${spec}.`,
+          `Now generate it with whichever image tool the Inn Keeper has connected,`,
+          `save the file under ${assetsDir(world)}/, then call register_art to hang it.`,
+        ].join(' ');
+      }, { amountCents: estimateCents }));
+    },
+  );
+
+  const registerArt = tool(
+    'register_art',
+    'Hang a finished piece in the village so the map starts using it. The file must already be saved inside assets/.',
+    {
+      key: z.string(),
+      file: z.string().describe('Path relative to assets/, e.g. "house-the-inn.png"'),
+      w: z.number().int().positive(),
+      h: z.number().int().positive(),
+      brief: z.string().max(300).default(''),
+    },
+    async ({ key, file, w, h, brief }) => {
+      const r = registerAsset(world, { key, file, w, h, by: actor, at: clock.iso(), brief });
+      if (!r.ok) return say(`Cannot hang that: ${r.reason}`);
+      ledger.emit(actor, 'art.hung', key, { file: r.entry.file, w, h });
+      return say(`Hung ${key}. The village is using it now.`);
+    },
+  );
+
+  const artSoFar = tool(
+    'art_so_far',
+    'List the art the village already has, so you do not commission something twice.',
+    {},
+    async () => {
+      const m = readManifest(world);
+      const keys = Object.keys(m.assets);
+      return say(keys.length
+        ? keys.map((k) => `- ${k} (by ${m.assets[k]!.by})`).join('\n')
+        : 'The village has no art yet. Everything is still drawn as plain shapes.');
+    },
+    { annotations: { readOnlyHint: true } },
+  );
+
   const proposeHire = tool(
     'propose_hire',
     'Propose a new staff member for your house. The Steward decides.',
@@ -299,6 +355,9 @@ export const createInnTools = (ctx: InnContext) => {
     spend: 'spend',
     draft_to_outside: 'external.write',
     propose_hire: 'hire',
+    commission_art: 'spend',
+    register_art: 'world.write',
+    art_so_far: 'world.read',
   };
 
   const server = createSdkMcpServer({
@@ -308,6 +367,7 @@ export const createInnTools = (ctx: InnContext) => {
     tools: [
       whosHere, readColleague, speak, sendMessage, walkTo, noteAbout, postToCommons, remember,
       openTask, claimTask, finishTask, spend, draftToOutside, proposeHire,
+      commissionArt, registerArt, artSoFar,
     ],
   });
 

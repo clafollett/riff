@@ -45,6 +45,7 @@ export const DEFAULT_SCHEDULE: SchedulerOptions = {
 
 type Deps = {
   ledger: Ledger; gate: PolicyGate; world: World; clock: Clock;
+  connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
   options?: Partial<SchedulerOptions>;
   onTick?: (r: TickResult) => void;
 };
@@ -187,6 +188,7 @@ export class Scheduler {
         world: this.#d.world, clock: this.#d.clock,
         ...(this.#opts.perTickBudgetUsd != null ? { maxBudgetUsd: this.#opts.perTickBudgetUsd } : {}),
         maxTurns: this.#opts.maxTurns,
+        ...(this.#d.connectors ? { connectors: this.#d.connectors } : {}),
         signal: this.#abort.signal,
       });
       this.#spentToday += r.costUsd;
