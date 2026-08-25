@@ -1,12 +1,14 @@
 import { resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
 import type { CanUseTool, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentId, Capability } from '../core/types.ts';
 import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import { slug } from '../core/ids.ts';
+import { TOOL_PREFIX } from './tools.ts';
 
 /**
- * The bridge between the Agent SDK and the House Rules.
+ * The bridge between the Agent SDK and the company's rules.
  *
  * canUseTool is the single chokepoint every tool call crosses — built-ins
  * included — so wiring Gate here means there is no tool surface that
@@ -17,8 +19,29 @@ import { slug } from '../core/ids.ts';
  * to the SDK later cannot silently widen what the staff can do.
  */
 
-/** Shell is not on the menu. Autonomous staff do not get a terminal on your Mac. */
-const FORBIDDEN = new Set(['Bash', 'BashOutput', 'KillShell', 'KillTask']);
+/**
+ * Shell is the one capability decided by WHERE the runtime is, not by who is
+ * asking.
+ *
+ * On the operator's own machine it is refused outright — autonomous agents do
+ * not get a terminal on someone's Mac, and no argument from inside a session
+ * can change that, because this is not in the prompt.
+ *
+ * Inside the container it is the entire point. Agents cannot build anything
+ * worth reviewing without a compiler and a package manager, and the answer to
+ * that is not a tool allowlist that shrinks forever — it is a box with no
+ * route to the internet. See docker/compose.yaml.
+ *
+ * Both signals are required. The env var alone would let a mistyped export on
+ * the host open a shell; the container marker alone would open one in any
+ * container, including ones built for something else entirely. Fail closed:
+ * if either is missing, there is no shell.
+ */
+const SHELL_TOOLS = new Set(['Bash', 'BashOutput', 'KillShell', 'KillTask']);
+
+export const shellIsContained = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  env['HELMSTED_CONTAINED'] === '1'
+  && (existsSync('/.dockerenv') || existsSync('/run/.containerenv'));
 
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead']);
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit', 'MultiEdit']);
@@ -62,19 +85,22 @@ export type PermissionDeps = {
   /** Called for every decision, so a shift spent hammering a refused tool is
    *  visible instead of silent. */
   onDecision?: (toolName: string, outcome: 'allow' | 'deny', detail: string) => void;
-  /** Capability declared by each in-process village tool, by bare tool name. */
+  /** Capability declared by each in-process company tool, by bare tool name. */
   toolCapabilities: Record<string, Capability>;
+  /** Overridable so the decision can be tested without being in a container. */
+  contained?: boolean;
 };
 
 export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
   const { actor, world, gate, toolCapabilities } = deps;
+  const contained = deps.contained ?? shellIsContained();
   const note = (tool: string, out: 'allow' | 'deny', detail = '') =>
     deps.onDecision?.(tool, out, detail);
 
-  const ask = (capability: Capability, summary: string, target?: string): PermissionResult => {
+  const ask = (capability: Capability, summary: string, target?: string | null): PermissionResult => {
     const d = gate.request({ actor, capability, summary, ...(target ? { target } : {}) });
     if (d.kind === 'allow') return allow();
-    if (d.kind === 'deny') return deny(`Refused by the House Rules (${d.rule}): ${d.reason}`);
+    if (d.kind === 'deny') return deny(`Refused by the company's rules (${d.rule}): ${d.reason}`);
     // An escalation is not a failure — the work is parked, and the staff member
     // is told so plainly enough that it moves on instead of retrying in a loop.
     return deny(
@@ -85,12 +111,17 @@ export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
   };
 
   return async (toolName, input) => {
-    if (FORBIDDEN.has(toolName)) {
-      note(toolName, 'deny', 'forbidden at the Inn');
-      return deny(
-        `${toolName} is not available at the Inn. Use the inn__ tools for village work, ` +
-        `or Read/Write within your own quarters.`
-      );
+    if (SHELL_TOOLS.has(toolName)) {
+      if (!contained) {
+        note(toolName, 'deny', 'no shell outside the container');
+        return deny(
+          `${toolName} is not available. This company is running directly on someone's ` +
+          `machine, so there is no shell. Use the company tools for company work, or ` +
+          `Read/Write within your own files. Running in the container gives you a shell.`
+        );
+      }
+      const cmd = typeof input['command'] === 'string' ? String(input['command']) : toolName;
+      return ask('shell', cmd.slice(0, 200), null);
     }
 
     if (FREE_TOOLS.has(toolName)) { note(toolName, 'allow', 'free'); return allow(); }
@@ -101,10 +132,10 @@ export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
     }
 
     // In-process village tools declare their own capability at definition time.
-    const bare = toolName.startsWith('mcp__inn__') ? toolName.slice('mcp__inn__'.length) : null;
+    const bare = toolName.startsWith(TOOL_PREFIX) ? toolName.slice(TOOL_PREFIX.length) : null;
     if (bare) {
       const cap = toolCapabilities[bare];
-      if (!cap) return deny(`Unknown village tool '${bare}'.`);
+      if (!cap) return deny(`Unknown company tool '${bare}'.`);
       // The tool body performs its own gate call with a real summary; this
       // pass only rejects what is categorically barred for this actor.
       return allow();
@@ -119,8 +150,8 @@ export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
       switch (where.kind) {
         case 'outside':
           return deny(
-            `${p} is outside the village. Everything you need is under world/ — ` +
-            `your quarters, the commons, and your colleagues' open files.`
+            `${p} is outside the company. Everything you need is under world/ — ` +
+            `your own files, the commons, and your colleagues' open files.`
           );
         case 'own':
           return ask(writing ? 'world.write' : 'world.read', `${toolName} ${p}`, p);
@@ -137,6 +168,6 @@ export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
 
     // Default-deny. New SDK tools do not become staff powers by accident.
     note(toolName, 'deny', 'unknown tool');
-    return deny(`'${toolName}' is not part of village life.`);
+    return deny(`'${toolName}' is not one of this company's tools.`);
   };
 };

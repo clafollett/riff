@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A company founds itself: a CEO agent hires its own staff and builds real things, under rules enforced in code.",
+  "description": "Give it a company name and a CEO. It founds the company, and the CEO hires the rest.",
   "engines": {
     "node": ">=26"
   },

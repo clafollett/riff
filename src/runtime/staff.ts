@@ -4,8 +4,8 @@ import type { Ledger } from '../ledger/ledger.ts';
 import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
-import { createTools } from './tools.ts';
-import { makeCanUseTool } from './permissions.ts';
+import { createTools, TOOL_NAMESPACE } from './tools.ts';
+import { makeCanUseTool, shellIsContained } from './permissions.ts';
 import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
@@ -175,12 +175,16 @@ export const tick = async (d: TickDeps): Promise<TickResult> => {
         // ---- isolation ----
         settingSources: [],          // no ~/.claude/settings.json, no CLAUDE.md
         strictMcpConfig: true,       // only the tools we hand them
-        mcpServers: { inn: server, ...(d.connectors ?? {}) },
+        mcpServers: { [TOOL_NAMESPACE]: server, ...(d.connectors ?? {}) },
         canUseTool: makeCanUseTool({
           actor: agent.id, world, gate, toolCapabilities: capabilities,
           ...(d.trace ? { onDecision: (t, o, why) => d.trace!(`  gate  ${o.padEnd(5)} ${t} ${why}`) } : {}),
         }),
-        disallowedTools: ['Bash', 'BashOutput', 'KillShell'],
+        // Belt and braces on the host: canUseTool already refuses these, but
+        // disallowedTools keeps them out of the tool list the model is shown,
+        // so no turn is spent reaching for something that cannot be granted.
+        // Inside the container the shell is the point, so it is offered.
+        ...(shellIsContained() ? {} : { disallowedTools: ['Bash', 'BashOutput', 'KillShell'] }),
         permissionMode: 'default',   // 'default' is what consults canUseTool
 
         // ---- limits ----

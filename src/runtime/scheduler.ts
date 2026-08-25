@@ -9,11 +9,11 @@ import { applyApproved } from './executor.ts';
 import { RANK } from '../core/types.ts';
 
 export type SchedulerOptions = {
-  /** How often a staff member wakes, in ms. Scaled by rank — the Steward
-   *  keeps a closer eye on things than a house assistant. */
+  /** How often a staff member wakes, in ms. Scaled by rank — the CEO
+   *  keeps a closer eye on things than a member. */
   baseIntervalMs: number;
   /** How many staff may be awake at once. Protects rate limits and your wallet,
-   *  and keeps the map legible. */
+   *  and keeps the feed legible. */
   concurrency: number;
   /**
    * Hard stop for the whole village, in USD per local day — inference cost,
@@ -128,7 +128,7 @@ export class Scheduler {
     }
   }
 
-  /** Rank sets cadence: the Steward wakes ~2x as often as a house assistant. */
+  /** Rank sets cadence: the CEO wakes ~2x as often as a member. */
   #intervalFor(a: Agent): number {
     const rank = RANK[a.tier];
     const factor = 1 + rank * 0.35;

@@ -1,10 +1,11 @@
 /**
  * Wake exactly one staff member, once, and report what happened.
  *
- *   node scripts/tick.ts hollis
+ *   node scripts/tick.ts            the CEO
+ *   node scripts/tick.ts <who> 20   anyone, with a turn cap
  *
  * Deliberately not the scheduler: one agent, one wake-up, hard turn cap. This
- * is the script for proving the runtime works before letting a village loose.
+ * is the script for proving the runtime works before letting a company loose.
  */
 import { resolveConfig } from '../src/core/config.ts';
 import { found } from '../src/company/genesis.ts';
@@ -13,10 +14,11 @@ import { constitutionFor } from '../src/policy/rules.ts';
 import { systemClock } from '../src/core/clock.ts';
 import { tick } from '../src/runtime/staff.ts';
 
-const who = process.argv[2] ?? 'hollis';
 const maxTurns = Number(process.argv[3] ?? 8);
 
 const cfg = resolveConfig();
+// No default name is ever right — every company names its own CEO.
+const who = process.argv[2] ?? cfg.ceo.id;
 const clock = systemClock;
 const { ledger, world } = found(cfg, clock);
 const gate = new Gate(

@@ -8,6 +8,16 @@ import { commonsPath, type World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { fillSeat } from '../company/hire.ts';
 
+/**
+ * The MCP server's key, which is what the SDK prefixes every tool name with:
+ * `mcp__<namespace>__who_is_here`. The permission layer matches on that
+ * prefix, so if these two ever disagree the match fails, every company tool
+ * falls through to the default-deny, and an agent's whole shift is refusals
+ * with no error anywhere. One constant, imported by both.
+ */
+export const TOOL_NAMESPACE = 'company';
+export const TOOL_PREFIX = `mcp__${TOOL_NAMESPACE}__`;
+
 export type Ctx = {
   actor: AgentId;
   ledger: Ledger;
@@ -288,7 +298,7 @@ export const createTools = (ctx: Ctx) => {
   };
 
   const server = createSdkMcpServer({
-    name: 'company',
+    name: TOOL_NAMESPACE,
     version: '0.1.0',
     instructions: 'Working life at this company.',
     tools: [

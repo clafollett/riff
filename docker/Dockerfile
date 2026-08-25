@@ -51,8 +51,11 @@ RUN git config --global user.name  "Helmsted" \
  && git config --global init.defaultBranch main \
  && git config --global --add safe.directory /world
 
+# HELMSTED_CONTAINED opens the shell. The runtime also requires a container
+# marker file, so this variable on its own does nothing on someone's laptop.
 ENV NODE_ENV=production \
     HELMSTED_HOME=/world \
+    HELMSTED_CONTAINED=1 \
     PORT=4173 \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false

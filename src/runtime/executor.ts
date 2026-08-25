@@ -57,7 +57,7 @@ export const applyApproved = (ledger: Ledger, world: World, clock: Clock): numbe
         }
 
         case 'spend': {
-          // An over-cap spend the Inn Keeper allowed as an exception.
+          // An over-cap spend the board allowed as an exception.
           if (ap.amountCents != null) {
             ledger.trySpend({
               agentId: ap.requestedBy, amountCents: ap.amountCents,
