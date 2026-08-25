@@ -281,32 +281,49 @@ function drawHouses() {
       ctx.fillStyle = grd; ctx.fillRect(wx - 5, wy + 20, 32, 26);
     }
 
-    // ---- roof: shingled courses, ridge, overhang shadow ----
-    const apexY = p.y - 6;
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(p.x - 9, wallY + 3);
-    ctx.lineTo(p.x + w / 2, apexY);
-    ctx.lineTo(p.x + w + 9, wallY + 3);
-    ctx.closePath();
-    ctx.clip();
-    ctx.fillStyle = roofB; ctx.fillRect(p.x - 12, apexY - 4, w + 24, wallY - apexY + 12);
-    const courses = 6;
+    // ---- roof ----
+    // The silhouette must fill the footprint. A gable TRIANGLE leaves the top
+    // corners of the collision box rendering as bare grass while still walking
+    // like wall — which is exactly what it looked like: invisible obstacles
+    // above the roofline. So the roof plane fills its rectangle and the gable
+    // sits on top of it, and the eaves stay inside the box.
+    const apexY = p.y;
+    const roofBottom = wallY + 3;
+
+    // the roof plane, filling the footprint corner to corner
+    ctx.fillStyle = roofB;
+    ctx.fillRect(p.x, apexY, w, roofBottom - apexY);
+
+    // shingle courses across the whole plane
+    const courses = 5;
+    const ch = (roofBottom - apexY) / courses;
     for (let i = 0; i < courses; i++) {
-      const yy = apexY + ((wallY + 3 - apexY) / courses) * i;
       ctx.fillStyle = i % 2 ? roofA : roofB;
-      ctx.fillRect(p.x - 12, yy, w + 24, (wallY + 3 - apexY) / courses + 1);
-      ctx.fillStyle = 'rgba(0,0,0,.13)';
-      ctx.fillRect(p.x - 12, yy + (wallY + 3 - apexY) / courses - 2, w + 24, 2);
+      ctx.fillRect(p.x, apexY + ch * i, w, ch + 1);
+      ctx.fillStyle = 'rgba(0,0,0,.12)';
+      ctx.fillRect(p.x, apexY + ch * (i + 1) - 2, w, 2);
     }
-    ctx.fillStyle = 'rgba(255,255,255,.10)';
-    ctx.beginPath();
-    ctx.moveTo(p.x + w / 2, apexY); ctx.lineTo(p.x - 9, wallY + 3);
-    ctx.lineTo(p.x + w / 2, wallY + 3); ctx.closePath(); ctx.fill();
-    ctx.restore();
-    ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(p.x - 9, wallY + 1, w + 18, 5);
+
+    // hip slopes: shade the outer thirds so it reads as a pitched roof rather
+    // than a flat slab, without changing the silhouette
+    const slope = ctx.createLinearGradient(p.x, 0, p.x + w, 0);
+    slope.addColorStop(0, 'rgba(0,0,0,.30)');
+    slope.addColorStop(0.34, 'rgba(0,0,0,0)');
+    slope.addColorStop(0.5, 'rgba(255,255,255,.10)');
+    slope.addColorStop(0.66, 'rgba(0,0,0,0)');
+    slope.addColorStop(1, 'rgba(0,0,0,.30)');
+    ctx.fillStyle = slope;
+    ctx.fillRect(p.x, apexY, w, roofBottom - apexY);
+
+    // ridge line along the top
     ctx.fillStyle = '#4a3227';
-    ctx.fillRect(p.x + w / 2 - 2, apexY - 2, 4, 8);
+    ctx.fillRect(p.x + w * 0.18, apexY, w * 0.64, 4);
+    // eaves shadow where the roof meets the wall
+    ctx.fillStyle = 'rgba(0,0,0,.3)';
+    ctx.fillRect(p.x, roofBottom - 2, w, 5);
+    // chimney
+    ctx.fillStyle = '#4a3227';
+    ctx.fillRect(p.x + w * 0.72, apexY - 9, 9, 12);
 
     // ---- door ----
     const dp = worldToScreen(h.doorX, h.doorY);
@@ -317,7 +334,7 @@ function drawHouses() {
     ctx.fillStyle = '#d8b34a'; ctx.fillRect(dx + 17, dy + 20, 3, 3);
 
     // ---- sign, hung above the roofline so nobody in the doorway covers it ----
-    drawHouseSign(h, p, w, apexY - 26);
+    drawHouseSign(h, p, w, p.y - 24);
   }
 }
 
