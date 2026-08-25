@@ -1,0 +1,19 @@
+{
+  "name": "bed-and-breakfast",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A village where AI staff live, work, and run real parts of your life — under rules enforced in code, not prompts.",
+  "engines": { "node": ">=26" },
+  "scripts": {
+    "check": "tsgo --noEmit",
+    "test": "node --test test/**/*.test.ts",
+    "inn": "node src/gateway/server.ts",
+    "seed": "node scripts/seed.ts"
+  },
+  "devDependencies": {
+    "@typescript/native-preview": "latest",
+    "typescript": "^7.0.2",
+    "@types/node": "^26.0.0"
+  }
+}
