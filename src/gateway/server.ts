@@ -17,8 +17,9 @@ const migrated = migrateLegacyLayout();
 const registry = new Registry(clock);
 
 // A fresh checkout on any machine becomes a working installation with no setup
-// step — one company, named from the environment or given a placeholder the
-// operator renames from the console.
+// step. This one is NOT started: it is a placeholder nobody has named yet, and
+// spending someone's rate limit on a company they have not chosen to found is
+// not a good first impression. Founding one deliberately does start it.
 if (!listCompanies().length) {
   registry.found({
     name: process.env['HELMSTED_COMPANY']?.trim() || 'Untitled Company',
@@ -118,11 +119,26 @@ const server = createServer(async (req, res) => {
         chair: String(b['chair'] ?? guessKeeperName()),
       });
       if (!r.ok) return json(res, { error: r.reason }, 409);
+      // A company founded on purpose starts working on purpose. Its CEO has an
+      // empty world and a mandate, and the first thing anyone wants to see is
+      // what it does with them.
+      await registry.setRunning(r.company.slug, true);
       return json(res, {
         slug: r.company.slug,
         company: r.company.cfg.company,
         ceo: r.company.cfg.ceo,
+        running: true,
       }, 201);
+    }
+
+    // Start or pause a company without switching to it, so the operator can
+    // run several at once and see which ones are working.
+    if (p.startsWith('/api/companies/') && p.endsWith('/running') && method === 'POST') {
+      const target = p.slice('/api/companies/'.length, -'/running'.length);
+      const b = await readBody(req);
+      const ok = await registry.setRunning(target, b['running'] === true);
+      return ok ? json(res, { slug: target, running: b['running'] === true })
+                : json(res, { error: `no company '${target}'` }, 404);
     }
 
     if (p.startsWith('/api/companies/') && (method === 'PATCH' || method === 'DELETE')) {
@@ -179,6 +195,13 @@ const server = createServer(async (req, res) => {
           tasks: ledger.listTasks().length,
           seq: ledger.latestSeq(),
           running: scheduler.running,
+          // Who is mid-shift right now, and when everyone else is next due.
+          // Without this the console can say the company is running but not
+          // that anything is actually happening.
+          awake: scheduler.awake,
+          dueAt: scheduler.dueAt(),
+          pausedUntil: scheduler.pausedUntil || null,
+          ticks: scheduler.ticks,
           rateLimit: scheduler.rateLimit,
         });
       }
@@ -283,8 +306,26 @@ const server = createServer(async (req, res) => {
         return json(res, { delivered: n });
       }
 
-      if (p === '/api/open' && method === 'POST') { scheduler.start(); return json(res, { running: true }); }
-      if (p === '/api/close' && method === 'POST') { await scheduler.stop(); return json(res, { running: false }); }
+      if (p === '/api/open' && method === 'POST') {
+        await registry.setRunning(co.slug, true);
+        return json(res, { running: true });
+      }
+      if (p === '/api/close' && method === 'POST') {
+        await registry.setRunning(co.slug, false);
+        return json(res, { running: false });
+      }
+
+      // Wake one person, once. The first shift of a new company is the one
+      // worth watching, and waiting out a scheduling interval to see it is a
+      // bad first impression.
+      if (p === '/api/wake' && method === 'POST') {
+        const b = await readBody(req);
+        const who = typeof b['who'] === 'string' && b['who'] ? b['who'] : cfg.ceo.id;
+        if (!ledger.getAgent(who)) return json(res, { error: `no agent '${who}'` }, 404);
+        scheduler.nudge(who);
+        if (!scheduler.running) await registry.setRunning(co.slug, true);
+        return json(res, { waking: who, running: true });
+      }
     }
 
     if (p.startsWith('/api/')) return json(res, { error: 'no such route' }, 404);
@@ -296,10 +337,16 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   if (migrated) console.log(`\n  Moved ${migrated.moved} into companies/`);
+
+  // A scheduler lives in a process; the operator's intent does not. Anything
+  // left running goes back to work rather than quietly stopping on a restart.
+  const resumed = new Set(registry.resume());
+
   const all = registry.list();
   console.log(`\n  Helmsted · ${all.length} compan${all.length === 1 ? 'y' : 'ies'}`);
   for (const c of all) {
-    console.log(`    ${c.slug.padEnd(24)} ${c.name}${c.business ? ` — ${c.business}` : ''}`);
+    const mark = c.running ? (resumed.has(c.slug) ? '● resumed' : '● working') : '○ paused ';
+    console.log(`    ${mark}  ${c.slug.padEnd(22)} ${c.name}${c.business ? ` — ${c.business}` : ''}`);
   }
   console.log(`\n  http://localhost:${PORT}\n`);
 });

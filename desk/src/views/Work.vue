@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
-import { api, type Task, type Work, type State } from '../api';
+import { api, type Task, type Work, type State, type Event } from '../api';
 import { render } from '../markdown';
+import { onEvents } from '../live';
 
-defineProps<{ state: State }>();
+const props = defineProps<{ state: State; events: Event[] }>();
 
 const work = ref<Work | null>(null);
 const open = ref<string | null>(null);
 
-onMounted(async () => { work.value = await api.work(); });
+const load = async () => { work.value = await api.work(); };
+onMounted(load);
+onEvents(() => props.events, /^(task\.|role\.|note\.)/, load);
 
 const byStatus = computed(() => {
   const t = work.value?.tasks ?? [];

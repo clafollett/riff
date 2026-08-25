@@ -5,17 +5,22 @@ import type { Event } from '../api';
 const props = defineProps<{ events: Event[] }>();
 const filter = ref('');
 
-/** Events whose kind carries no information a person would act on. */
-const NOISE = /^(agent\.heartbeat|tick\.(start|end))$/;
+/**
+ * Nothing is filtered. This list once dropped `tick.start` and `tick.end` as
+ * noise — kinds that are never emitted, so the filter did nothing except hide
+ * the intent. The events that actually mark a shift are agent.woke and
+ * agent.slept, and they are the whole answer to "what is the CEO doing".
+ */
+const NOISE = /^$/;
 
 const shown = computed(() => props.events
   .filter((e) => !NOISE.test(e.kind))
   .filter((e) => !filter.value || (e.actor + e.kind + (e.subject ?? '')).includes(filter.value)));
 
 const tone = (kind: string) =>
-  kind.startsWith('gate.deny') ? 'deny'
-  : kind.startsWith('gate.escalate') ? 'wait'
-  : kind.startsWith('approval.') || kind === 'role.filled' ? 'good' : '';
+  kind.startsWith('gate.deny') || kind === 'agent.failed' ? 'deny'
+  : kind.startsWith('gate.escalate') || kind === 'company.rate_limited' ? 'wait'
+  : kind.startsWith('approval.') || kind === 'role.filled' || kind === 'agent.woke' ? 'good' : '';
 
 const detail = (e: Event) => {
   if (!e.dataJson) return '';

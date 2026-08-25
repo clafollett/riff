@@ -5,7 +5,7 @@ import { constitutionFor, type Constitution } from '../policy/rules.ts';
 import { Scheduler } from '../runtime/scheduler.ts';
 import { found } from './genesis.ts';
 import {
-  archiveDir, companyHome, listCompanies, resolveConfig, scaffoldConfig, slugId,
+  archiveDir, companyHome, listCompanies, resolveConfig, scaffoldConfig, setRunningFlag, slugId,
   type CompanyRef, type HelmstedConfig,
 } from '../core/config.ts';
 import type { Clock } from '../core/clock.ts';
@@ -40,9 +40,49 @@ export class Registry {
 
   constructor(clock: Clock) { this.#clock = clock; }
 
-  list(): CompanyRef[] { return listCompanies(); }
+  /**
+   * Every company, each carrying whether it is actually working.
+   *
+   * A company that has never been opened cannot be running, so the absence of
+   * an entry in #open is itself the answer — no need to touch its ledger.
+   */
+  list(): Array<CompanyRef & { running: boolean; awake: string[] }> {
+    return listCompanies().map((c) => {
+      const open = this.#open.get(c.slug);
+      return {
+        ...c,
+        running: open?.scheduler.running ?? false,
+        awake: open ? open.scheduler.awake : [],
+      };
+    });
+  }
 
   has(slug: string): boolean { return existsSync(companyHome(slug)); }
+
+  /** Start or pause one company by slug, opening it if needed. */
+  async setRunning(slug: string, run: boolean): Promise<boolean> {
+    const c = this.get(slug);
+    if (!c) return false;
+    if (run) c.scheduler.start(); else await c.scheduler.stop();
+    setRunningFlag(c.cfg.home, run);
+    return true;
+  }
+
+  /**
+   * Start every company the operator left running. Called once on boot, so a
+   * restart does not silently pause work somebody asked for.
+   */
+  resume(): string[] {
+    const back: string[] = [];
+    for (const ref of listCompanies()) {
+      if (!ref.wanted) continue;
+      const c = this.get(ref.slug);
+      if (!c) continue;
+      c.scheduler.start();
+      back.push(ref.slug);
+    }
+    return back;
+  }
 
   /** Open a company, founding nothing. Returns null if the slug is unknown. */
   get(slug: string): Company | null {

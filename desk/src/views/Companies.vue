@@ -51,6 +51,14 @@ const run = async (fn: () => Promise<string | null>) => {
 
 const found = () => run(async () => (await api.foundCompany(draft.value)).slug);
 
+/** Start or pause without switching to it — several can run at once. */
+const setRunning = async (c: CompanyRef, running: boolean) => {
+  busy.value = true;
+  try { await api.setCompanyRunning(c.slug, running); emit('changed'); }
+  catch (e) { err.value = e instanceof Error ? e.message : String(e); }
+  finally { busy.value = false; }
+};
+
 const save = (c: CompanyRef) => run(async () => {
   const r = await api.renameCompany(c.slug, rename.value);
   return props.active === c.slug ? r.slug : null;
@@ -74,7 +82,8 @@ const armed = computed(() =>
         <h1>Companies</h1>
         <p class="muted lede">
           Each one is a world of its own — its own staff, its own ledger, its own
-          git history. Nothing about one reaches into another.
+          git history. Nothing about one reaches into another, and several can
+          be working at the same time.
         </p>
       </div>
       <button class="go" @click="openFound">Found a company</button>
@@ -82,15 +91,21 @@ const armed = computed(() =>
 
     <div v-for="c in list" :key="c.slug" class="card" :class="{ on: c.slug === active }">
       <button class="pick" @click="emit('switch', c.slug)">
-        <span class="dot" />
+        <span class="dot" :class="{ live: c.running, busy: c.awake.length }" />
         <span class="names">
           <span class="name">{{ c.name }}</span>
           <span class="biz muted">{{ c.business || 'no line of business recorded' }}</span>
         </span>
         <span class="grow" />
+        <span class="state mono" :class="{ live: c.running, busy: c.awake.length }">
+          {{ c.awake.length ? `${c.awake.length} working` : (c.running ? 'idle' : 'paused') }}
+        </span>
         <span class="meta faint mono">{{ c.ceo }} · {{ c.slug }}</span>
       </button>
       <div class="tools">
+        <button class="ghost" :disabled="busy" @click="setRunning(c, !c.running)">
+          {{ c.running ? 'Pause' : 'Start' }}
+        </button>
         <button class="ghost" @click="openRename(c)">Rename</button>
         <button class="ghost danger" @click="openArchive(c)">Archive</button>
       </div>
@@ -171,7 +186,15 @@ h1 { font-size: 30px; }
   background: none; border: 0; border-radius: 0; padding: 13px 16px; }
 .pick:hover { background: #1a1512; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); flex: none; }
-.card.on .dot { background: var(--ok); }
+.dot.live { background: var(--gold); }
+.dot.busy { background: var(--ok); }
+.state { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); }
+.state.live { color: var(--gold); }
+.state.busy { color: var(--ok); }
+@media (prefers-reduced-motion: no-preference) {
+  .dot.busy { animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+}
 .names { display: flex; flex-direction: column; gap: 2px; }
 .name { font-family: var(--serif); font-size: 17px; color: var(--ink); }
 .biz { font-size: 12px; }

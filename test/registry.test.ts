@@ -148,6 +148,54 @@ describe('managing a company', () => {
   });
 });
 
+describe('working, and staying that way', () => {
+  test('a company records whether it should be working, and resumes', () => {
+    // A scheduler lives in a process; the operator's intent does not. Restarting
+    // the server used to pause everything while the console reported idle.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const first = new Registry(systemClock);
+      first.found({ name: 'Alpha Works', business: '', ceo: 'Ash', chair: 'Cali' });
+      first.found({ name: 'Beta Works', business: '', ceo: 'Bay', chair: 'Cali' });
+      await first.setRunning('alpha-works', true);
+      const wantedAfterStart = first.list().map((c) => [c.slug, c.wanted]);
+      for (const c of first.opened()) { await c.scheduler.stop(); c.ledger.close(); }
+
+      // A brand new process, exactly as a server restart would see it.
+      const second = new Registry(systemClock);
+      const beforeResume = second.list().map((c) => [c.slug, c.running]);
+      const resumed = second.resume();
+      const afterResume = second.list().map((c) => [c.slug, c.running]);
+      for (const c of second.opened()) { await c.scheduler.stop(); c.ledger.close(); }
+      console.log(JSON.stringify({ wantedAfterStart, beforeResume, resumed, afterResume }));
+    `);
+    const r = JSON.parse(out) as Record<string, any>;
+    assert.deepEqual(r['wantedAfterStart'].sort(), [['alpha-works', true], ['beta-works', false]]);
+    // Nothing runs until resume is called — opening a company must not start it.
+    assert.deepEqual(r['beforeResume'].sort(), [['alpha-works', false], ['beta-works', false]]);
+    assert.deepEqual(r['resumed'], ['alpha-works']);
+    assert.deepEqual(r['afterResume'].sort(), [['alpha-works', true], ['beta-works', false]]);
+  });
+
+  test('pausing is remembered too, so a restart does not undo it', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      r.found({ name: 'Alpha Works', business: '', ceo: 'Ash', chair: 'Cali' });
+      await r.setRunning('alpha-works', true);
+      await r.setRunning('alpha-works', false);
+      for (const c of r.opened()) { await c.scheduler.stop(); c.ledger.close(); }
+      const fresh = new Registry(systemClock);
+      const resumed = fresh.resume();
+      for (const c of fresh.opened()) { await c.scheduler.stop(); c.ledger.close(); }
+      console.log(JSON.stringify({ wanted: fresh.list()[0].wanted, resumed }));
+    `);
+    assert.deepEqual(JSON.parse(out), { wanted: false, resumed: [] });
+  });
+});
+
 describe('the legacy layout', () => {
   test('a company stored flat is moved into companies/, git and all', () => {
     // The first version put one company directly in ~/.helmsted. Anyone who

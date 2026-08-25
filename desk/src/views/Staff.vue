@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { api, type Agent, type State } from '../api';
+import { api, type Agent, type Event, type State } from '../api';
 import { render } from '../markdown';
+import { onEvents } from '../live';
 
-const props = defineProps<{ state: State }>();
+const props = defineProps<{ state: State; events: Event[] }>();
 const open = ref<string | null>(null);
 const persona = ref('');
 const draft = ref('');
@@ -32,6 +33,13 @@ const select = async (a: Agent) => {
   catch { persona.value = a.mandate; }
 };
 
+onEvents(() => props.events, /^(agent\.slept|remember)/, async () => {
+  const id = open.value;
+  if (!id) return;
+  const a = props.state.agents.find((x) => x.id === id);
+  if (a) { try { persona.value = (await api.doc(`staff/${id}/persona.md`)).body; } catch { /* keep */ } }
+});
+
 const send = async (a: Agent) => {
   if (!draft.value.trim()) return;
   sending.value = true;
@@ -50,11 +58,12 @@ const send = async (a: Agent) => {
 
     <div v-for="{ a, depth } in tree" :key="a.id" class="row" :style="{ marginLeft: depth * 24 + 'px' }">
       <button class="card" :class="{ on: open === a.id }" @click="select(a)">
-        <span class="dot" :class="a.status" />
+        <span class="dot" :class="[a.status, { awake: state.awake.includes(a.id) }]" />
         <span class="name">{{ a.name }}</span>
         <span class="role">{{ a.role }}</span>
         <span class="faint tier mono">{{ a.tier }}</span>
         <span class="grow" />
+        <span v-if="state.awake.includes(a.id)" class="now mono">working now</span>
         <span class="activity muted">{{ a.activity || '—' }}</span>
       </button>
 
@@ -85,6 +94,12 @@ h1 { font-size: 30px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); align-self: center; flex: none; }
 .dot.working, .dot.active { background: var(--ok); }
 .dot.departed { background: #5a463c; }
+.dot.awake { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.now { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ok); }
+@media (prefers-reduced-motion: no-preference) {
+  .dot.awake { animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+}
 .name { font-family: var(--serif); font-size: 17px; color: var(--ink); white-space: nowrap; }
 .role { color: var(--accent); font-size: 13px; white-space: nowrap; }
 .tier { white-space: nowrap; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }

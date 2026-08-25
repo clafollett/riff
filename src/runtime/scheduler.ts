@@ -75,6 +75,8 @@ export class Scheduler {
   #running = false;
   #abort = new AbortController();
   #nextDue = new Map<AgentId, number>();
+  /** In-flight shifts, so stop() can wait for them rather than abandoning them. */
+  #flights = new Set<Promise<void>>();
   #inFlight = new Set<AgentId>();
   #spentToday = 0;
   #spendDay: string;
@@ -97,20 +99,30 @@ export class Scheduler {
   get rateLimit(): SDKRateLimitInfo | null { return this.#lastRateLimit; }
   get pausedUntil(): number { return this.#pausedUntil; }
 
+  /** Who is mid-shift this second. The console shows it live. */
+  get awake(): AgentId[] { return [...this.#inFlight]; }
+
+  /** When each active agent is next due, so the console can say "in 4 min". */
+  dueAt(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [id, at] of this.#nextDue) out[id] = at;
+    return out;
+  }
+
   /**
-   * Pace the village off the subscription's own rate-limit signal.
+   * Pace the company off the subscription's own rate-limit signal.
    *
    * 'rejected' means the window is spent — resting until it resets beats
    * hammering a wall and burning the next window on retries. 'allowed_warning'
-   * and high utilization stretch the intervals instead, so the Inn slows down
-   * rather than stopping dead.
+   * and high utilization stretch the intervals instead, so the company slows
+   * down rather than stopping dead.
    */
   #applyRateLimit(info: SDKRateLimitInfo): void {
     this.#lastRateLimit = info;
 
     if (info.status === 'rejected') {
       this.#pausedUntil = normaliseResetsAt(info.resetsAt) ?? Date.now() + 15 * 60_000;
-      this.#d.ledger.emit('inn', 'inn.rate_limited', null, {
+      this.#d.ledger.emit('company', 'company.rate_limited', null, {
         rateLimitType: info.rateLimitType, resumesAt: new Date(this.#pausedUntil).toISOString(),
       });
       return;
@@ -122,7 +134,7 @@ export class Scheduler {
       : u > this.#opts.throttleAboveUtilization ? 1 + (u - this.#opts.throttleAboveUtilization) * 6
       : 1;
     if (Math.abs(this.#throttle - prev) > 0.25) {
-      this.#d.ledger.emit('inn', 'inn.throttled', null, {
+      this.#d.ledger.emit('company', 'company.throttled', null, {
         utilization: u, factor: Number(this.#throttle.toFixed(2)), rateLimitType: info.rateLimitType,
       });
     }
@@ -142,7 +154,7 @@ export class Scheduler {
     if (today !== this.#spendDay) {
       this.#spendDay = today;
       this.#spentToday = 0;
-      this.#d.ledger.emit('inn', 'budget.rollover', null, { day: today });
+      this.#d.ledger.emit('company', 'budget.rollover', null, { day: today });
     }
   }
 
@@ -150,14 +162,29 @@ export class Scheduler {
     if (this.#running) return;
     this.#running = true;
     this.#abort = new AbortController();
-    this.#d.ledger.emit('inn', 'inn.opened', null, { options: this.#opts });
+    this.#d.ledger.emit('company', 'work.started', null, { options: this.#opts });
     void this.#loop();
   }
 
+  /**
+   * Stop, and WAIT for anyone mid-shift to finish.
+   *
+   * Aborting the loop does not abort a shift already in the SDK. Returning
+   * before those settle means the caller closes the ledger underneath them,
+   * and the shift crashes the process on its closing `agent.slept` — which is
+   * exactly what a server shutdown used to do to whoever was working.
+   */
   async stop(): Promise<void> {
     this.#running = false;
     this.#abort.abort();
-    this.#d.ledger.emit('inn', 'inn.closed', null, { spentTodayUsd: this.#spentToday });
+    if (this.#flights.size) await Promise.allSettled([...this.#flights]);
+    this.#d.ledger.emit('company', 'work.paused', null, { spentTodayUsd: this.#spentToday });
+  }
+
+  #track(p: Promise<void>): void {
+    this.#flights.add(p);
+    void p.catch(() => { /* #wake reports its own failures */ })
+      .finally(() => this.#flights.delete(p));
   }
 
   async #loop(): Promise<void> {
@@ -197,9 +224,9 @@ export class Scheduler {
         .sort((a, b) => RANK[a.tier] - RANK[b.tier])
         .slice(0, Math.max(0, this.#opts.concurrency - this.#inFlight.size));
 
-      for (const a of due) void this.#wake(a);
+      for (const a of due) this.#track(this.#wake(a));
 
-      // Approved work is applied by the Inn, never by the requester — so a
+      // Approved work is applied by the company, never by the requester — so a
       // staff member cannot enact its own escalation.
       applyApproved(this.#d.ledger, this.#d.world, this.#d.clock, Object.keys(this.#d.connectors ?? {}));
 

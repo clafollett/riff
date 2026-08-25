@@ -78,8 +78,10 @@ silent.
 
 One installation holds many companies. Nothing about one reaches into another —
 separate ledgers, separate git repositories, separate schedulers — so founding
-a second cannot disturb the first. Found, rename and archive them from the
-console, or name one on the command line:
+a second cannot disturb the first. A company starts working the moment you found it, and whether it should be
+working is remembered — restarting the server resumes whatever you left
+running rather than quietly pausing it. Found, rename, start, pause and
+archive them from the console, or name one on the command line:
 
 ```bash
 node scripts/status.ts --company lafollett-labs-llc
@@ -120,7 +122,14 @@ be reviewable.
 | **Record** | what actually landed in the world, by author, over a window |
 | **Staff** | the report tree, each persona, and a way to leave word |
 | **Commons** | the shelf, under the titles the authors chose |
+| **Work** | tasks in flight, dropped and finished; broken reporting lines |
 | **Feed** | live events over SSE, newest first |
+
+Every surface updates itself as the company works — a document posted while
+you are reading the commons appears without a reload. The status bar carries
+the operational state: whether the company is working, who is mid-shift right
+now, and a control to start or pause it. The company switcher shows which
+companies are running and how many of their staff are awake.
 
 The Envelope shows the whole draft inline and asks for a reason. That reason is
 not decoration: it opens the author's next shift. A gate whose rejections never
@@ -186,8 +195,8 @@ it and says so.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 77 unit tests |
-| `npm run test:ui` | 21 Playwright tests against a throwaway installation |
+| `npm test` | 79 unit tests |
+| `npm run test:ui` | 22 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |
 | `--company <slug>` | any script, when more than one company exists |

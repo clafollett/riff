@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { api } from '../api';
+import { api, type Event, type State } from '../api';
+import { onEvents } from '../live';
 
+const props = defineProps<{ state: State; events: Event[] }>();
 const since = ref('3.days');
 const data = ref<Awaited<ReturnType<typeof api.happened>> | null>(null);
 const loading = ref(true);
@@ -12,6 +14,7 @@ const load = async () => {
 };
 const pick = (s: string) => { since.value = s; void load(); };
 onMounted(load);
+onEvents(() => props.events, /^agent\.slept$/, load);
 
 const RANGES = [['1.day', 'Today'], ['3.days', '3 days'], ['1.week', 'A week'], ['1.month', 'A month']] as const;
 </script>

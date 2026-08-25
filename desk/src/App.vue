@@ -90,8 +90,11 @@ const select = (slug: string) => {
 
 const onBatch = (batch: Event[]) => {
   events.value = [...batch.reverse(), ...events.value].slice(0, 300);
-  if (batch.some((e) => e.kind.startsWith('gate.escalate') || e.kind.startsWith('approval.')
-    || e.kind === 'role.filled' || e.kind === 'commons.posted')) void refresh();
+  // Any event at all. This drives the status bar, the rail counts and who is
+  // awake — filtering to a few kinds meant the console sat visibly stale
+  // through everything the filter had not anticipated.
+  void refresh();
+  void fetchList();
 };
 
 onMounted(async () => {
@@ -99,6 +102,26 @@ onMounted(async () => {
   timer = setInterval(refresh, 20_000);
 });
 onUnmounted(() => { stop?.(); if (timer) clearInterval(timer); });
+
+const working = ref(false);
+const toggle = async () => {
+  if (!state.value || working.value) return;
+  working.value = true;
+  try {
+    if (state.value.running) await api.pause(); else await api.start();
+    await refresh();
+  } finally { working.value = false; }
+};
+
+/** Names, not ids, for whoever is mid-shift this second. */
+const awakeNames = computed(() => {
+  const s = state.value;
+  if (!s) return [];
+  return s.awake.map((id) => s.agents.find((a) => a.id === id)?.name ?? id);
+});
+
+/** A company nobody has ever started looks identical to an idle one. */
+const neverRun = computed(() => !!state.value && state.value.ticks === 0 && !state.value.running);
 
 const util = computed(() => {
   const u = state.value?.rateLimit?.utilization;
@@ -118,10 +141,15 @@ const util = computed(() => {
           <span class="chev" :class="{ up: picking }">▾</span>
         </button>
         <div v-if="picking" class="menu">
+          <div class="menuhead faint mono">
+            {{ companies.filter((c) => c.running).length }} of {{ companies.length }} working
+          </div>
           <button v-for="c in companies" :key="c.slug" class="menuitem"
                   :class="{ on: c.slug === active }"
                   @click="select(c.slug); picking = false">
-            {{ c.name }}
+            <span class="led" :class="{ live: c.running, busy: c.awake.length }" />
+            <span class="mname">{{ c.name }}</span>
+            <span v-if="c.awake.length" class="faint mono count">{{ c.awake.length }}</span>
           </button>
           <div class="sep" />
           <button class="menuitem manage" @click="view = 'companies'; picking = false">
@@ -158,9 +186,15 @@ const util = computed(() => {
     </main>
 
     <footer class="status mono" v-if="state">
-      <span :style="{ color: state.running ? 'var(--ok)' : 'var(--faint)' }">
-        {{ state.running ? '● working' : '○ idle' }}
+      <button class="run" :class="{ on: state.running }" :disabled="working" @click="toggle">
+        <span class="led" />
+        {{ state.running ? 'Pause' : (neverRun ? 'Start work' : 'Resume') }}
+      </button>
+      <span v-if="awakeNames.length" class="awake">
+        {{ awakeNames.join(', ') }} {{ awakeNames.length > 1 ? 'are' : 'is' }} working
       </span>
+      <span v-else-if="state.running" class="faint">waiting for the next shift</span>
+      <span v-else-if="neverRun" class="faint">nobody has started yet</span>
       <span>{{ state.pendingBoard }} waiting on you</span>
       <span>{{ state.headcount }} staff</span>
       <span>commons {{ state.commons.held }}/{{ state.commons.ceiling }}</span>
@@ -190,8 +224,15 @@ const util = computed(() => {
 .menu { position: absolute; left: 12px; right: 12px; top: 100%; z-index: 10;
   background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px;
   padding: 5px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
-.menuitem { display: block; width: 100%; text-align: left; background: none; border: 0;
-  border-radius: 4px; padding: 7px 10px; font-size: 14px; color: var(--muted); }
+.menuitem { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 4px; padding: 7px 10px;
+  font-size: 14px; color: var(--muted); }
+.mname { flex: 1; }
+.count { font-size: 10px; }
+.menuhead { padding: 4px 10px 7px; font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
+.menu .led { width: 6px; height: 6px; border-radius: 50%; background: var(--line-2); flex: none; }
+.menu .led.live { background: var(--gold); }
+.menu .led.busy { background: var(--ok); }
 .menuitem:hover { background: #241d18; color: var(--ink); }
 .menuitem.on { color: var(--accent); }
 .menuitem.manage { font-size: 13px; color: var(--faint); }
@@ -212,6 +253,20 @@ const util = computed(() => {
 .err { margin: 40px; padding: 16px; border: 1px solid #5c2f26; background: #241611; border-radius: 6px; }
 .status {
   grid-column: 2; background: var(--rail); border-top: 1px solid var(--line);
-  display: flex; align-items: center; gap: 20px; padding: 0 26px; font-size: 11px; color: var(--faint);
+  display: flex; align-items: center; gap: 18px; padding: 0 26px; font-size: 11px; color: var(--faint);
+}
+.run {
+  display: flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 11px;
+  background: none; border: 1px solid var(--line-2); border-radius: 3px;
+  padding: 3px 10px; color: var(--muted);
+}
+.run:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.run.on { border-color: color-mix(in srgb, var(--ok) 50%, transparent); color: var(--ok); }
+.led { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.run.on .led { background: var(--ok); }
+.awake { color: var(--ok); }
+@media (prefers-reduced-motion: no-preference) {
+  .run.on .led { animation: pulse 1.8s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
 }
 </style>

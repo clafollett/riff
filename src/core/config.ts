@@ -54,6 +54,14 @@ export type HelmstedConfig = {
    * `external.write`, which always lands as a draft.
    */
   connectors: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
+  /**
+   * Whether this company should be working.
+   *
+   * Persisted because a scheduler lives in a process and the operator's
+   * intent does not. Restarting the server used to silently pause every
+   * company that was running, with the console cheerfully reporting idle.
+   */
+  running?: boolean;
 };
 
 /** Best guess at who is running this, for the first-run prompt to confirm. */
@@ -125,6 +133,8 @@ export type CompanyRef = {
   home: string;
   ceo: string;
   founded: boolean;
+  /** What the operator last asked for, which a restart must honour. */
+  wanted: boolean;
 };
 
 const readRef = (slug: string): CompanyRef | null => {
@@ -138,6 +148,7 @@ const readRef = (slug: string): CompanyRef | null => {
     home,
     ceo: cfg.ceo?.name ?? 'CEO',
     founded: existsSync(join(home, 'ledger.db')),
+    wanted: cfg.running === true,
   };
 };
 
@@ -277,6 +288,14 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): HelmstedConfi
       : merged.ceo ?? { id: 'ceo', name: 'CEO' },
     connectors: merged.connectors ?? {},
   };
+};
+
+/** Record whether a company should be working, for the next process to honour. */
+export const setRunningFlag = (home: string, running: boolean): void => {
+  const path = join(home, CONFIG_NAME);
+  const cfg = readConfigFile(path);
+  if (!cfg) return;
+  writeFileSync(path, JSON.stringify({ ...cfg, running }, null, 2) + '\n', 'utf8');
 };
 
 /** Create the company's home and write the config. Idempotent. */

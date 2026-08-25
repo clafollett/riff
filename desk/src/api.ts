@@ -48,12 +48,17 @@ export type State = {
   tasks: number;
   seq: number;
   running: boolean;
+  awake: string[];
+  dueAt: Record<string, number>;
+  pausedUntil: number | null;
+  ticks: number;
   rateLimit: { status?: string; utilization?: number; rateLimitType?: string } | null;
 };
 
 export type CompanyRef = {
   slug: string; name: string; business: string;
   home: string; ceo: string; founded: boolean;
+  running: boolean; awake: string[];
 };
 
 /**
@@ -100,6 +105,8 @@ export const api = {
   },
   foundCompany: (input: { name: string; business: string; ceo: string; chair: string }) =>
     send<{ slug: string }>('/api/companies', 'POST', input),
+  setCompanyRunning: (slug: string, running: boolean) =>
+    send<{ running: boolean }>(`/api/companies/${encodeURIComponent(slug)}/running`, 'POST', { running }),
   renameCompany: (slug: string, patch: { name?: string; business?: string; slug?: string }) =>
     send<{ slug: string }>(`/api/companies/${encodeURIComponent(slug)}`, 'PATCH', patch),
   archiveCompany: (slug: string) =>
@@ -108,6 +115,9 @@ export const api = {
   state: () => get<State>('/api/state'),
   approvals: () => get<Approval[]>('/api/approvals'),
   work: () => get<Work>('/api/work'),
+  start: () => send<{ running: boolean }>('/api/open', 'POST'),
+  pause: () => send<{ running: boolean }>('/api/close', 'POST'),
+  wake: (who?: string) => send<{ waking: string }>('/api/wake', 'POST', who ? { who } : {}),
   commons: () => get<{ held: number; ceiling: number; documents: CommonsDoc[] }>('/api/commons'),
   happened: (since = '3.days') =>
     get<{ commits: Array<{ sha: string; author: string; at: string; subject: string }>;

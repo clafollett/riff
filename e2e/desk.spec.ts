@@ -222,6 +222,30 @@ test('the feed picks up an event live, without a reload', async ({ page }) => {
   await expect(page.locator('.feed')).toContainText('A word from the board.');
 });
 
+test('the console updates itself as the company works', async ({ page }) => {
+  // Views used to load once on mount, so anything the company did while you
+  // were looking at a page simply did not appear until you navigated away and
+  // back. Nothing here reloads the page.
+  const seq = () => page.locator('.status').innerText();
+  const before = await seq();
+
+  // Straight at the API, not through the console, so this proves the console
+  // noticed rather than that it remembered what it just did.
+  await page.evaluate(async () => {
+    await fetch('/api/say', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ to: 'fen', text: 'Something new happened.' }),
+    });
+  });
+
+  // The status bar carries the event count, and it must move on its own.
+  await expect.poll(seq, { timeout: 15_000 }).not.toEqual(before);
+
+  // And the feed shows it without a reload.
+  await go(page, 'Feed');
+  await expect(page.locator('.feed')).toContainText('Something new happened.');
+});
+
 test('the console holds together on a narrow window', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 700 });
   await go(page, 'Staff');

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
-import { api, type Approval, type State } from '../api';
+import { api, type Approval, type Event, type State } from '../api';
 import { render } from '../markdown';
+import { onEvents } from '../live';
 
-const props = defineProps<{ state: State }>();
+const props = defineProps<{ state: State; events: Event[] }>();
 const emit = defineEmits<{ changed: [] }>();
 
 const items = ref<Approval[]>([]);
@@ -37,6 +38,7 @@ const decide = async (a: Approval, approved: boolean) => {
 
 onMounted(load);
 watch(() => props.state.pendingBoard, load);
+onEvents(() => props.events, /^(gate\.escalate|approval\.)/, load);
 </script>
 
 <template>

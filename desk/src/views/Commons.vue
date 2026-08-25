@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
-import { api, type CommonsDoc, type State } from '../api';
+import { api, type CommonsDoc, type Event, type State } from '../api';
 import { render } from '../markdown';
+import { onEvents } from '../live';
 
-const props = defineProps<{ state: State }>();
+const props = defineProps<{ state: State; events: Event[] }>();
 const docs = ref<CommonsDoc[]>([]);
 const open = ref<CommonsDoc | null>(null);
 const body = ref('');
@@ -15,6 +16,11 @@ const read = async (d: CommonsDoc) => {
   try { body.value = (await api.doc(d.path)).body; } catch (e) { body.value = String(e); }
 };
 onMounted(load);
+onEvents(() => props.events, /^commons\./, async () => {
+  await load();
+  // Keep whatever is open readable; it may have just been rewritten.
+  if (open.value) await read(open.value);
+});
 
 const pressure = computed(() => props.state.commons.held / props.state.commons.ceiling);
 const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(0, -1).join(' / ');
