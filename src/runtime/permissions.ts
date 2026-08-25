@@ -59,12 +59,17 @@ export type PermissionDeps = {
   actor: AgentId;
   world: World;
   gate: PolicyGate;
+  /** Called for every decision, so a shift spent hammering a refused tool is
+   *  visible instead of silent. */
+  onDecision?: (toolName: string, outcome: 'allow' | 'deny', detail: string) => void;
   /** Capability declared by each in-process village tool, by bare tool name. */
   toolCapabilities: Record<string, Capability>;
 };
 
 export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
   const { actor, world, gate, toolCapabilities } = deps;
+  const note = (tool: string, out: 'allow' | 'deny', detail = '') =>
+    deps.onDecision?.(tool, out, detail);
 
   const ask = (capability: Capability, summary: string, target?: string): PermissionResult => {
     const d = gate.request({ actor, capability, summary, ...(target ? { target } : {}) });
@@ -81,13 +86,14 @@ export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
 
   return async (toolName, input) => {
     if (FORBIDDEN.has(toolName)) {
+      note(toolName, 'deny', 'forbidden at the Inn');
       return deny(
         `${toolName} is not available at the Inn. Use the inn__ tools for village work, ` +
         `or Read/Write within your own quarters.`
       );
     }
 
-    if (FREE_TOOLS.has(toolName)) return allow();
+    if (FREE_TOOLS.has(toolName)) { note(toolName, 'allow', 'free'); return allow(); }
 
     if (OUTSIDE_READ.has(toolName)) {
       const t = typeof input['url'] === 'string' ? String(input['url']) : String(input['query'] ?? '');
@@ -130,6 +136,7 @@ export const makeCanUseTool = (deps: PermissionDeps): CanUseTool => {
     }
 
     // Default-deny. New SDK tools do not become staff powers by accident.
+    note(toolName, 'deny', 'unknown tool');
     return deny(`'${toolName}' is not part of village life.`);
   };
 };

@@ -163,3 +163,33 @@ describe('git — attribution is the audit trail', () => {
     assert.equal(c[0]!.commits, 2);
   });
 });
+
+describe('documents the staff wrote themselves', () => {
+  test('frontmatter in the body is absorbed, never stacked', () => {
+    world.writeDoc('commons/theirs.md', {
+      data: { title: 'How We Work', author: 'hollis' },
+      body: '---\ntitle: How We Work\nkeeper_of_this_doc: hollis\n---\n# How We Work\n\nBody text.\n',
+    });
+    const raw = world.readText('commons/theirs.md')!;
+    assert.equal((raw.match(/^---$/gm) ?? []).length, 2, 'exactly one frontmatter fence');
+
+    const doc = world.readDoc('commons/theirs.md')!;
+    assert.equal(doc.data['keeper_of_this_doc'], 'hollis', "their keys survive");
+    assert.equal(doc.data['author'], 'hollis', 'our keys survive');
+    assert.match(doc.body, /^# How We Work/);
+    assert.doesNotMatch(doc.body, /---/, 'no orphan fence left in the prose');
+  });
+
+  test('our keys win on conflict', () => {
+    world.writeDoc('commons/clash.md', {
+      data: { author: 'the-inn' },
+      body: '---\nauthor: someone-else\n---\ntext\n',
+    });
+    assert.equal(world.readDoc('commons/clash.md')!.data['author'], 'the-inn');
+  });
+
+  test('a body with no frontmatter is untouched', () => {
+    world.writeDoc('commons/plain.md', { data: { a: 1 }, body: '# Plain\n' });
+    assert.equal(world.readDoc('commons/plain.md')!.body, '# Plain\n');
+  });
+});

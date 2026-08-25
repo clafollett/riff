@@ -85,10 +85,25 @@ export class World {
     return parse(readFileSync(abs, 'utf8'));
   }
 
+  /**
+   * Write a document, absorbing any frontmatter the author put in the body.
+   *
+   * Staff write markdown the way people write markdown — which means they open
+   * with a `---` block. Without this, their fence and ours stack, the parser
+   * reads only the first, and the second becomes prose in the middle of the
+   * page. Their keys fill gaps; ours win on conflict, since ours are the ones
+   * the Inn relies on.
+   */
   writeDoc(rel: string, doc: Doc): void {
     const abs = this.path(rel);
     mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, stringify(doc), 'utf8');
+
+    const inner = parse(doc.body);
+    const merged: Doc = Object.keys(inner.data).length
+      ? { data: { ...inner.data, ...doc.data }, body: inner.body }
+      : doc;
+
+    writeFileSync(abs, stringify(merged), 'utf8');
   }
 
   readText(rel: string): string | null {

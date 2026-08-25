@@ -20,6 +20,9 @@ export type TickDeps = {
   /** External MCP servers (image generation, calendar, inbox). Everything they
    *  reach still crosses the gate — canUseTool sees these calls too. */
   connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
+  /** Observe the shift: every tool the staff member reaches for, and why it
+   *  was allowed or refused. Used by scripts/tick.ts to diagnose a shift. */
+  trace?: (line: string) => void;
   signal?: AbortSignal;
 };
 
@@ -42,10 +45,19 @@ export type TickResult = {
  * cache boundary.
  */
 const buildSystemPrompt = (d: TickDeps): string => {
-  const { agent, world, gate } = d;
+  const { agent, world, gate, ledger } = d;
   const r = gate.rules;
   const persona = world.readPersona(agent.id);
   const memory = world.readMemory(agent.id);
+
+  // Hand them the roster up front. Left to work it out, a cold-started staff
+  // member spends ten turns reading ten colleagues' briefs before doing
+  // anything — which is exactly how the Steward's first shift died at its
+  // turn cap having produced nothing. Stable between ticks, so it caches.
+  const roster = ledger.listAgents()
+    .filter((a) => a.id !== agent.id)
+    .map((a) => `- ${a.name} (${a.id}) — ${a.title}, works out of ${a.building}`)
+    .join('\n');
 
   return [
     `You are ${agent.name}, ${agent.title} at the LaFollett Bed & Breakfast.`,
@@ -66,6 +78,9 @@ const buildSystemPrompt = (d: TickDeps): string => {
     'These rules are enforced by the Inn itself, not by your good intentions.',
     'If a tool tells you something is held for approval, it is queued — do not retry it.',
     'Move on to other work and let the approval land.',
+    '',
+    '## Who else works here',
+    roster || '(You are the only one here.)',
     '',
     '## What you remember',
     memory || '(Nothing yet. As you learn things worth keeping, use `remember`.)',
@@ -153,7 +168,10 @@ export const tick = async (d: TickDeps): Promise<TickResult> => {
         settingSources: [],          // no ~/.claude/settings.json, no CLAUDE.md
         strictMcpConfig: true,       // only the tools we hand them
         mcpServers: { inn: server, ...(d.connectors ?? {}) },
-        canUseTool: makeCanUseTool({ actor: agent.id, world, gate, toolCapabilities: capabilities }),
+        canUseTool: makeCanUseTool({
+          actor: agent.id, world, gate, toolCapabilities: capabilities,
+          ...(d.trace ? { onDecision: (t, o, why) => d.trace!(`  gate  ${o.padEnd(5)} ${t} ${why}`) } : {}),
+        }),
         disallowedTools: ['Bash', 'BashOutput', 'KillShell'],
         permissionMode: 'default',   // 'default' is what consults canUseTool
 
@@ -171,6 +189,15 @@ export const tick = async (d: TickDeps): Promise<TickResult> => {
     });
 
     for await (const m of q) {
+      if (d.trace && m.type === 'assistant') {
+        for (const b of m.message.content) {
+          if (b.type === 'tool_use') {
+            d.trace(`  call  ${b.name} ${JSON.stringify(b.input).slice(0, 110)}`);
+          } else if (b.type === 'text' && b.text.trim()) {
+            d.trace(`  says  ${b.text.trim().split('\n')[0]!.slice(0, 110)}`);
+          }
+        }
+      }
       if (m.type === 'system' && 'session_id' in m && typeof m.session_id === 'string') {
         ledger.setMeta(`session:${agent.id}`, m.session_id);
       }
