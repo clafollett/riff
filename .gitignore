@@ -21,3 +21,6 @@ dist/
 
 # the operator's Claude token
 docker/.env
+
+# macOS
+.DS_Store
