@@ -4,9 +4,11 @@ import { api, type CommonsDoc, type Event, type State } from '../api';
 import { render } from '../markdown';
 import { onEvents } from '../live';
 import { namer } from '../names';
+import Splitter, { rememberedWidth } from '../Splitter.vue';
 
 const props = defineProps<{ state: State; events: Event[] }>();
 const who = computed(() => namer(props.state));
+const listWidth = ref(rememberedWidth('helmsted.commonsWidth', 268));
 const docs = ref<CommonsDoc[]>([]);
 const open = ref<CommonsDoc | null>(null);
 const body = ref('');
@@ -29,7 +31,7 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
 </script>
 
 <template>
-  <div class="wrap">
+  <div class="wrap" :style="{ '--list-w': listWidth + 'px' }">
     <aside class="list">
       <header>
         <h1>Commons</h1>
@@ -49,6 +51,9 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
       <p v-if="!docs.length" class="muted note">Nothing posted yet.</p>
     </aside>
 
+    <Splitter v-model="listWidth" :min="200" :max="520"
+              storage-key="helmsted.commonsWidth" label="Document list width" />
+
     <article class="reader">
       <template v-if="open">
         <h2 class="title">{{ open.title }}</h2>
@@ -65,15 +70,18 @@ const shelf = (path: string) => path.replace(/^commons\//, '').split('/').slice(
 </template>
 
 <style scoped>
-.wrap { display: grid; grid-template-columns: minmax(230px, 280px) 1fr; height: 100%; }
+.wrap { display: grid; grid-template-columns: var(--list-w, 268px) 1fr;
+  height: 100%; position: relative; }
 /* Below this the reader gets squeezed to a word per line, which is worse than
    no reader at all. Stack the index above it and let the page scroll. */
+/* Stacked below this, so the splitter has nothing to split. */
 @media (max-width: 780px) {
   .wrap { grid-template-columns: 1fr; height: auto; }
+  .wrap :deep(.splitter) { display: none; }
   .list { border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
   .reader { padding: 24px 22px 50px; }
 }
-.list { border-right: 1px solid var(--line); padding: 30px 0 20px; overflow-y: auto; }
+.list { padding: 30px 0 20px; overflow-y: auto; }
 .list header { padding: 0 22px 16px; }
 h1 { font-size: 24px; }
 .gauge { display: flex; align-items: center; gap: 9px; margin-top: 10px; }

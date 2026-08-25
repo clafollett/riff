@@ -9,6 +9,7 @@ import Commons from './views/Commons.vue';
 import Work from './views/Work.vue';
 import Companies from './views/Companies.vue';
 import Inbox from './views/Inbox.vue';
+import Splitter, { rememberedWidth } from './Splitter.vue';
 
 const VIEWS = [
   { id: 'envelope', label: 'Envelope', comp: Envelope },
@@ -25,6 +26,7 @@ const state = ref<State | null>(null);
 const events = ref<Event[]>([]);
 const err = ref('');
 
+const railWidth = ref(rememberedWidth('helmsted.railWidth', 208));
 const companies = ref<CompanyRef[]>([]);
 const active = ref('');
 const picking = ref(false);
@@ -179,7 +181,7 @@ const util = computed(() => {
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :style="{ '--rail-w': railWidth + 'px' }">
     <nav class="rail">
       <div class="brand">
         <button class="switcher" @click="picking = !picking" :aria-expanded="picking">
@@ -223,6 +225,9 @@ const util = computed(() => {
       </div>
     </nav>
 
+    <Splitter v-model="railWidth" :min="170" :max="420"
+              storage-key="helmsted.railWidth" label="Sidebar width" />
+
     <main class="main">
       <Companies v-if="view === 'companies'" :list="companies" :active="active"
                  @switch="select" @changed="loadCompanies" />
@@ -264,9 +269,10 @@ const util = computed(() => {
 </template>
 
 <style scoped>
-.shell { display: grid; grid-template-columns: 208px 1fr; grid-template-rows: 1fr 34px; height: 100%; }
+.shell { display: grid; grid-template-columns: var(--rail-w, 208px) 1fr;
+  grid-template-rows: 1fr 34px; height: 100%; position: relative; }
 .rail {
-  grid-row: 1 / span 2; background: var(--rail); border-right: 1px solid var(--line);
+  grid-row: 1 / span 2; background: var(--rail);
   padding: 22px 0 14px; display: flex; flex-direction: column; overflow: hidden;
 }
 .brand { padding: 0 12px 20px; position: relative; }

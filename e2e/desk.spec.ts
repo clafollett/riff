@@ -291,6 +291,49 @@ test('the console updates itself as the company works', async ({ page }) => {
   await expect(page.locator('.feed')).toContainText('Something new happened.');
 });
 
+test('the sidebar can be dragged wider, and stays where you put it', async ({ page }) => {
+  const rail = page.locator('.rail');
+  const splitter = page.locator('.splitter').first();
+  const widthOf = async () => Math.round((await rail.boundingBox())!.width);
+
+  const before = await widthOf();
+  const box = (await splitter.boundingBox())!;
+
+  // A real drag, through the handle sitting on the border.
+  await page.mouse.move(box.x + box.width / 2, box.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 90, box.y + 300, { steps: 8 });
+  await page.mouse.up();
+
+  const after = await widthOf();
+  expect(after).toBeGreaterThan(before + 60);
+  await expect(splitter).toHaveAttribute('aria-valuenow', String(after));
+
+  // Set once, stays set — including across a reload.
+  await page.reload();
+  await expect(page.locator('.co')).not.toBeEmpty();
+  expect(await widthOf()).toBe(after);
+});
+
+test('the splitter is a real control, not just a draggable pixel', async ({ page }) => {
+  const splitter = page.locator('.splitter').first();
+  // A 1px border is a target nobody can hit; the grab area is wider than the
+  // line it draws.
+  const box = (await splitter.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(8);
+
+  await expect(splitter).toHaveAttribute('role', 'separator');
+  await expect(splitter).toHaveAttribute('aria-orientation', 'vertical');
+
+  // Reachable and operable from the keyboard.
+  await splitter.focus();
+  const start = Number(await splitter.getAttribute('aria-valuenow'));
+  await page.keyboard.press('ArrowLeft');
+  await expect(splitter).toHaveAttribute('aria-valuenow', String(start - 8));
+  await page.keyboard.press('Home');
+  await expect(splitter).toHaveAttribute('aria-valuenow', await splitter.getAttribute('aria-valuemin') ?? '');
+});
+
 test('the console holds together on a narrow window', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 700 });
   await go(page, 'Staff');

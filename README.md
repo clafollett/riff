@@ -122,6 +122,7 @@ be reviewable.
 | **Record** | what actually landed in the world, by author, over a window |
 | **Staff** | the report tree, each persona, and a way to leave word |
 | **Commons** | the shelf, under the titles the authors chose |
+| **Inbox** | what the staff wrote to you, and a reply that reaches them |
 | **Work** | tasks in flight, dropped and finished; broken reporting lines |
 | **Feed** | live events over SSE, newest first |
 
@@ -195,8 +196,8 @@ it and says so.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 79 unit tests |
-| `npm run test:ui` | 22 Playwright tests against a throwaway installation |
+| `npm test` | 80 unit tests |
+| `npm run test:ui` | 27 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |
 | `--company <slug>` | any script, when more than one company exists |
