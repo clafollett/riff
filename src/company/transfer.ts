@@ -18,7 +18,9 @@ import { companiesDir, companyHome, installRoot, operatorError, persisted, slugI
  * are rewritten on arrival, and it always lands paused.
  *
  * tar rather than zip because tar is on every machine that can run this, and
- * is already in the container image. `zip` is not.
+ * is already in the container image — node:26-slim carries GNU tar 1.35 and
+ * gzip. `zip` is not there, and adding it would be a package to keep for the
+ * sake of a file extension.
  */
 
 /** Bumped only when an older Helmsted could not read what a newer one writes. */

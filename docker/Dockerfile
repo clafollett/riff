@@ -49,6 +49,11 @@ FROM node:26-slim
 
 # Build tooling the staff will actually need. Kept deliberately small — add per
 # line of business rather than pre-installing a kitchen sink.
+#
+# tar and gzip are NOT listed because node:26-slim (Debian) already ships GNU
+# tar 1.35 and gzip. Company export and import shell out to them. A base image
+# without them — alpine's busybox tar, or anything distroless — breaks both,
+# so add them explicitly if this line ever changes.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates curl ripgrep jq less procps tini \
  && rm -rf /var/lib/apt/lists/*
