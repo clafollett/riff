@@ -122,7 +122,9 @@ export const resolveConfig = (cwd = process.cwd()): InnConfig => {
       business: env['HELMSTED_BUSINESS']?.trim() || merged.company?.business || '',
     },
     board,
-    ceo: merged.ceo ?? { id: 'ceo', name: 'CEO' },
+    ceo: env['HELMSTED_CEO']?.trim()
+      ? { id: slugId(env['HELMSTED_CEO'].trim()), name: env['HELMSTED_CEO'].trim() }
+      : merged.ceo ?? { id: 'ceo', name: 'CEO' },
     connectors: merged.connectors ?? {},
   };
 };
