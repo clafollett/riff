@@ -5,29 +5,33 @@ import { execFileSync } from 'node:child_process';
 import { userInfo } from 'node:os';
 
 /**
- * Where the Inn lives.
+ * Where the company lives.
  *
  * Nothing here is baked into source. The location is RESOLVED at runtime and
- * SCAFFOLDED on init, because the living Inn is data — it outlives any one
+ * SCAFFOLDED on init, because a living company is data — it outlives any one
  * checkout, and it must survive the project folder being moved or renamed.
  *
  * Resolution order, first match wins:
- *   1. INN_KEEPER / HELMSTED_WORLD / HELMSTED_LEDGER   explicit overrides
- *   2. HELMSTED_HOME                    relocate the whole Inn
- *   3. ./inn.config.json           project-local, for development
- *   4. ~/.lafollett-bnb/config.json  the scaffolded default
- *   5. built-in defaults           only ever used to WRITE #4, never assumed
+ *   1. HELMSTED_WORLD / HELMSTED_LEDGER   move one piece
+ *   2. HELMSTED_HOME                      move the whole company
+ *   3. ./helmsted.config.json             project-local, for development
+ *   4. ~/.helmsted/config.json            the scaffolded default
+ *   5. built-in defaults                  only ever used to WRITE #4
+ *
+ * Identity — HELMSTED_COMPANY, HELMSTED_BUSINESS, HELMSTED_CHAIR,
+ * HELMSTED_CEO — overrides the stored config on every read, which is what
+ * makes a container run reproducible from environment alone.
  */
 
-export type InnConfig = {
+export type HelmstedConfig = {
   version: 1;
-  /** The Inn's root. world/ and ledger.db live under it unless overridden. */
+  /** The company's root. world/ and ledger.db live under it unless overridden. */
   home: string;
   worldDir: string;
   ledgerPath: string;
   /**
-   * Whose Inn this is. Every install has a different human at the top, so the
-   * Inn Keeper is configuration, never a name in the source.
+   * Whose company this is. Every install has a different human at the top, so
+   * the chair is configuration, never a name in the source.
    */
   company: { name: string; business: string };
   /** Humans. Terminal authority. */
@@ -36,7 +40,7 @@ export type InnConfig = {
   ceo: { id: string; name: string };
   /**
    * External MCP servers handed to every staff session — an image generator,
-   * a calendar, an inbox. The Inn knows nothing about any specific provider;
+   * a calendar, an inbox. Helmsted knows nothing about any specific provider;
    * plugging one in is a config change, not a code change.
    *
    * Credentials belong in headers here, and this file is gitignored. Anything
@@ -69,7 +73,7 @@ const CONFIG_NAME = 'config.json';
 
 const abs = (base: string, p: string): string => (isAbsolute(p) ? p : resolve(base, p));
 
-const fromHome = (home: string): InnConfig => {
+const fromHome = (home: string): HelmstedConfig => {
   const name = guessKeeperName();
   return {
     version: 1,
@@ -83,14 +87,14 @@ const fromHome = (home: string): InnConfig => {
   };
 };
 
-const readConfigFile = (path: string): Partial<InnConfig> | null => {
+const readConfigFile = (path: string): Partial<HelmstedConfig> | null => {
   if (!existsSync(path)) return null;
-  try { return JSON.parse(readFileSync(path, 'utf8')) as Partial<InnConfig>; }
+  try { return JSON.parse(readFileSync(path, 'utf8')) as Partial<HelmstedConfig>; }
   catch { return null; }
 };
 
 /** Resolve without touching disk beyond reading. Never creates anything. */
-export const resolveConfig = (cwd = process.cwd()): InnConfig => {
+export const resolveConfig = (cwd = process.cwd()): HelmstedConfig => {
   const env = process.env;
   const home = env['HELMSTED_HOME'] ? abs(cwd, env['HELMSTED_HOME']) : null;
 
@@ -104,8 +108,8 @@ export const resolveConfig = (cwd = process.cwd()): InnConfig => {
 
   const merged = { ...fromHome(base), ...homeCfg, ...projectCfg, home: base };
 
-  // An explicit INN_KEEPER wins; otherwise a stored keeper is kept forever,
-  // because renaming the Inn Keeper mid-life would orphan every approval,
+  // An explicit HELMSTED_CHAIR wins; otherwise the stored chair is kept
+  // forever, because renaming them mid-life would orphan every approval,
   // note and commit already attributed to them.
   const chairName = env['HELMSTED_CHAIR']?.trim() || merged.board?.[0]?.name || guessKeeperName();
   const board = merged.board?.length
@@ -129,8 +133,8 @@ export const resolveConfig = (cwd = process.cwd()): InnConfig => {
   };
 };
 
-/** Create the Inn's home and write the config. Idempotent. */
-export const scaffoldConfig = (cfg: InnConfig): { created: boolean; path: string } => {
+/** Create the company's home and write the config. Idempotent. */
+export const scaffoldConfig = (cfg: HelmstedConfig): { created: boolean; path: string } => {
   mkdirSync(cfg.home, { recursive: true });
   mkdirSync(cfg.worldDir, { recursive: true });
   mkdirSync(resolve(cfg.ledgerPath, '..'), { recursive: true });
@@ -142,5 +146,5 @@ export const scaffoldConfig = (cfg: InnConfig): { created: boolean; path: string
   return { created: true, path };
 };
 
-export const isInitialised = (cfg: InnConfig): boolean =>
+export const isInitialised = (cfg: HelmstedConfig): boolean =>
   existsSync(join(cfg.home, CONFIG_NAME)) && existsSync(cfg.ledgerPath);

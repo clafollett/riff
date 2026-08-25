@@ -1,0 +1,21 @@
+# The build context is the repo. Everything here would either bloat the image,
+# leak a secret, or be rebuilt inside it anyway.
+.git
+.github
+node_modules
+**/node_modules
+desk/dist
+dist
+test-results
+playwright-report
+blob-report
+.playwright
+docker/.env
+*.log
+.DS_Store
+
+# A developer's own company lives outside the repo, but never ship one if a
+# checkout happens to contain one.
+helmsted.config.json
+world
+ledger.db

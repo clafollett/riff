@@ -15,8 +15,14 @@ import { Scheduler } from '../src/runtime/scheduler.ts';
 import { resolveConfig } from '../src/core/config.ts';
 import { systemClock } from '../src/core/clock.ts';
 
-const hours = Number(process.argv[2] ?? 7);
-const maxTicks = Number(process.argv[3] ?? 40);
+// The container entrypoint passes through unset variables as empty strings,
+// and Number('') is 0 — an unattended run that stops the instant it starts.
+const arg = (i: number, fallback: number): number => {
+  const n = Number(process.argv[i]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const hours = arg(2, 7);
+const maxTicks = arg(3, 40);
 
 const cfg = resolveConfig();
 const ledger = new Ledger(cfg.ledgerPath, systemClock);

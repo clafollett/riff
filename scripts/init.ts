@@ -7,11 +7,11 @@
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { resolveConfig, scaffoldConfig, isInitialised, slugId, type InnConfig } from '../src/core/config.ts';
+import { resolveConfig, scaffoldConfig, isInitialised, slugId, type HelmstedConfig } from '../src/core/config.ts';
 import { found } from '../src/company/genesis.ts';
 import { systemClock } from '../src/core/clock.ts';
 
-let cfg: InnConfig = resolveConfig();
+let cfg: HelmstedConfig = resolveConfig();
 
 if (isInitialised(cfg)) {
   console.log(`\n  ${cfg.company.name} already exists at ${cfg.home}.\n`);

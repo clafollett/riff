@@ -5,6 +5,19 @@
 # shrinking tool allowlist (agents route around those, and it becomes a
 # blocklist you maintain forever); it is this boundary plus the egress proxy in
 # compose.yaml.
+
+# ---------------------------------------------------------------- desk build
+# Vite and Vue live in devDependencies, and the runtime image installs
+# production deps only. Building here keeps the toolchain out of the shipped
+# image while still shipping a built console.
+FROM node:26-slim AS desk
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --no-fund --no-audit
+COPY desk ./desk
+RUN npx vite build --config desk/vite.config.ts
+
+# ------------------------------------------------------------------- runtime
 FROM node:26-slim
 
 # Build tooling the staff will actually need. Kept deliberately small — add per
@@ -24,13 +37,22 @@ RUN useradd -m -u 10001 -s /bin/bash labs \
 
 WORKDIR /app
 COPY --chown=labs:labs package*.json ./
-RUN npm ci --omit=dev --no-fund --no-audit || npm install --omit=dev --no-fund --no-audit
+RUN npm ci --omit=dev --no-fund --no-audit
 COPY --chown=labs:labs . .
+COPY --chown=labs:labs --from=desk /app/desk/dist ./desk/dist
+COPY --chown=labs:labs docker/entrypoint.sh /entrypoint.sh
 
 USER labs
 
+# git refuses to commit without an identity, and the world is a git repo that
+# every shift writes to. Individual commits are attributed per agent.
+RUN git config --global user.name  "Helmsted" \
+ && git config --global user.email "helmsted@localhost" \
+ && git config --global init.defaultBranch main \
+ && git config --global --add safe.directory /world
+
 ENV NODE_ENV=production \
-    INN_HOME=/world \
+    HELMSTED_HOME=/world \
     PORT=4173 \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false
@@ -39,5 +61,5 @@ EXPOSE 4173
 
 # tini reaps the processes agents spawn; without it a runaway build leaves
 # zombies behind for the life of the container.
-ENTRYPOINT ["/usr/bin/tini", "--"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
 CMD ["node", "src/gateway/server.ts"]
