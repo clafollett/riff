@@ -93,6 +93,22 @@ agents can also reach is not a backup, it is a second thing to lose.
 which is the failure that once wrote a whole company to a layer that vanished on
 restart.
 
+### The token is kept off your disk, and that is all that buys
+
+`docker/.env` holds a command that prints the token rather than the token, and
+`docker/up.sh` runs it at launch. So the credential is not sitting in plaintext
+in a source tree where a backup, an editor's crash recovery, a home-directory
+sync or a tarball of the repo will pick it up. It is never passed as an
+argument, so it does not appear in `ps`; never typed, so not in shell history;
+and never written, so not on disk.
+
+Be clear about the limit. Once the factory is running, the token is in its
+environment and the staff have a shell — anything in that box can read it, and
+it is visible on the host through `docker inspect` to anyone who can reach the
+Docker socket. **Secrecy is not the control.** The control is that the factory
+has no route to the internet except an allowlisted proxy, so a token that can
+be read still cannot be sent anywhere.
+
 ### The spend cap is a transaction, not a check
 
 Recorded under `BEGIN IMMEDIATE` in SQLite, so two staff members waking at the
@@ -142,7 +158,7 @@ Say these out loud before you run it unattended.
 ## Checking it yourself
 
 ```bash
-npm test          # 108 unit tests, including the container env contract
+npm test          # 111 unit tests, including the container env contract
 npm run test:ui   # 35 browser tests against a throwaway installation
 ```
 

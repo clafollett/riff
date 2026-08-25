@@ -1,7 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 /**
  * The container's environment is a contract with src/core/config.ts, and
@@ -179,19 +181,81 @@ describe('the example env file describes this container, not an imagined one', (
   // someone sets one, nothing happens, and they go looking for the bug in
   // their own setup.
   const example = readFileSync('docker/.env.example', 'utf8');
+  const upsh = readFileSync('docker/up.sh', 'utf8');
+  /** Stands in for a token. Long enough that a length check means something. */
+  const SENTINEL = 'sentinel-not-a-real-token-000000';
 
   test('every variable it names is one compose actually reads', () => {
     const named = [...example.matchAll(/^#?\s*([A-Z][A-Z0-9_]+)=/gm)].map((m) => m[1]!);
     assert.ok(named.length > 3, 'the example should document something');
     for (const v of named) {
       if (v === 'CLAUDE_CODE_OAUTH_TOKEN') continue;   // required, checked below
-      assert.ok(compose.includes(v), `${v} is in docker/.env.example but nothing in compose reads it`);
+      // Read by compose, or by the launcher that runs before it.
+      assert.ok(compose.includes(v) || upsh.includes(v),
+        `${v} is in docker/.env.example but neither compose nor up.sh reads it`);
     }
   });
 
   test('the token is present and empty, so a copy of it cannot carry a secret', () => {
     assert.match(example, /^CLAUDE_CODE_OAUTH_TOKEN=\s*$/m);
     assert.ok(compose.includes('CLAUDE_CODE_OAUTH_TOKEN'), 'compose must require the token');
+  });
+
+  /**
+   * Run the launcher for real, with a sentinel standing in for the token and a
+   * stub standing in for docker.
+   *
+   * Reading the script and grepping it for `echo $token` was the first attempt
+   * and it flagged the line that TRIMS the token, which pipes into `tr` and
+   * prints nothing. Guessing at intent from a regex is the wrong tool: run it,
+   * and look at what actually came out.
+   */
+  const launch = (): { out: string; argv: string; env: string } => {
+    const dir = mkdtempSync(join(tmpdir(), 'helmsted-launch-'));
+    // A stub `docker` that records how it was called, so the test can prove
+    // the token was passed by environment and never as an argument.
+    writeFileSync(join(dir, 'docker'),
+      `#!/bin/sh\nprintf '%s\\n' "$*" > ${dir}/argv\nenv > ${dir}/env\n`, { mode: 0o755 });
+    const out = execFileSync('sh', ['docker/up.sh', 'up'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${dir}:${process.env['PATH'] ?? ''}`,
+        HELMSTED_TOKEN_CMD: `printf %s ${SENTINEL}`,
+        CLAUDE_CODE_OAUTH_TOKEN: '',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return {
+      out,
+      argv: readFileSync(join(dir, 'argv'), 'utf8'),
+      env: readFileSync(join(dir, 'env'), 'utf8'),
+    };
+  };
+
+  test('the launcher resolves the token without ever printing it', () => {
+    const { out } = launch();
+    assert.ok(!out.includes(SENTINEL), `the token appeared in the output:\n${out}`);
+    // The length is what makes "the vault gave me something" distinguishable
+    // from "the vault gave me an error message", with nothing on screen.
+    assert.match(out, new RegExp(`\\(${SENTINEL.length} characters\\)`));
+  });
+
+  test('the token reaches docker by environment, never as an argument', () => {
+    // An argument is visible in `ps` to every process on the machine.
+    const { argv, env } = launch();
+    assert.ok(!argv.includes(SENTINEL), `the token was passed on the command line: ${argv}`);
+    assert.match(env, new RegExp(`^CLAUDE_CODE_OAUTH_TOKEN=${SENTINEL}$`, 'm'));
+  });
+
+  test('the launcher writes nothing to disk', () => {
+    // A redirect or a tee added here later would undo the whole point of
+    // resolving from a password manager, and it would still appear to work.
+    const before = readdirSync('docker').sort();
+    launch();
+    assert.deepEqual(readdirSync('docker').sort(), before, 'up.sh created a file');
+    const body = upsh.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+    assert.ok(!/\btee\b/.test(body), 'up.sh must not tee the token anywhere');
   });
 
   test('docker/.env itself is ignored, and stays ignored', () => {
