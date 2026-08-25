@@ -5,6 +5,8 @@ import { Scheduler } from '../runtime/scheduler.ts';
 import { systemClock } from '../core/clock.ts';
 import { resolveConfig } from '../core/config.ts';
 import { found } from '../company/genesis.ts';
+import { readFile } from 'node:fs/promises';
+import { extname, join, resolve, sep } from 'node:path';
 
 const PORT = Number(process.env['PORT'] ?? 4173);
 const cfg = resolveConfig();
@@ -51,6 +53,33 @@ const readBody = async (req: IncomingMessage): Promise<Record<string, unknown>> 
   if (!chunks.length) return {};
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>; }
   catch { return {}; }
+};
+
+const DESK = resolve(import.meta.dirname, '../../desk/dist');
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.woff2': 'font/woff2',
+  '.json': 'application/json', '.ico': 'image/x-icon',
+};
+
+/** Static files for the console. Single-page app: unknown paths fall to index. */
+const serveDesk = async (res: ServerResponse, urlPath: string): Promise<void> => {
+  const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
+  let abs = resolve(DESK, rel);
+  if (abs !== DESK && !abs.startsWith(DESK + sep)) { res.writeHead(403).end('forbidden'); return; }
+  try {
+    const buf = await readFile(abs);
+    res.writeHead(200, { 'content-type': MIME[extname(abs)] ?? 'application/octet-stream' });
+    res.end(buf);
+  } catch {
+    try {
+      const buf = await readFile(join(DESK, 'index.html'));
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(buf);
+    } catch {
+      res.writeHead(404).end('the Desk has not been built — run: npm run desk:build');
+    }
+  }
 };
 
 const server = createServer(async (req, res) => {
@@ -105,8 +134,40 @@ const server = createServer(async (req, res) => {
     if (p === '/api/commons' && method === 'GET') {
       return json(res, {
         held: world.commonsCount(), ceiling: constitution.commonsCeiling,
-        documents: world.listCommons(),
+        // The title an author chose beats anything derivable from a filename.
+        documents: world.listCommons().map((path) => {
+          const doc = world.readDoc(path);
+          return {
+            path,
+            title: String(doc?.data['title'] ?? path.split('/').pop()?.replace(/\.md$/, '') ?? path),
+            author: doc?.data['author'] == null ? null : String(doc.data['author']),
+            updated: doc?.data['updated'] == null ? null : String(doc.data['updated']),
+          };
+        }),
       });
+    }
+
+    // Read any document in the world. The board could not review what it
+    // could not open — the whole point of the Desk.
+    if (p === '/api/doc' && method === 'GET') {
+      const rel = url.searchParams.get('path') ?? '';
+      try {
+        const raw = world.readText(rel);
+        if (raw == null) return json(res, { error: 'not found', path: rel }, 404);
+        // Frontmatter is bookkeeping. Hand back the prose and the keys apart,
+        // so no reader has to skim past a metadata block to reach the writing.
+        const doc = rel.endsWith('.md') ? world.readDoc(rel) : null;
+        return json(res, {
+          path: rel,
+          body: doc?.body ?? raw,
+          title: doc?.data['title'] == null ? null : String(doc.data['title']),
+          author: doc?.data['author'] == null ? null : String(doc.data['author']),
+          updated: doc?.data['updated'] == null ? null : String(doc.data['updated']),
+        });
+      } catch {
+        // world.path() throws on anything escaping the world root.
+        return json(res, { error: 'forbidden' }, 403);
+      }
     }
 
     if (p === '/api/whathappened' && method === 'GET') {
@@ -133,7 +194,8 @@ const server = createServer(async (req, res) => {
     if (p === '/api/open' && method === 'POST') { scheduler.start(); return json(res, { running: true }); }
     if (p === '/api/close' && method === 'POST') { await scheduler.stop(); return json(res, { running: false }); }
 
-    return json(res, { error: 'no such route' }, 404);
+    if (p.startsWith('/api/')) return json(res, { error: 'no such route' }, 404);
+    return await serveDesk(res, p);
   } catch (err) {
     return json(res, { error: err instanceof Error ? err.message : String(err) }, 500);
   }

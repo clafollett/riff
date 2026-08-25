@@ -4,7 +4,7 @@ import { newId, slug } from '../core/ids.ts';
 import type { Capability, AgentId, Tier } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
 import type { Gate } from '../policy/gate.ts';
-import type { World } from '../worldfs/world.ts';
+import { commonsPath, type World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { fillSeat } from '../company/hire.ts';
 
@@ -117,9 +117,9 @@ export const createTools = (ctx: Ctx) => {
     'Publish to the commons — shared ground everyone reads. No fixed format; invent what the company needs. There is a ceiling: past it you must remove something first.',
     { path: z.string(), title: z.string().max(140), body: z.string() },
     async ({ path, title, body }) => {
-      const rel = `commons/${path.replace(/^\/+/, '')}`;
+      const rel = commonsPath(path);
       return say(gated(ctx, 'world.write', `commons: ${title}`, rel, () => {
-        world.writeCommons(path, { title, author: actor, updated: clock.iso() }, body);
+        world.writeCommons(rel, { title, author: actor, updated: clock.iso() }, body);
         ledger.emit(actor, 'commons.posted', rel, { title });
         return `Posted to ${rel}.`;
       }));
@@ -131,7 +131,7 @@ export const createTools = (ctx: Ctx) => {
     'Remove a commons document that has stopped being true. Say what changed. Removal is a first-class act here, not a failure.',
     { path: z.string(), why: z.string().max(400) },
     async ({ path, why }) => {
-      const rel = path.startsWith('commons/') ? path : `commons/${path}`;
+      const rel = commonsPath(path);
       if (!world.exists(rel)) return say(`${rel} is not there.`);
       return say(gated(ctx, 'world.write', `remove ${rel}: ${why}`, rel, () => {
         world.remove(rel);

@@ -23,6 +23,15 @@ import type { Ledger } from '../ledger/ledger.ts';
  * There is no schema for commons/. That is the point: a morale meter nobody
  * asked for can only appear if inventing new state costs no migration.
  */
+/**
+ * Agents pass commons paths both ways — 'doctrine/seats.md' and
+ * 'commons/doctrine/seats.md' mean the same shelf. Every caller normalizes
+ * through here so the write path and the gate can never disagree about
+ * where a document lives.
+ */
+export const commonsPath = (rel: string): string =>
+  `commons/${rel.replace(/^\/+/, '').replace(/^(?:commons\/)+/, '')}`;
+
 export class World {
   #root: string;
   #clock: Clock;
@@ -196,7 +205,7 @@ export class World {
   // ---------------------------------------------------------------- commons
   /** Shared ground. No schema, deliberately. */
   writeCommons(rel: string, data: Frontmatter, body: string): string {
-    const path = `commons/${rel.replace(/^\/+/, '')}`;
+    const path = commonsPath(rel);
     this.writeDoc(path, { data, body });
     return path;
   }

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync, existsSync,
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { World } from '../src/worldfs/world.ts';
+import { World, commonsPath } from '../src/worldfs/world.ts';
 import { parse, stringify } from '../src/worldfs/frontmatter.ts';
 import { Ledger } from '../src/ledger/ledger.ts';
 import { fixedClock } from '../src/core/clock.ts';
@@ -192,4 +192,13 @@ describe('documents the staff wrote themselves', () => {
     world.writeDoc('commons/plain.md', { data: { a: 1 }, body: '# Plain\n' });
     assert.equal(world.readDoc('commons/plain.md')!.body, '# Plain\n');
   });
+});
+
+test('commons paths normalize whether or not the agent prefixes them', () => {
+  // A doc once landed at commons/commons/instruments/… because post_to_commons
+  // prepended a prefix the agent had already written.
+  assert.equal(commonsPath('doctrine/seats.md'), 'commons/doctrine/seats.md');
+  assert.equal(commonsPath('commons/doctrine/seats.md'), 'commons/doctrine/seats.md');
+  assert.equal(commonsPath('commons/commons/doctrine/seats.md'), 'commons/doctrine/seats.md');
+  assert.equal(commonsPath('/doctrine/seats.md'), 'commons/doctrine/seats.md');
 });

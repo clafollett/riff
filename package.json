@@ -1,17 +1,21 @@
 {
-  "name": "bed-and-breakfast",
+  "name": "helmsted",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A village where AI staff live, work, and run real parts of your life — under rules enforced in code, not prompts.",
+  "description": "A company founds itself: a CEO agent hires its own staff and builds real things, under rules enforced in code.",
   "engines": {
     "node": ">=26"
   },
   "scripts": {
-    "check": "tsgo --noEmit",
+    "check": "tsgo --noEmit && tsgo --noEmit -p desk/tsconfig.json",
     "test": "node --test test/**/*.test.ts",
-    "inn": "node src/gateway/server.ts",
-    "seed": "node scripts/seed.ts"
+    "init": "node scripts/init.ts",
+    "tick": "node scripts/tick.ts",
+    "status": "node scripts/status.ts",
+    "desk": "node src/gateway/server.ts",
+    "desk:build": "vite build --config desk/vite.config.ts",
+    "desk:dev": "vite --config desk/vite.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -19,8 +23,7 @@
     "@typescript/native-preview": "latest",
     "@vitejs/plugin-vue": "^6.0.8",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
-    "vue-tsc": "^3.3.11"
+    "vite": "^8.2.2"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.243",
