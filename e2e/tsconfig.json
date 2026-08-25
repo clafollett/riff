@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // page.evaluate() callbacks are serialised and run in the browser, so this
+    // project needs both libraries: node for the setup, DOM for the callbacks.
+    "lib": ["esnext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}
