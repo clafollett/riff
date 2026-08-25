@@ -335,6 +335,13 @@ const server = createServer(async (req, res) => {
         return json(res, { ok }, ok ? 200 : 409);
       }
 
+      // What the board already settled. The Envelope showed only the queue, so
+      // a company that had published twice and refused twice looked like a
+      // company that had never sent anything anywhere.
+      if (p === '/api/approvals/decided' && method === 'GET') {
+        return json(res, { approvals: ledger.decided(40) });
+      }
+
       if (p === '/api/commons' && method === 'GET') {
         // Alphabetical order is an accident of filenames. The event log knows
         // when each document actually landed, which is the order a newcomer

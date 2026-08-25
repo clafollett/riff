@@ -71,6 +71,19 @@ test('a decision clears the queue and the reason is kept', async ({ page, reques
   // reach the author teaches nobody anything.
   const state = await (await request.get('/api/state')).json();
   expect(state.pendingBoard).toBe(0);
+
+  // And the queue emptying must not take the record with it. A company that
+  // had published twice and refused twice showed a blank page here.
+  const past = page.locator('.past').first();
+  await expect(page.locator('h2')).toContainText('Already decided');
+  await expect(past.locator('.verdict')).toHaveText('sent back');
+  await expect(past.locator('.summary-line')).toContainText('Asking an outside org to sit a run.');
+  await expect(page.locator('.empty')).toContainText('Everything proposed so far is below');
+
+  // The reason, and the draft it was about, are both still reachable.
+  await past.locator('.row.open').click();
+  await expect(past.locator('.because')).toContainText('Not yet — the claim is not true.');
+  await expect(past.locator('.draft')).toContainText('We would like to run the test on you.');
 });
 
 test('staff renders the report tree the CEO actually built', async ({ page }) => {

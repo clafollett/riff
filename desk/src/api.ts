@@ -141,6 +141,7 @@ export const api = {
 
   state: () => get<State>('/api/state'),
   approvals: () => get<Approval[]>('/api/approvals'),
+  decided: () => get<{ approvals: Approval[] }>('/api/approvals/decided'),
   work: () => get<Work>('/api/work'),
   inbox: () => get<Inbox>('/api/inbox'),
   recent: (limit = 200) => get<{ events: Event[] }>(`/api/events?limit=${limit}`),

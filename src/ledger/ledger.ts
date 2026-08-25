@@ -259,6 +259,24 @@ export class Ledger {
   }
 
   /**
+   * Everything already decided, most recent first.
+   *
+   * The board's queue empties as it works, which left the console showing an
+   * empty Envelope for a company that had published twice and refused twice.
+   * What went out, and what was turned down and why, is the part worth keeping
+   * — the pending list is only the part that still needs someone.
+   */
+  decided(limit = 40, tier?: ApprovalTier): Approval[] {
+    const sql = tier
+      ? `SELECT * FROM approvals WHERE state IN ('approved','rejected') AND tier=?
+         ORDER BY decided_at DESC, id DESC LIMIT ?`
+      : `SELECT * FROM approvals WHERE state IN ('approved','rejected')
+         ORDER BY decided_at DESC, id DESC LIMIT ?`;
+    const args = tier ? [tier, limit] : [limit];
+    return (this.#db.prepare(sql).all(...(args as never[])) as Row[]).map((r) => this.#toApproval(r));
+  }
+
+  /**
    * Decide a pending approval. Returns false if it was already decided —
    * this is what makes approval exactly-once, so a draft cannot publish twice.
    */
