@@ -172,7 +172,7 @@ Say these out loud before you run it unattended.
 
 ```bash
 npm test          # 125 unit tests, including the container env contract
-npm run test:ui   # 35 browser tests against a throwaway installation
+npm run test:ui   # 36 browser tests against a throwaway installation
 ```
 
 `test/container.test.ts` asserts the container's environment contract against

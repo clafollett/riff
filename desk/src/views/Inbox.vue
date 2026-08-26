@@ -144,8 +144,12 @@ const when = (iso: string) => {
         <span class="chev" :class="{ down: isOpen(m) }">▸</span>
         <span class="who">{{ nameOf(m.from) }}</span>
         <span class="role faint">{{ roleOf(m.from) }}</span>
-        <span v-if="m.broadcast" class="to-all"
-              title="Sent to the whole company, not only to you.">to everyone</span>
+        <span v-if="m.broadcast" class="addressed all"
+              title="Sent to the whole company. You are one of the readers, not the reader.">
+          → everyone
+        </span>
+        <span v-else class="addressed you"
+              title="Written to you specifically.">→ you</span>
         <span v-if="!isOpen(m)" class="preview muted">{{ preview(m.body) }}</span>
         <span class="grow" />
         <span v-if="!m.readAt" class="new">New</span>
@@ -153,6 +157,13 @@ const when = (iso: string) => {
       </button>
 
       <template v-if="isOpen(m)">
+        <p class="envelope faint mono">
+          {{ nameOf(m.from) }}<template v-if="roleOf(m.from)"> ({{ roleOf(m.from) }})</template>
+          →
+          <template v-if="m.broadcast">everyone at {{ state.company.name }}, you included</template>
+          <template v-else>you</template>
+          · {{ new Date(m.sentAt).toLocaleString() }}
+        </p>
         <div class="body" v-html="render(m.body)" />
         <div v-if="replyTo === m.id" class="reply">
           <textarea v-model="draft" rows="3"
@@ -205,7 +216,14 @@ input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
 .role { font-size: 12px; white-space: nowrap; }
 /* A label, not a control. It carries no border precisely so it stops looking
    like something to press. */
-.to-all { font-size: 12px; font-style: italic; color: var(--faint); cursor: help; white-space: nowrap; }
+/* Who it was addressed to, on every row — not only on broadcasts. Without a
+   marker on direct mail there was no positive signal that something was
+   actually written to you. */
+.addressed { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 999px; white-space: nowrap; cursor: help; flex: none; }
+.addressed.you { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.addressed.all { color: var(--faint); border: 1px solid var(--line-2); }
+.envelope { font-size: 11px; padding: 0 14px 10px; }
 .preview { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; min-width: 0; flex: 1 1 auto; }
 .new { font-size: 10px; letter-spacing: .07em; text-transform: uppercase;

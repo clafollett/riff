@@ -37,6 +37,9 @@ export type TickResult = {
    *  subscription this — not dollars — is what actually governs the company. */
   rateLimit?: SDKRateLimitInfo;
   error?: string;
+  /** The shift ended at the turn ceiling rather than because the agent
+   *  chose to stop. Work happened; there was simply more of it. */
+  truncated?: boolean;
 };
 
 /**
@@ -196,6 +199,9 @@ const buildTickPrompt = (d: TickDeps): string => {
  */
 const LOST_SESSION = /No conversation found with session ID|session .* not found/i;
 
+/** The turn ceiling, which ends a shift rather than breaking one. */
+const OUT_OF_TURNS = /Reached maximum number of turns/i;
+
 export const tick = async (
   d: TickDeps,
   opts?: { withoutResume?: boolean },
@@ -280,22 +286,39 @@ export const tick = async (
     return { agentId: agent.id, ok: true, summary, costUsd, turns, ...(rateLimit ? { rateLimit } : {}) };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    ledger.emit(agent.id, 'agent.failed', null, { error });
+
     // A conversation the runtime no longer has is not a failed shift.
     //
     // The session id lives in the ledger, on the durable volume. The
     // conversation lives wherever the runtime keeps it, which in the container
     // is a tmpfs — so every restart wipes the transcripts while the ids
-    // survive, and every agent then fails to resume something that is gone.
-    // Nothing cleared the id, so the failure repeated forever rather than
-    // healing. Forget it and take the shift again from a cold start; the
-    // persona, memory and world are the durable context, and resume was only
-    // ever an optimisation on top of them.
+    // survive, and every agent asks to resume something that is gone. Nothing
+    // cleared the id, so it repeated forever rather than healing. Forget it and
+    // take the shift again cold; the persona, memory and world are the durable
+    // context, and resume was only ever an optimisation on top of them.
+    //
+    // Checked BEFORE anything is recorded as a failure, because a shift that
+    // recovers did not fail, and saying so puts a red line in the console for
+    // something nobody needs to act on.
     if (resume && LOST_SESSION.test(error)) {
       ledger.setMeta(`session:${agent.id}`, '');
       ledger.emit(agent.id, 'session.reset', null, { was: resume });
       return tick(d, { withoutResume: true });
     }
+
+    // Running out of turns is a shift ending, not a shift failing. The agent
+    // worked, spent real money and usually wrote something down; it simply hit
+    // the ceiling before it chose to stop. Recording that as a failure made a
+    // busy company look broken and buried the errors that actually matter.
+    if (OUT_OF_TURNS.test(error)) {
+      if (summary) world.appendJournal(agent.id, summary.slice(0, 600));
+      world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(summary)}`);
+      ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, truncated: true });
+      return { agentId: agent.id, ok: true, summary, costUsd, turns, truncated: true,
+               ...(rateLimit ? { rateLimit } : {}) };
+    }
+
+    ledger.emit(agent.id, 'agent.failed', null, { error });
     return { agentId: agent.id, ok: false, summary: '', costUsd, turns, error };
   }
 };

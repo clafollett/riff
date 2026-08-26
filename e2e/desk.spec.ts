@@ -304,6 +304,22 @@ test('mail addressed to the board is readable, and says so before you look', asy
   await expect(page.locator('.msg.open .body h2').first()).toHaveText('The noise floor is real');
 });
 
+test('every message says who it was written to', async ({ page }) => {
+  // The inbox showed the sender and nothing else, so a note written to you and
+  // a note copied to the whole company looked identical.
+  await go(page, 'Inbox');
+  await expect(page.locator('.msg').first()).toBeVisible();
+  // Every message carries one, direct mail included — that is the point.
+  const marks = await page.locator('.msg .addressed').allInnerTexts();
+  expect(marks.length).toBe(await page.locator('.msg').count());
+  // CSS uppercases these, and allInnerTexts returns what is rendered.
+  expect(marks.every((m) => ['→ you', '→ everyone'].includes(m.trim().toLowerCase()))).toBe(true);
+
+  // And the broadcast is marked differently, so the two are told apart.
+  await page.getByLabel('Filter messages').fill('whole company');
+  await expect(page.locator('.msg .addressed')).toHaveText(/→ everyone/i);
+});
+
 test('a message can be put back to unread, to keep it in front of you', async ({ page }) => {
   // Reading something at a moment you cannot act on it should not lose it.
   await go(page, 'Inbox');
@@ -382,12 +398,16 @@ test('marking read is an explicit act, and nothing else does it by accident', as
   // used to silently mark the message read, which read as a toggle that had
   // broken — the unread bar vanished and clicking again did nothing.
   await page.getByLabel('Filter messages').fill('whole company');
-  const broadcast = page.locator('.msg', { has: page.locator('.to-all') }).first();
+  const broadcast = page.locator('.msg', { has: page.locator('.addressed.all') }).first();
   await expect(broadcast).toHaveClass(/unread/);
-  await broadcast.locator('.to-all').click();
+  await broadcast.locator('.addressed.all').click();
   // It sits inside the row, so it opens the message — which is all it does.
   await expect(broadcast).toHaveClass(/open/);
   await expect(broadcast).toHaveClass(/unread/);
+
+  // Who it was addressed to is on the row, not inferred from its absence.
+  await expect(broadcast.locator('.addressed')).toHaveText(/→ everyone/i);
+  await expect(broadcast.locator('.envelope')).toContainText('everyone at');
 
   // Unread says so in words, not only in a coloured edge.
   await expect(broadcast.locator('.new')).toHaveText('New');
