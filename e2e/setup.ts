@@ -59,6 +59,11 @@ export default async function globalSetup(): Promise<void> {
     'Second report. **Nothing needs you yet** — this is so you can see it coming.');
   // A broadcast, so the "to everyone" label exists to be mis-clicked.
   ledger.sendMessage('fen', null, 'Posted to the whole company, not only the board.');
+  // Staff mail the board never sees. This is the bulk of a real company's
+  // traffic, and the whole-company view was being proved against a message an
+  // earlier test happened to have sent — which passes for the wrong reason.
+  ledger.sendMessage(cfg.ceo.id, 'fen',
+    'Between us: hold the pricing page until the floor is published.');
   // Enough to page. Real inboxes fill up fast — twenty-six messages at three
   // thousand characters each is ninety thousand characters of scroll if they
   // all render at once.

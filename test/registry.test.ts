@@ -492,5 +492,41 @@ describe('the whole company is readable, not only the board\'s slice', () => {
     // And the board's own inbox is still just its slice.
     assert.equal(r['boardSlice'], 1, 'cali got the broadcast and nothing else');
   });
+
+  test('answering mail between two colleagues reaches both of them', () => {
+    // Nobody can read a conversation they were left out of, so a reply that
+    // went to the sender alone left the other half never knowing.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Overheard', business: 'x', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      const l = a.company.ledger;
+      l.upsertAgent({ id: 'ora', name: 'Ora', tier: 'lead', role: 'Head', department: '',
+        reportsTo: 'vale', status: 'active', activity: '', mandate: '',
+        hiredAt: systemClock.iso(), hiredBy: 'vale', model: 'm' });
+
+      l.sendMessage('vale', 'ora', 'draft the pricing page');
+      const delivered = l.sendMessage('cali', ['vale', 'ora'], 'talk to legal first');
+
+      const reply = l.allMessages().find((m) => m.from === 'cali');
+      console.log(JSON.stringify({
+        delivered,
+        collapsed: l.allMessages().length,
+        broadcast: reply.broadcast,
+        reached: [reply.to, ...reply.alsoTo].sort(),
+        valeHeard: l.messagesFor('vale').some((m) => m.body === 'talk to legal first'),
+        oraHeard: l.messagesFor('ora').some((m) => m.body === 'talk to legal first'),
+      }));
+    `);
+    const r = JSON.parse(out) as Record<string, unknown>;
+    assert.equal(r['delivered'], 2, 'both parties, not just the one who wrote');
+    assert.equal(r['collapsed'], 2, 'the reply reads as one message, not two copies');
+    assert.equal(r['broadcast'], false, 'naming two people is not telling everybody');
+    assert.deepEqual(r['reached'], ['ora', 'vale']);
+    assert.equal(r['valeHeard'], true);
+    assert.equal(r['oraHeard'], true, 'the colleague who was written to hears it too');
+  });
 });
 

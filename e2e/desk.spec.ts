@@ -528,6 +528,40 @@ test('a reply reaches the person who wrote to you', async ({ page }) => {
   await expect(page.locator('.feed')).toContainText('publish the detection floor');
 });
 
+test('answering mail between colleagues reaches both, not just the one who wrote', async ({ page }) => {
+  // Replying to overheard mail used to go to the sender alone, and no agent
+  // can read a conversation it was left out of — so the colleague it had been
+  // written to never learned the founder had weighed in.
+  await go(page, 'Inbox');
+  await page.getByRole('button', { name: "Everyone's" }).click();
+
+  // Twenty-two messages page at fifteen, so narrow rather than hunt.
+  const search = page.getByRole('searchbox', { name: 'Filter messages' });
+  await search.fill('pricing page');
+  const overheard = page.locator('.msg').first();
+  await expect(overheard.locator('.addressed.other')).toBeVisible();
+  const wrote = (await overheard.locator('.who').innerText()).trim().toLowerCase();
+  const written = (await overheard.locator('.addressed').innerText())
+    .replace('\u2192', '').trim().toLowerCase();
+
+  await overheard.locator('.row').click();
+  await overheard.getByRole('button', { name: 'Reply' }).click();
+  // The box names everyone it is about to reach, before anything is sent.
+  const placeholder = (await overheard.locator('textarea').getAttribute('placeholder')) ?? '';
+  expect(placeholder.toLowerCase()).toContain(`${wrote} and ${written}`);
+
+  await overheard.locator('textarea').fill('Both of you — hold until legal answers.');
+  await overheard.getByRole('button', { name: 'Send' }).click();
+
+  // One message in the list, addressed to the two people who were in the room.
+  await search.fill('hold until legal answers');
+  const sent = page.locator('.msg');
+  await expect(sent).toHaveCount(1);
+  const to = (await sent.locator('.addressed').innerText()).toLowerCase();
+  expect(to).toContain(wrote);
+  expect(to).toContain(written);
+});
+
 test('the console updates itself as the company works', async ({ page }) => {
   // Views used to load once on mount, so anything the company did while you
   // were looking at a page simply did not appear until you navigated away and

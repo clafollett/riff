@@ -361,17 +361,27 @@ export class Ledger {
    * on their next tick. This is what keeps 22 staff from deadlocking on each
    * other.
    */
-  sendMessage(from: AgentId, to: AgentId | null, body: string): number {
+  /**
+   * Deliver to one person, to several by name, or to everybody.
+   *
+   * A list is not a broadcast. The founder replying to mail between two
+   * colleagues has to reach both of them, and each agent's inbox is strictly
+   * its own rows — nobody can see a conversation they were left out of. Every
+   * row of one send shares a sent_at, which is what lets the whole-company
+   * view fold them back into the single message they were.
+   */
+  sendMessage(from: AgentId, to: AgentId | AgentId[] | null, body: string): number {
     const at = this.#clock.iso();
-    const recipients = to
-      ? [to]
+    const named = to === null ? null : [...new Set(([] as AgentId[]).concat(to))];
+    const recipients = named
+      ? named.filter((id) => id !== from)
       : this.listAgents().map((a) => a.id).filter((id) => id !== from);
 
     const stmt = this.#db.prepare(
       'INSERT INTO messages(id,from_agent,to_agent,body,broadcast,sent_at) VALUES(?,?,?,?,?,?)'
     );
     for (const r of recipients) {
-      stmt.run(newId('msg', this.#clock.now()), from, r, body, to ? 0 : 1, at);
+      stmt.run(newId('msg', this.#clock.now()), from, r, body, named ? 0 : 1, at);
     }
     return recipients.length;
   }
@@ -387,7 +397,7 @@ export class Ledger {
     ).all(agentId) as Row[];
 
     const msgs = rows.map((r) => ({
-      id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']),
+      id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']), alsoTo: [],
       body: str(r['body']), broadcast: num(r['broadcast']) === 1,
       sentAt: str(r['sent_at']), readAt: nstr(r['read_at']),
     }));
@@ -412,7 +422,7 @@ export class Ledger {
       'SELECT * FROM messages WHERE to_agent=? ORDER BY sent_at DESC, id DESC LIMIT ?'
     ).all(agentId, limit) as Row[];
     return rows.map((r) => ({
-      id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']),
+      id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']), alsoTo: [],
       body: str(r['body']), broadcast: num(r['broadcast']) === 1,
       sentAt: str(r['sent_at']), readAt: nstr(r['read_at']),
     }));
@@ -432,16 +442,22 @@ export class Ledger {
   allMessages(limit = 500): Message[] {
     const rows = this.#db.prepare(
       `SELECT MIN(id) AS id, from_agent, body, broadcast, sent_at,
-              CASE WHEN broadcast=1 THEN NULL ELSE MIN(to_agent) END AS to_agent
+              CASE WHEN broadcast=1 THEN NULL ELSE group_concat(to_agent) END AS to_agent
        FROM messages
-       GROUP BY CASE WHEN broadcast=1 THEN from_agent || sent_at || body ELSE id END
+       GROUP BY from_agent || sent_at || body
        ORDER BY sent_at DESC, id DESC LIMIT ?`
     ).all(limit) as Row[];
-    return rows.map((r) => ({
-      id: str(r['id']), from: str(r['from_agent']), to: nstr(r['to_agent']),
-      body: str(r['body']), broadcast: num(r['broadcast']) === 1,
-      sentAt: str(r['sent_at']), readAt: null,
-    }));
+    return rows.map((r) => {
+      // group_concat has no defined order, and a list that reshuffles between
+      // reads makes the same message look like a different one each time.
+      const named = (nstr(r['to_agent']) ?? '').split(',').filter(Boolean).sort();
+      return {
+        id: str(r['id']), from: str(r['from_agent']),
+        to: named[0] ?? null, alsoTo: named.slice(1),
+        body: str(r['body']), broadcast: num(r['broadcast']) === 1,
+        sentAt: str(r['sent_at']), readAt: null,
+      };
+    });
   }
 
   unreadCount(agentId: AgentId): number {

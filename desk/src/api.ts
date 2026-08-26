@@ -20,7 +20,7 @@ export type Task = {
 };
 
 export type Message = {
-  id: string; from: string; to: string; body: string;
+  id: string; from: string; to: string; alsoTo: string[]; body: string;
   broadcast: boolean; sentAt: string; readAt: string | null;
 };
 
@@ -170,7 +170,7 @@ export const api = {
     });
     return r.ok;
   },
-  say: async (to: string | null, text: string) => {
+  say: async (to: string | string[] | null, text: string) => {
     const r = await fetch(withCompany('/api/say'), {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ to, text }),

@@ -128,6 +128,12 @@ export type Message = {
   /** Null on a broadcast collapsed for the whole-company view: it went to
    *  everyone, so naming one recipient would be arbitrary. */
   to: AgentId | null;
+  /**
+   * The rest of the recipients, when one message was addressed to several
+   * people by name. Empty for ordinary mail and for a broadcast, which went
+   * to everybody and names nobody.
+   */
+  alsoTo: AgentId[];
   body: string;
   broadcast: boolean;
   sentAt: string;

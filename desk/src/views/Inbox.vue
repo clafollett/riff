@@ -125,6 +125,31 @@ const setRead = async (m: Message, read: boolean) => {
 
 const readAll = async () => { await api.markRead(); await load(); emit('changed'); };
 
+/** Everyone a message was addressed to, worded for whoever is reading. */
+const recipients = (m: Message) => [m.to, ...(m.alsoTo ?? [])].filter(Boolean);
+const toLabel = (m: Message) =>
+  recipients(m).map((id) => (id === box.value?.me ? 'you' : nameOf.value(id))).join(', ');
+const toMe = (m: Message) => !m.broadcast && recipients(m).includes(box.value?.me ?? '');
+
+/**
+ * Everyone a reply has to reach.
+ *
+ * Replying to mail between two colleagues used to go to the sender alone, and
+ * each agent's inbox is only its own rows — so the other half of the
+ * conversation could never learn the founder had weighed in. Answering a
+ * broadcast stays a reply to the sender: the company does not need to hear it.
+ */
+const replyAudience = (m: Message): string[] => {
+  const me = box.value?.me;
+  const both = m.broadcast || m.to === me ? [m.from] : [m.from, m.to];
+  // Reading your own sent mail back in the whole-company view still offers a
+  // reply; without this it would be addressed to you.
+  return both.filter((id) => id && id !== me);
+};
+
+const audienceLabel = (m: Message) =>
+  replyAudience(m).map((id) => nameOf.value(id)).join(' and ');
+
 const startReply = (m: Message) => {
   replyTo.value = replyTo.value === m.id ? null : m.id;
   draft.value = '';
@@ -134,7 +159,7 @@ const startReply = (m: Message) => {
 const send = async (m: Message) => {
   if (!draft.value.trim()) return;
   sending.value = true;
-  await api.say(m.from, draft.value.trim());
+  await api.say(replyAudience(m), draft.value.trim());
   draft.value = '';
   replyTo.value = null;
   sending.value = false;
@@ -194,11 +219,11 @@ const when = (iso: string) => {
         <span class="role faint">{{ roleOf(m.from) }}</span>
         <span v-if="m.broadcast" class="addressed all"
               title="Sent to the whole company.">→ everyone</span>
-        <span v-else-if="m.to === box?.me" class="addressed you"
-              title="Written to you specifically.">→ you</span>
+        <span v-else-if="toMe(m)" class="addressed you"
+              title="Written to you specifically.">→ {{ toLabel(m) }}</span>
         <span v-else class="addressed other"
-              title="Between two colleagues. You are reading over their shoulder.">
-          → {{ nameOf(m.to) }}
+              title="Between colleagues. You are reading over their shoulder.">
+          → {{ toLabel(m) }}
         </span>
         <span v-if="!isOpen(m)" class="preview muted">{{ preview(m.body) }}</span>
         <span class="grow" />
@@ -211,14 +236,13 @@ const when = (iso: string) => {
           {{ nameOf(m.from) }}<template v-if="roleOf(m.from)"> ({{ roleOf(m.from) }})</template>
           →
           <template v-if="m.broadcast">everyone at {{ state.company.name }}</template>
-          <template v-else-if="m.to === box?.me">you</template>
-          <template v-else>{{ nameOf(m.to) }}</template>
+          <template v-else>{{ toLabel(m) }}</template>
           · {{ new Date(m.sentAt).toLocaleString() }}
         </p>
         <div class="body" v-html="render(m.body)" />
         <div v-if="replyTo === m.id" class="reply">
           <textarea v-model="draft" rows="3"
-            :placeholder="`Reply to ${nameOf(m.from)} — they read it on their next waking.`" />
+            :placeholder="`Reply to ${audienceLabel(m)} — they read it on their next waking.`" />
           <div class="actions">
             <button class="go" :disabled="sending || !draft.trim()" @click="send(m)">Send</button>
             <button class="ghost" @click="replyTo = null">Cancel</button>

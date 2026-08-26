@@ -457,14 +457,20 @@ const server = createServer(async (req, res) => {
 
       if (p === '/api/say' && method === 'POST') {
         const body = await readBody(req);
-        const to = typeof body['to'] === 'string' ? body['to'] : null;
+        // A list, because replying to mail between two colleagues has to reach
+        // both of them. An empty list is a mistake, not an instruction to
+        // address the whole company — only an absent `to` means everyone.
+        const raw = body['to'];
+        const to = Array.isArray(raw)
+          ? raw.filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+          : typeof raw === 'string' && raw ? [raw] : null;
+        if (Array.isArray(raw) && !to?.length) return json(res, { error: 'no recipient' }, 400);
         const text = String(body['text'] ?? '').slice(0, 4000);
         if (!text) return json(res, { error: 'nothing to say' }, 400);
         const from = cfg.board[0]?.id ?? 'board';
         const n = ledger.sendMessage(from, to, text);
-        ledger.emit(from, 'message.sent', to, { recipients: n, text });
-        if (to) scheduler.nudge(to);
-        else for (const a of ledger.listAgents()) scheduler.nudge(a.id);
+        ledger.emit(from, 'message.sent', to?.[0] ?? null, { recipients: n, to, text });
+        for (const a of to ?? ledger.listAgents().map((x) => x.id)) scheduler.nudge(a);
         return json(res, { delivered: n });
       }
 
