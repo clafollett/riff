@@ -125,6 +125,58 @@ const setRead = async (m: Message, read: boolean) => {
 
 const readAll = async () => { await api.markRead(); await load(); emit('changed'); };
 
+// ------------------------------------------------------------------ compose
+/**
+ * Starting a conversation, rather than answering one.
+ *
+ * Reply needs something to hang off, so the only way to reach somebody who
+ * had not written first was to find their card on the Staff page. Nothing
+ * could be addressed to two people at once, and nothing could be said to the
+ * whole company at all — agents could broadcast and the founder could not.
+ */
+const composing = ref(false);
+const audience = ref<string[]>([]);
+const toEveryone = ref(false);
+const note = ref('');
+const posting = ref(false);
+
+/** Everyone you could write to. Not yourself, and not anyone who has left. */
+const roster = computed(() => props.state.agents
+  .filter((a) => a.id !== box.value?.me && a.status !== 'departed'));
+
+const pick = (id: string) => {
+  toEveryone.value = false;
+  audience.value = audience.value.includes(id)
+    ? audience.value.filter((x) => x !== id)
+    : [...audience.value, id];
+};
+// Addressing the company is its own thing, not the roster with every box
+// ticked: a broadcast reads as "→ everyone" and names nobody.
+const pickEveryone = () => {
+  toEveryone.value = !toEveryone.value;
+  if (toEveryone.value) audience.value = [];
+};
+
+const canPost = computed(() =>
+  Boolean(note.value.trim()) && (toEveryone.value || audience.value.length > 0));
+
+const discard = () => {
+  composing.value = false;
+  note.value = '';
+  audience.value = [];
+  toEveryone.value = false;
+};
+
+const post = async () => {
+  if (!canPost.value || posting.value) return;
+  posting.value = true;
+  await api.say(toEveryone.value ? null : audience.value, note.value.trim());
+  posting.value = false;
+  discard();
+  await load();
+  emit('changed');
+};
+
 /** Everyone a message was addressed to, worded for whoever is reading. */
 const recipients = (m: Message) => [m.to, ...(m.alsoTo ?? [])].filter(Boolean);
 const toLabel = (m: Message) =>
@@ -187,7 +239,38 @@ const when = (iso: string) => {
           unread to keep it in front of you.
         </p>
       </div>
+      <button class="go compose-open" @click="composing ? discard() : (composing = true)">
+        {{ composing ? 'Cancel' : 'Compose' }}
+      </button>
     </header>
+
+    <section v-if="composing" class="compose">
+      <div class="to">
+        <span class="faint mono lbl">to</span>
+        <button class="chip" :class="{ on: toEveryone }" :aria-pressed="toEveryone"
+                title="Everyone on the payroll, as one broadcast."
+                @click="pickEveryone">Everyone</button>
+        <span class="sep" />
+        <button v-for="a in roster" :key="a.id" class="chip"
+                :class="{ on: audience.includes(a.id) }" :aria-pressed="audience.includes(a.id)"
+                :title="a.role" @click="pick(a.id)">{{ a.name }}</button>
+      </div>
+      <textarea v-model="note" rows="5"
+        placeholder="Markdown is fine. They read it when they next wake — you do not wait here for an answer." />
+      <div class="actions">
+        <button class="go" :disabled="!canPost || posting" @click="post">
+          {{ posting ? 'Sending…' : 'Send' }}
+        </button>
+        <button class="ghost" @click="discard">Discard</button>
+        <span class="faint mono hint">
+          <template v-if="toEveryone">One broadcast to all {{ roster.length }}.</template>
+          <template v-else-if="audience.length">
+            {{ audience.length }} {{ audience.length === 1 ? 'person' : 'people' }}, by name.
+          </template>
+          <template v-else>Pick who hears it.</template>
+        </span>
+      </div>
+    </section>
 
     <Toolbar v-if="all.length" v-model:filter="filter" v-model:sort="sort"
              v-model:per-page="perPage" :sizes="SIZES"
@@ -263,6 +346,22 @@ const when = (iso: string) => {
 
 <style scoped>
 .wrap { padding: 34px 44px 60px; max-width: 940px; }
+.compose-open { flex: none; }
+
+.compose { border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel);
+  padding: 14px 16px; margin-bottom: 18px; display: flex; flex-direction: column; gap: 10px; }
+.compose .to { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.compose .lbl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; margin-right: 3px; }
+.compose .sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
+.compose .chip { font: inherit; font-size: 11px; color: var(--faint); background: none;
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+.compose .chip:hover { color: var(--ink); }
+.compose .chip.on { color: var(--gold); border-color: var(--gold); }
+.compose textarea { font: inherit; font-size: 14px; line-height: 1.55; background: #15100d;
+  color: var(--ink); border: 1px solid var(--line-2); border-radius: 6px; padding: 10px 12px;
+  resize: vertical; }
+.compose .actions { display: flex; align-items: center; gap: 8px; }
+.compose .hint { font-size: 11px; }
 .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 h1 { font-size: 30px; }
 .lede { margin: 6px 0 20px; font-size: 14px; max-width: 58ch; }

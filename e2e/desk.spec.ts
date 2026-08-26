@@ -562,6 +562,44 @@ test('answering mail between colleagues reaches both, not just the one who wrote
   expect(to).toContain(written);
 });
 
+test('a message can be started from scratch, to one person or to the company', async ({ page }) => {
+  // Reply needs something to hang off. Reaching somebody who had not written
+  // first meant hunting their card on the Staff page, two people at once was
+  // impossible, and the founder could not address the company at all — the
+  // one thing every agent could already do.
+  await go(page, 'Inbox');
+  await page.getByRole('button', { name: 'Compose' }).click();
+
+  const composer = page.locator('.compose');
+  await expect(composer).toBeVisible();
+  // Nothing is sendable before somebody is picked.
+  await composer.locator('textarea').fill('Fen — the floor number, in the summary, today.');
+  await expect(composer.getByRole('button', { name: 'Send' })).toBeDisabled();
+
+  await composer.getByRole('button', { name: 'Fen', exact: true }).click();
+  await expect(composer.getByRole('button', { name: 'Send' })).toBeEnabled();
+  await composer.getByRole('button', { name: 'Send' }).click();
+  // Sending puts the composer away.
+  await expect(page.locator('.compose')).toHaveCount(0);
+
+  const search = page.getByRole('searchbox', { name: 'Filter messages' });
+  await page.getByRole('button', { name: "Everyone's" }).click();
+  await search.fill('the floor number');
+  await expect(page.locator('.msg')).toHaveCount(1);
+  await expect(page.locator('.msg .addressed')).toHaveText(/FEN/i);
+
+  // And the whole company, which is a broadcast rather than the roster with
+  // every name ticked.
+  await page.getByRole('button', { name: 'Compose' }).click();
+  await page.locator('.compose').getByRole('button', { name: 'Everyone' }).click();
+  await page.locator('.compose textarea').fill('All hands: we publish the detection floor.');
+  await page.locator('.compose').getByRole('button', { name: 'Send' }).click();
+
+  await search.fill('All hands');
+  await expect(page.locator('.msg')).toHaveCount(1);
+  await expect(page.locator('.msg .addressed')).toHaveText(/EVERYONE/i);
+});
+
 test('the console updates itself as the company works', async ({ page }) => {
   // Views used to load once on mount, so anything the company did while you
   // were looking at a page simply did not appear until you navigated away and
