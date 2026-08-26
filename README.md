@@ -286,7 +286,7 @@ in this project ever needs the value written down.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 122 unit tests |
+| `npm test` | 123 unit tests |
 | `npm run test:ui` | 35 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |

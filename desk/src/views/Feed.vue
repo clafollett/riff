@@ -30,6 +30,7 @@ const ROUTINE = new Set([
   'agent.woke',          // the heartbeat — who is awake is already in the status bar
   'agent.slept',
   'memory.consolidated', // housekeeping on a schedule
+  'agent.activity',      // recorded so it can be recovered, not so it can be read
 ]);
 // Deliberately NOT here: message.sent. A sixth of the log is staff writing to
 // each other, and that is the company working — the closest thing to a

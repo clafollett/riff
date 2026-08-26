@@ -396,3 +396,31 @@ describe('founding happens once', () => {
   });
 });
 
+describe('what someone says they are doing leaves a trace', () => {
+  test('setting an activity is recorded; setting it to the same thing is not', () => {
+    // activity was the one field with no history behind it, which is why two
+    // CEOs overwritten with "founding the company" could not be recovered.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Trace Co', business: 'x', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      const mark = a.company.ledger.latestSeq();
+      a.company.ledger.setActivity('vale', 'reading the brief');
+      a.company.ledger.setActivity('vale', 'reading the brief');   // no change
+      a.company.ledger.setActivity('vale', 'writing the charter');
+      const ev = a.company.ledger.eventsSince(mark).filter((e) => e.kind === 'agent.activity');
+      console.log(JSON.stringify({
+        count: ev.length,
+        data: ev.map((e) => JSON.parse(e.dataJson)),
+      }));
+    `);
+    const r = JSON.parse(out) as { count: number; data: Array<Record<string, string>> };
+    assert.equal(r.count, 2, 'a repeated activity should not be recorded twice');
+    assert.equal(r.data[0]!['activity'], 'reading the brief');
+    assert.equal(r.data[1]!['activity'], 'writing the charter');
+    assert.equal(r.data[1]!['from'], 'reading the brief', 'the previous value is what makes it recoverable');
+  });
+});
+

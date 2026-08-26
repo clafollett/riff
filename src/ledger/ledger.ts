@@ -114,8 +114,19 @@ export class Ledger {
           a.activity, a.mandate, a.hiredAt, a.hiredBy, a.model);
   }
 
+  /**
+   * What someone says they are working on, and a trace that they said it.
+   *
+   * This wrote to the column and nothing else, which made `activity` the one
+   * field with no history behind it — so when genesis overwrote two CEOs with
+   * "founding the company", what they had actually been doing was
+   * unrecoverable. The feed treats this as routine and hides it by default.
+   */
   setActivity(id: AgentId, activity: string): void {
+    const before = (this.#db.prepare('SELECT activity FROM agents WHERE id=?').get(id) as Row | undefined)?.['activity'];
     this.#db.prepare('UPDATE agents SET activity=? WHERE id=?').run(activity, id);
+    if (String(before ?? '') === activity) return;   // nothing changed, nothing to record
+    this.emit(id, 'agent.activity', id, { activity, ...(before ? { from: String(before) } : {}) });
   }
 
   getAgent(id: AgentId): Agent | null {
