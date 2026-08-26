@@ -25,7 +25,18 @@ export const found = (cfg: RiffConfig, clock: Clock): {
   const ledger = new Ledger(cfg.ledgerPath, clock);
   world.ensure();
 
-  // ---- the board: humans, terminal authority ----
+  // ---- the board and the CEO: written ONCE, at founding ----
+  //
+  // These used to be re-asserted from config.json on every open, which read as
+  // self-healing and behaved as overwriting. upsertAgent's ON CONFLICT clause
+  // sets activity, status, tier, role and mandate from whatever config says —
+  // so a CEO a day into its work had its activity reset to "founding the
+  // company" every time the company was opened, and a config whose ceo.id had
+  // drifted inserted a second executive rather than correcting anything.
+  //
+  // The ledger is the record of who works here. config.json is the seed it was
+  // grown from, and a seed does not get a vote after the fact.
+  if (firstRun) {
   for (const member of cfg.board) {
     ledger.upsertAgent({
       id: member.id, name: member.name, tier: 'board', role: member.role,
@@ -46,6 +57,11 @@ export const found = (cfg: RiffConfig, clock: Clock): {
              `Decide what it is for, who it needs, and what it should ship. The board approves; you decide what to ask for.`,
     hiredAt: clock.iso(), hiredBy: chair?.id ?? null, model: 'claude-opus-5',
   });
+  }
+
+  // Directories are not employment records; making one that already exists
+  // costs nothing and repairs a world someone copied without it.
+  for (const member of cfg.board) world.ensureStaff(member.id);
   world.ensureStaff(cfg.ceo.id);
 
   const c = constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) });

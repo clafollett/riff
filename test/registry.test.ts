@@ -354,3 +354,45 @@ describe('the environment seeds a company; it never renames one', () => {
   });
 });
 
+describe('founding happens once', () => {
+  // genesis re-asserted the board and the CEO from config.json on every open.
+  // It read as self-healing and behaved as overwriting: upsertAgent's ON
+  // CONFLICT clause sets activity, status, tier, role and mandate from config,
+  // so a CEO a day into its work had its activity reset to "founding the
+  // company" every time somebody looked at the company.
+  test('opening a company does not rewrite what its staff are doing', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Steady Co', business: 'x', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+
+      // The CEO gets to work, as it would on its first shift.
+      a.company.ledger.setActivity('vale', 'shipping the seam test');
+      const hired = a.company.ledger.getAgent('vale').hiredAt;
+      await r.close('steady-co');
+
+      // Somebody opens the company three times, as the console does.
+      let seen = [];
+      for (let i = 0; i < 3; i++) {
+        const again = new Registry(systemClock);
+        const v = again.get('steady-co').ledger.getAgent('vale');
+        seen.push(v.activity);
+        await again.close('steady-co');
+      }
+      const last = new Registry(systemClock).get('steady-co');
+      console.log(JSON.stringify({
+        seen,
+        hiredUnchanged: last.ledger.getAgent('vale').hiredAt === hired,
+        staff: last.ledger.listAgents().map((x) => x.id).sort(),
+      }));
+    `);
+    const r = JSON.parse(out) as { seen: string[]; hiredUnchanged: boolean; staff: string[] };
+    assert.deepEqual(r.seen, ['shipping the seam test', 'shipping the seam test', 'shipping the seam test'],
+      'opening a company must not reset the CEO to "founding the company"');
+    assert.equal(r.hiredUnchanged, true);
+    assert.deepEqual(r.staff, ['cali', 'vale'], 'and must not hire anyone');
+  });
+});
+
