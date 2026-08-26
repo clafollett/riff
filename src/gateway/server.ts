@@ -163,7 +163,9 @@ const server = createServer(async (req, res) => {
       const b = await readBody(req);
       const r = registry.found({
         name: String(b['name'] ?? ''),
-        business: String(b['business'] ?? ''),
+        // Room for a paragraph of founding context, not a novel: this is
+        // copied verbatim into the constitution and the CEO's brief.
+        business: String(b['business'] ?? '').slice(0, 2000),
         ceo: String(b['ceo'] ?? ''),
         chair: String(b['chair'] ?? guessKeeperName()),
       });

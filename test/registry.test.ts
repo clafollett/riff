@@ -452,6 +452,54 @@ describe('a fresh installation starts empty', () => {
   });
 });
 
+describe('the founder can say more than a phrase about what to build', () => {
+  test('a paragraph is set out on its own, not read into the middle of a sentence', () => {
+    // "You are the CEO of X, a company in We are building tooling for teams
+    // who…" — the brief was written assuming two or three words.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const brief = 'We build instruments for people who work on boats.\\n\\n'
+        + 'Not a platform. Not a marketplace. Physical sensors that survive salt water,'
+        + ' and software plain enough to read on deck in the rain.';
+      const a = r.found({ name: 'Tidewater', business: brief, ceo: 'Rook', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      const w = a.company.world;
+      const persona = w.readDoc('staff/rook/persona.md').body;
+      const charter = w.readDoc('constitution.md').body;
+
+      const b = r.found({ name: 'Terse', business: 'marine sensing', ceo: 'Wren', chair: 'Cali' });
+      if (!b.ok) throw new Error('second found failed');
+      const short = b.company.world.readDoc('staff/wren/persona.md').body;
+
+      console.log(JSON.stringify({
+        opener: persona.split('\\n').find((l) => l.startsWith('You are the CEO')),
+        personaKeepsBrief: persona.includes('survive salt water'),
+        personaHeads: persona.includes('## What the founder set out'),
+        charterKeepsBrief: charter.includes('survive salt water'),
+        charterInlines: charter.includes('**Line of business:** We build'),
+        mandate: a.company.ledger.getAgent('rook').mandate,
+        shortOpener: short.split('\\n').find((l) => l.startsWith('You are the CEO')),
+        shortMandate: b.company.ledger.getAgent('wren').mandate,
+      }));
+    `);
+    const r = JSON.parse(out) as Record<string, unknown>;
+    // The sentence stops at the company name rather than swallowing a paragraph.
+    assert.equal(r['opener'], 'You are the CEO of **Tidewater**.');
+    assert.equal(r['personaHeads'], true, 'the brief gets a heading of its own');
+    assert.equal(r['personaKeepsBrief'], true, 'and every word of it survives');
+    assert.equal(r['charterKeepsBrief'], true, 'the constitution carries it too');
+    assert.equal(r['charterInlines'], false, 'but not squeezed onto a "Line of business:" line');
+    assert.match(String(r['mandate']), /does real work in its field/,
+      'a mandate is one line in a table; a paragraph does not belong in it');
+
+    // A short line of business still reads exactly as it always did.
+    assert.equal(r['shortOpener'], 'You are the CEO of **Terse**, a company in marine sensing.');
+    assert.match(String(r['shortMandate']), /does real work in marine sensing/);
+  });
+});
+
 describe('the whole company is readable, not only the board\'s slice', () => {
   test('a broadcast is one message again, however many rows it took', () => {
     // Sending to everyone writes one row per recipient. Read back as company

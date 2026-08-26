@@ -175,7 +175,15 @@ const receive = async (e: Event) => {
             of that, and you approve what leaves.
           </p>
           <label>Company name<input v-model="draft.name" placeholder="Tidewater Instruments" /></label>
-          <label>Line of business<input v-model="draft.business" placeholder="marine sensing" /></label>
+          <label>
+            Line of business
+            <textarea v-model="draft.business" rows="5"
+              placeholder="marine sensing — or a paragraph: what the company is for, who it is for, what would make it worth founding, and anything you already know it should not become." />
+            <span class="hint faint">
+              A phrase or a paragraph. The CEO reads this before deciding anything, and it is
+              the only thing you say about what to build.
+            </span>
+          </label>
           <label>CEO's name<input v-model="draft.ceo" placeholder="Rook" /></label>
           <label>Chairman<input v-model="draft.chair" placeholder="you" /></label>
           <p v-if="err" class="err">{{ err }}</p>
@@ -269,7 +277,11 @@ label { display: flex; flex-direction: column; gap: 5px; margin-bottom: 13px;
   font-size: 12px; color: var(--muted); }
 input { font: inherit; font-size: 14px; background: #15100d; color: var(--ink);
   border: 1px solid var(--line-2); border-radius: 5px; padding: 8px 10px; }
-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+textarea { font: inherit; font-size: 14px; line-height: 1.5; background: #15100d; color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 5px; padding: 8px 10px; resize: vertical;
+  min-height: 96px; }
+.hint { font-size: 11.5px; line-height: 1.5; }
 .row { display: flex; gap: 8px; margin-top: 18px; }
 .err { color: var(--alert); font-size: 13px; margin-top: 4px; }
 </style>

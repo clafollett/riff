@@ -36,6 +36,15 @@ export const found = (cfg: RiffConfig, clock: Clock): {
   //
   // The ledger is the record of who works here. config.json is the seed it was
   // grown from, and a seed does not get a vote after the fact.
+  /**
+   * A line of business used to be two or three words, so the mandate and the
+   * CEO's brief both read it into the middle of a sentence. A founder with
+   * more to say than that got "a company in We are building tooling for
+   * teams who…". Anything longer than a phrase is set out on its own instead.
+   */
+  const business = cfg.company.business.trim();
+  const isPhrase = business !== '' && business.length <= 90 && !business.includes('\n');
+
   if (firstRun) {
   for (const member of cfg.board) {
     ledger.upsertAgent({
@@ -53,7 +62,7 @@ export const found = (cfg: RiffConfig, clock: Clock): {
     id: cfg.ceo.id, name: cfg.ceo.name, tier: 'executive', role: 'CEO',
     department: 'office of the CEO', reportsTo: chair?.id ?? null, status: 'active',
     activity: 'founding the company',
-    mandate: `Build ${cfg.company.name} into a company that does real work in ${cfg.company.business || 'its field'}. ` +
+    mandate: `Build ${cfg.company.name} into a company that does real work in ${isPhrase ? business : 'its field'}. ` +
              `Decide what it is for, who it needs, and what it should ship. The board approves; you decide what to ask for.`,
     hiredAt: clock.iso(), hiredBy: chair?.id ?? null, model: 'claude-opus-5',
   });
@@ -69,8 +78,12 @@ export const found = (cfg: RiffConfig, clock: Clock): {
   if (!world.exists('constitution.md')) {
     world.writeDoc('constitution.md', {
       data: { company: cfg.company.name, enforced: 'in code, not in prose' },
-      body: `# ${cfg.company.name}\n\n${cfg.company.business ? `**Line of business:** ${cfg.company.business}\n\n` : ''}` +
-            `## The Rules\n\n${RULES_TEXT(c)}\n`,
+      body: `# ${cfg.company.name}\n\n`
+          + (business ? isPhrase
+              ? `**Line of business:** ${business}\n\n`
+              : `## What the founder set out\n\n${business}\n\n`
+            : '')
+          + `## The Rules\n\n${RULES_TEXT(c)}\n`,
     });
   }
 
@@ -82,7 +95,10 @@ export const found = (cfg: RiffConfig, clock: Clock): {
       body: [
         `# ${cfg.ceo.name}`,
         '',
-        `You are the CEO of **${cfg.company.name}**${cfg.company.business ? `, a company in ${cfg.company.business}` : ''}.`,
+        `You are the CEO of **${cfg.company.name}**${isPhrase ? `, a company in ${business}` : ''}.`,
+        ...(business && !isPhrase
+          ? ['', '## What the founder set out', '', business]
+          : []),
         '',
         'You are the only person here. There is no staff, no plan, and no product.',
         'Nobody is going to hand you any of those.',

@@ -726,7 +726,14 @@ test.describe('many companies, one console', () => {
 
     await page.getByRole('button', { name: 'Found a company' }).click();
     await page.getByLabel('Company name').fill('Kestrel Provisioning');
-    await page.getByLabel('Line of business').fill('field logistics');
+    // A paragraph, not a phrase: the founder's one chance to say what this is
+    // for, before a CEO who has never met them decides it.
+    const brief = 'Field logistics for crews who work where there is no signal.\n\n'
+      + 'Not a SaaS dashboard. Kit that works out of a truck.';
+    const business = page.getByLabel('Line of business');
+    await expect(business).toHaveRole('textbox');
+    await business.fill(brief);
+    await expect(business).toHaveValue(brief);   // newlines survive the field
     await page.getByLabel("CEO's name").fill('Rook');
     await page.getByLabel('Chairman').fill('Tester');
     await page.getByRole('button', { name: 'Found it' }).click();
