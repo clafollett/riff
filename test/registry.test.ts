@@ -298,3 +298,59 @@ describe('opening a company is not something that happened to it', () => {
     assert.ok(r.real.includes('work.paused'), 'pausing something that was running is still recorded');
   });
 });
+
+describe('the environment seeds a company; it never renames one', () => {
+  // The container sets RIFF_COMPANY and RIFF_CEO to placeholder defaults so a
+  // fresh installation can bootstrap. Those used to win on every read, which
+  // renamed every existing company "Untitled Company" and reported its CEO as
+  // `ceo` — an id constitutionFor() makes the executive and the sole
+  // treasurer, and genesis hires. Two real companies gained a phantom
+  // executive before anyone noticed the label was wrong.
+  const withEnv = (extra: string) => JSON.parse(execFileSync(process.execPath,
+    ['--input-type=module', '-e', `
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const { resolveConfig } = await import('${process.cwd()}/src/core/config.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Real Co', business: 'real work', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      await r.close('real-co');
+      const cfg = resolveConfig(process.cwd(), 'real-co');
+      console.log(JSON.stringify({
+        name: cfg.company.name, business: cfg.company.business,
+        ceo: cfg.ceo, chair: cfg.board[0].name,
+        staff: new Registry(systemClock).get('real-co').ledger.listAgents().map((x) => x.id).sort(),
+      }));
+    `],
+    { encoding: 'utf8', cwd: process.cwd(),
+      env: { ...process.env, HOME: home, RIFF_ROOT: join(home, '.riff'),
+             RIFF_COMPANY_ID: '', ...JSON.parse(extra) } })) as Record<string, unknown>;
+
+  test('placeholder identity in the environment leaves a real company alone', () => {
+    const r = withEnv(JSON.stringify({
+      RIFF_COMPANY: 'Untitled Company', RIFF_BUSINESS: '', RIFF_CEO: 'CEO', RIFF_CHAIR: 'Chair',
+    }));
+    assert.equal(r['name'], 'Real Co', 'the container default must not rename a company');
+    assert.equal(r['business'], 'real work');
+    assert.equal(r['chair'], 'Cali');
+    assert.deepEqual(r['ceo'], { id: 'vale', name: 'Vale' },
+      'the CEO id is the executive AND the treasurer — it must come from disk');
+    // The phantom that bug produced: opening the company hired a second
+    // executive nobody asked for.
+    assert.deepEqual(r['staff'], ['cali', 'vale'], 'no phantom `ceo` may be hired');
+  });
+
+  test('with nothing stored, the environment still seeds a new company', () => {
+    // Bootstrapping a container from environment alone must keep working.
+    const r = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+      const { resolveConfig } = await import('${process.cwd()}/src/core/config.ts');
+      const c = resolveConfig(process.cwd());
+      console.log(JSON.stringify({ name: c.company.name, ceo: c.ceo.name }));
+    `], { encoding: 'utf8', cwd: process.cwd(),
+      env: { ...process.env, HOME: home, RIFF_ROOT: join(home, '.riff-empty'),
+             RIFF_COMPANY_ID: '', RIFF_COMPANY: 'Seeded Co', RIFF_CEO: 'Ada' } })) as Record<string, unknown>;
+    assert.equal(r['name'], 'Seeded Co');
+    assert.equal(r['ceo'], 'Ada');
+  });
+});
+

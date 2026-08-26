@@ -171,7 +171,7 @@ Say these out loud before you run it unattended.
 ## Checking it yourself
 
 ```bash
-npm test          # 119 unit tests, including the container env contract
+npm test          # 121 unit tests, including the container env contract
 npm run test:ui   # 35 browser tests against a throwaway installation
 ```
 

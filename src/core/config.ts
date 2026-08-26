@@ -299,10 +299,25 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): RiffConfig =>
 
   const merged = { ...fromHome(base), ...homeCfg, ...projectCfg, home: base };
 
-  // An explicit RIFF_CHAIR wins; otherwise the stored chair is kept
-  // forever, because renaming them mid-life would orphan every approval,
-  // note and commit already attributed to them.
-  const chairName = env['RIFF_CHAIR']?.trim() || merged.board?.[0]?.name || guessKeeperName();
+  // What is actually written down, as opposed to what fromHome() invented as a
+  // default. Identity has three tiers and they are not interchangeable:
+  // stored beats environment beats built-in. Folding the defaults in first
+  // makes "is this stored?" unanswerable, which is how a container's
+  // placeholder came to outrank a real company's name.
+  const stored = { ...homeCfg, ...projectCfg };
+
+  // Identity from the environment SEEDS a company that does not exist yet. It
+  // must never override one that does.
+  //
+  // These used to win on every read, from when an installation held exactly
+  // one company and "reproducible from environment alone" was coherent. With
+  // many companies it is not: the container sets RIFF_COMPANY and RIFF_CEO to
+  // placeholder defaults, so every company opened inside it was renamed
+  // "Untitled Company" and had its CEO reported as `ceo`. That id is not
+  // cosmetic — constitutionFor() makes it the executive AND the sole
+  // treasurer, and genesis hires whoever it names. Two real companies each
+  // gained a phantom executive that way.
+  const chairName = stored.board?.[0]?.name || env['RIFF_CHAIR']?.trim() || guessKeeperName();
   const board = merged.board?.length
     ? merged.board
     : [{ id: slugId(chairName), name: chairName, role: 'Chairman' }];
@@ -313,13 +328,14 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): RiffConfig =>
     worldDir: env['RIFF_WORLD'] ? abs(cwd, env['RIFF_WORLD']) : within(base, merged.worldDir, 'world'),
     ledgerPath: env['RIFF_LEDGER'] ? abs(cwd, env['RIFF_LEDGER']) : within(base, merged.ledgerPath, 'ledger.db'),
     company: {
-      name: env['RIFF_COMPANY']?.trim() || merged.company?.name || 'Untitled Company',
-      business: env['RIFF_BUSINESS']?.trim() || merged.company?.business || '',
+      name: stored.company?.name || env['RIFF_COMPANY']?.trim() || 'Untitled Company',
+      business: stored.company?.business || env['RIFF_BUSINESS']?.trim() || '',
     },
     board,
-    ceo: env['RIFF_CEO']?.trim()
-      ? { id: slugId(env['RIFF_CEO'].trim()), name: env['RIFF_CEO'].trim() }
-      : merged.ceo ?? { id: 'ceo', name: 'CEO' },
+    ceo: stored.ceo
+      ?? (env['RIFF_CEO']?.trim()
+        ? { id: slugId(env['RIFF_CEO'].trim()), name: env['RIFF_CEO'].trim() }
+        : { id: 'ceo', name: 'CEO' }),
     connectors: merged.connectors ?? {},
   };
 };
