@@ -30,29 +30,9 @@ export class Ledger {
     this.#db = new DatabaseSync(path);
     this.#clock = clock;
     this.#db.exec(readFileSync(SCHEMA, 'utf8'));
-    this.#migrate();
   }
 
-  /**
-   * Fold forward anything an older Riff wrote under a name this one no
-   * longer uses.
-   *
-   * This started life as a bed and breakfast, and the first ledgers recorded
-   * `inn.opened` / `inn.closed` against an actor called `inn`. The emitters
-   * went away two renames ago but the rows are permanent, so every reader
-   * downstream had to special-case a word nobody here recognises. The log is
-   * append-only about *what happened* — the label on it is not part of that
-   * promise. Runs once per database and is safe to run again.
-   */
-  #migrate(): void {
-    if (this.getMeta('migration.naming') === 'done') return;
-    this.#db.exec(`
-      UPDATE events SET kind='company.opened' WHERE kind='inn.opened';
-      UPDATE events SET kind='company.closed' WHERE kind='inn.closed';
-      UPDATE events SET actor='company' WHERE actor='inn';
-    `);
-    this.setMeta('migration.naming', 'done');
-  }
+
 
   get db(): DatabaseSync { return this.#db; }
   close(): void { this.#db.close(); }
