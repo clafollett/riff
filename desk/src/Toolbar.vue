@@ -25,10 +25,14 @@ defineProps<{
   count?: string;
   /** Placeholder and accessible name for the filter box. */
   label?: string;
+  /** How many rows to a page, and what else the reader may choose. */
+  perPage?: number;
+  sizes?: number[];
 }>();
 const emit = defineEmits<{
   'update:filter': [v: string];
   'update:sort': [v: string];
+  'update:perPage': [v: number];
 }>();
 </script>
 
@@ -46,6 +50,14 @@ const emit = defineEmits<{
     <span class="grow" />
 
     <slot />
+
+    <label v-if="sizes?.length" class="size">
+      <span class="faint mono">per page</span>
+      <select :value="perPage"
+              @change="emit('update:perPage', Number(($event.target as HTMLSelectElement).value))">
+        <option v-for="n in sizes" :key="n" :value="n">{{ n }}</option>
+      </select>
+    </label>
 
     <input :value="filter" class="find" type="search"
            :placeholder="label ? 'filter…' : 'filter…'"
@@ -66,6 +78,11 @@ const emit = defineEmits<{
   padding: 3px 7px; cursor: pointer; white-space: nowrap; }
 .chip:hover { color: var(--ink); }
 .chip.on { color: var(--gold); border-color: var(--line-2); }
+
+.size { display: flex; align-items: center; gap: 5px; }
+.size span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+.size select { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
+  border-radius: 5px; padding: 4px 6px; font: inherit; font-size: 12px; }
 
 .find { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   border-radius: 5px; padding: 6px 10px; font: inherit; font-size: 13px; width: 170px; }

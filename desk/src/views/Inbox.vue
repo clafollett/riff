@@ -10,7 +10,16 @@ import Toolbar, { type SortOption } from '../Toolbar.vue';
 const props = defineProps<{ state: State; events: Event[] }>();
 const emit = defineEmits<{ changed: [] }>();
 
-const PER_PAGE = 15;
+/** Page sizes worth offering. A message is a wall of prose, so the default is
+ *  small; the larger ones exist for scanning rather than reading. */
+const SIZES = [10, 15, 25, 50];
+const perPage = ref(Number(localStorage.getItem('riff.inboxPerPage')) || 15);
+watch(perPage, (n) => { try { localStorage.setItem('riff.inboxPerPage', String(n)); } catch { /* no storage */ } });
+
+/** Whose mail: what reached you, or everything the company said. */
+const scope = ref<'mine' | 'all'>(
+  (localStorage.getItem('riff.inboxScope') as 'mine' | 'all' | null) ?? 'mine');
+watch(scope, async (v) => { try { localStorage.setItem('riff.inboxScope', v); } catch { /* no storage */ } await load(); });
 
 const box = ref<Inbox | null>(null);
 const open = ref(new Set<string>());
@@ -20,7 +29,7 @@ const sending = ref(false);
 const page = ref(0);
 const filter = ref('');
 
-const load = async () => { box.value = await api.inbox(); };
+const load = async () => { box.value = await api.inbox(scope.value); };
 onMounted(load);
 onEvents(() => props.events, /^message\.sent$/, load);
 
@@ -28,7 +37,13 @@ const nameOf = computed(() => namer(props.state));
 const roleOf = (id: string) => props.state.agents.find((a) => a.id === id)?.role ?? '';
 
 const all = computed(() => box.value?.messages ?? []);
-const unread = computed(() => all.value.filter((m) => !m.readAt));
+/**
+ * Unread is a fact about your own mail. A colleague's message to another
+ * colleague has no read state that means anything to you, so browsing the
+ * whole company must not paint 175 rows orange and claim they need you.
+ */
+const mine = computed(() => scope.value === 'mine');
+const unread = computed(() => (mine.value ? all.value.filter((m) => !m.readAt) : []));
 
 const matching = computed(() => {
   const q = filter.value.trim().toLowerCase();
@@ -63,16 +78,16 @@ const ordered = computed(() => {
   return list;
 });
 
-const pages = computed(() => Math.max(1, Math.ceil(ordered.value.length / PER_PAGE)));
+const pages = computed(() => Math.max(1, Math.ceil(ordered.value.length / perPage.value)));
 const shown = computed(() =>
-  ordered.value.slice(page.value * PER_PAGE, page.value * PER_PAGE + PER_PAGE));
+  ordered.value.slice(page.value * perPage.value, page.value * perPage.value + perPage.value));
 
 // New mail arriving must not slide the page out from under you, but a filter
 // that shortens the list past where you are should.
 watch(pages, (n) => { if (page.value >= n) page.value = n - 1; });
 // Re-ordering resets the page for the same reason filtering does: page three
 // of a list that has just been re-sorted shows you items you never asked for.
-watch([filter, sort], () => { page.value = 0; closeAll(); });
+watch([filter, sort, perPage, scope], () => { page.value = 0; closeAll(); });
 
 /**
  * The first line worth showing, for a message nobody has opened yet.
@@ -150,12 +165,18 @@ const when = (iso: string) => {
     </header>
 
     <Toolbar v-if="all.length" v-model:filter="filter" v-model:sort="sort"
+             v-model:per-page="perPage" :sizes="SIZES"
              :sorts="SORTS" label="Filter messages"
              :count="`${matching.length} message${matching.length === 1 ? '' : 's'}`
                      + (unread.length ? `, ${unread.length} unread` : '')">
+      <button class="ghost scope" :class="{ on: scope === 'mine' }"
+              @click="scope = 'mine'">To you</button>
+      <button class="ghost scope" :class="{ on: scope === 'all' }"
+              title="Every message anyone here sent, not only what reached you."
+              @click="scope = 'all'">Everyone's</button>
       <button class="ghost" @click="openAll">Expand page</button>
       <button class="ghost" @click="closeAll">Collapse all</button>
-      <button v-if="unread.length" class="ghost" @click="readAll">Mark all read</button>
+      <button v-if="mine && unread.length" class="ghost" @click="readAll">Mark all read</button>
     </Toolbar>
 
     <p v-if="box && !all.length" class="muted empty">
@@ -166,20 +187,22 @@ const when = (iso: string) => {
     </p>
 
     <article v-for="m in shown" :key="m.id" class="msg"
-             :class="{ unread: !m.readAt, open: isOpen(m) }">
+             :class="{ unread: mine && !m.readAt, open: isOpen(m) }">
       <button class="row" :aria-expanded="isOpen(m)" @click="toggle(m)">
         <span class="chev" :class="{ down: isOpen(m) }">▸</span>
         <span class="who">{{ nameOf(m.from) }}</span>
         <span class="role faint">{{ roleOf(m.from) }}</span>
         <span v-if="m.broadcast" class="addressed all"
-              title="Sent to the whole company. You are one of the readers, not the reader.">
-          → everyone
-        </span>
-        <span v-else class="addressed you"
+              title="Sent to the whole company.">→ everyone</span>
+        <span v-else-if="m.to === box?.me" class="addressed you"
               title="Written to you specifically.">→ you</span>
+        <span v-else class="addressed other"
+              title="Between two colleagues. You are reading over their shoulder.">
+          → {{ nameOf(m.to) }}
+        </span>
         <span v-if="!isOpen(m)" class="preview muted">{{ preview(m.body) }}</span>
         <span class="grow" />
-        <span v-if="!m.readAt" class="new">New</span>
+        <span v-if="mine && !m.readAt" class="new">New</span>
         <span class="when faint mono">{{ when(m.sentAt) }}</span>
       </button>
 
@@ -187,8 +210,9 @@ const when = (iso: string) => {
         <p class="envelope faint mono">
           {{ nameOf(m.from) }}<template v-if="roleOf(m.from)"> ({{ roleOf(m.from) }})</template>
           →
-          <template v-if="m.broadcast">everyone at {{ state.company.name }}, you included</template>
-          <template v-else>you</template>
+          <template v-if="m.broadcast">everyone at {{ state.company.name }}</template>
+          <template v-else-if="m.to === box?.me">you</template>
+          <template v-else>{{ nameOf(m.to) }}</template>
           · {{ new Date(m.sentAt).toLocaleString() }}
         </p>
         <div class="body" v-html="render(m.body)" />
@@ -202,7 +226,7 @@ const when = (iso: string) => {
         </div>
         <div v-else class="actions">
           <button class="ghost" @click="startReply(m)">Reply</button>
-          <button class="ghost" @click="setRead(m, !m.readAt)">
+          <button v-if="scope === 'mine'" class="ghost" @click="setRead(m, !m.readAt)">
             {{ m.readAt ? 'Mark unread' : 'Mark read' }}
           </button>
         </div>
@@ -250,6 +274,10 @@ input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   padding: 1px 6px; border-radius: 999px; white-space: nowrap; cursor: help; flex: none; }
 .addressed.you { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .addressed.all { color: var(--faint); border: 1px solid var(--line-2); }
+.addressed.other { color: var(--muted); border: 1px solid var(--line); }
+.scope { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+  border: 1px solid transparent; border-radius: 4px; padding: 3px 7px; }
+.scope.on { color: var(--gold); border-color: var(--line-2); }
 .envelope { font-size: 11px; padding: 0 14px 10px; }
 .preview { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; min-width: 0; flex: 1 1 auto; }

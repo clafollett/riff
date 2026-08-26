@@ -125,7 +125,9 @@ export type Task = {
 export type Message = {
   id: string;
   from: AgentId;
-  to: AgentId;
+  /** Null on a broadcast collapsed for the whole-company view: it went to
+   *  everyone, so naming one recipient would be arbitrary. */
+  to: AgentId | null;
   body: string;
   broadcast: boolean;
   sentAt: string;

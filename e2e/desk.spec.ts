@@ -317,21 +317,54 @@ test('every paged list sorts, and sorting sends you back to page one', async ({ 
     expect(chips.length).toBeGreaterThan(1);
     await expect(page.locator('.bar .chip[aria-pressed="true"]')).toHaveCount(1);
 
-    // Only the inbox has enough in the fixture to need a second page; the
-    // feed's paging is the same component and is covered by its own test.
-    if (await page.locator('.pager').count()) {
-      await expect(page.locator('.pager')).toContainText('page 1 of');
-      await page.getByRole('button', { name: 'Older' }).click();
-      await expect(page.locator('.pager')).toContainText('page 2 of');
+    // Shrink the page until there is more than one — every paged list can be
+    // made to page, which is what makes this assertable at all.
+    // The feed hides routine events by default and the fixture's remainder is
+    // small, so widen it before asking about pages.
+    if (view === 'Feed') await page.getByRole('button', { name: 'Everything' }).click();
 
-      // Re-order from page two: it must land back on page one.
-      await page.locator('.bar .chip', { hasText: 'Oldest' }).click();
-      await expect(page.locator('.pager')).toContainText('page 1 of');
-    } else {
-      await page.locator('.bar .chip', { hasText: 'Oldest' }).click();
-    }
+    // Shrink the page until there is more than one — every paged list can be
+    // made to page, which is what makes this assertable at all.
+    await page.locator('.bar select').selectOption({ index: 0 });
+    await expect(page.locator('.pager')).toContainText('page 1 of');
+
+    await page.getByRole('button', { name: 'Older' }).click();
+    await expect(page.locator('.pager')).toContainText('page 2 of');
+
+    // Re-order from page two: it must land back on page one.
+    await page.locator('.bar .chip', { hasText: 'Oldest' }).click();
+    await expect(page.locator('.pager')).toContainText('page 1 of');
     await expect(page.locator('.bar .chip[aria-pressed="true"]')).toHaveText('Oldest');
+
+    // And changing the page size does too.
+    await page.getByRole('button', { name: 'Older' }).click();
+    await expect(page.locator('.pager')).toContainText('page 2 of');
+    await page.locator('.bar select').selectOption({ index: 1 });
+    await expect(page.locator('.pager')).toContainText('page 1 of');
   }
+});
+
+test('the whole company can be read, not only what reached you', async ({ page }) => {
+  // Staff write to each other far more than they write to the board, and none
+  // of that was visible from here.
+  await go(page, 'Inbox');
+  const mine = await page.locator('.bar .count').innerText();
+
+  await page.getByRole('button', { name: "Everyone's" }).click();
+  await expect(page.locator('.bar .count')).not.toHaveText(mine);
+
+  // Mail between two colleagues appears, named for its real recipient.
+  await expect(page.locator('.msg .addressed.other').first()).toBeVisible();
+
+  // Read state is a fact about YOUR mail. Somebody else's has none, so the
+  // whole-company view must not paint every row as needing you.
+  await expect(page.locator('.bar .count')).not.toContainText('unread');
+  await expect(page.locator('.msg.unread')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Mark all read' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'To you' }).click();
+  await expect(page.locator('.bar .count')).toHaveText(mine);
+  await expect(page.locator('.msg.unread').first()).toBeVisible();
 });
 
 test('the inbox can put what needs you at the top', async ({ page }) => {

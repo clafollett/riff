@@ -24,7 +24,11 @@ export type Message = {
   broadcast: boolean; sentAt: string; readAt: string | null;
 };
 
-export type Inbox = { me: string; messages: Message[]; unread: number };
+export type Inbox = {
+  me: string; messages: Message[]; unread: number;
+  /** 'mine' is what reached you; 'all' is the whole company talking. */
+  scope?: 'mine' | 'all';
+};
 
 export type Work = {
   tasks: Task[];
@@ -143,7 +147,8 @@ export const api = {
   approvals: () => get<Approval[]>('/api/approvals'),
   decided: () => get<{ approvals: Approval[] }>('/api/approvals/decided'),
   work: () => get<Work>('/api/work'),
-  inbox: () => get<Inbox>('/api/inbox'),
+  inbox: (scope: 'mine' | 'all' = 'mine') =>
+    get<Inbox>(scope === 'all' ? '/api/inbox?scope=all' : '/api/inbox'),
   recent: (limit = 200) => get<{ events: Event[] }>(`/api/events?limit=${limit}`),
   markRead: (ids?: string[], read = true) =>
     send<{ marked: number; read: boolean }>('/api/inbox/read', 'POST', { ...(ids ? { ids } : {}), read }),

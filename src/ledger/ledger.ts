@@ -418,6 +418,32 @@ export class Ledger {
     }));
   }
 
+  /**
+   * Every message in the company, not only the ones addressed to you.
+   *
+   * Most of a company's conversation never reaches the board — staff write to
+   * each other far more than they write to anyone reading this. The inbox is a
+   * slice; this is the whole thing.
+   *
+   * A broadcast is stored as one row per recipient, so it has to be folded
+   * back into the single message it was. Grouping on sender, instant and body
+   * does that; direct messages group on their own id, which groups nothing.
+   */
+  allMessages(limit = 500): Message[] {
+    const rows = this.#db.prepare(
+      `SELECT MIN(id) AS id, from_agent, body, broadcast, sent_at,
+              CASE WHEN broadcast=1 THEN NULL ELSE MIN(to_agent) END AS to_agent
+       FROM messages
+       GROUP BY CASE WHEN broadcast=1 THEN from_agent || sent_at || body ELSE id END
+       ORDER BY sent_at DESC, id DESC LIMIT ?`
+    ).all(limit) as Row[];
+    return rows.map((r) => ({
+      id: str(r['id']), from: str(r['from_agent']), to: nstr(r['to_agent']),
+      body: str(r['body']), broadcast: num(r['broadcast']) === 1,
+      sentAt: str(r['sent_at']), readAt: null,
+    }));
+  }
+
   unreadCount(agentId: AgentId): number {
     const r = this.#db.prepare(
       'SELECT COUNT(*) AS c FROM messages WHERE to_agent=? AND read_at IS NULL'

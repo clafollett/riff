@@ -391,9 +391,12 @@ const server = createServer(async (req, res) => {
       // it, and the only way in was a SQLite query.
       if (p === '/api/inbox' && method === 'GET') {
         const me = cfg.board[0]?.id ?? 'board';
+        // ?scope=all is the whole company talking, not just what reached you.
+        const everything = url.searchParams.get('scope') === 'all';
         return json(res, {
           me,
-          messages: ledger.messagesFor(me),
+          scope: everything ? 'all' : 'mine',
+          messages: everything ? ledger.allMessages() : ledger.messagesFor(me),
           unread: ledger.unreadCount(me),
         });
       }

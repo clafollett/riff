@@ -10,8 +10,10 @@ const who = computed(() => namer(props.state));
 const filter = ref('');
 const page = ref(0);
 
-/** Forty one-line events to a page. The Inbox shows fifteen; a message is not a line. */
-const PER_PAGE = 40;
+/** An event is a line, so pages can be long — but the reader chooses. */
+const SIZES = [10, 25, 40, 100];
+const perPage = ref(Number(localStorage.getItem('riff.feedPerPage')) || 40);
+watch(perPage, (n) => { try { localStorage.setItem('riff.feedPerPage', String(n)); } catch { /* no storage */ } });
 
 /**
  * The machinery, as opposed to the work.
@@ -64,15 +66,15 @@ const ordered = computed(() => {
   return list;
 });
 
-const pages = computed(() => Math.max(1, Math.ceil(ordered.value.length / PER_PAGE)));
+const pages = computed(() => Math.max(1, Math.ceil(ordered.value.length / perPage.value)));
 const shown = computed(() =>
-  ordered.value.slice(page.value * PER_PAGE, page.value * PER_PAGE + PER_PAGE));
+  ordered.value.slice(page.value * perPage.value, page.value * perPage.value + perPage.value));
 
 // Live events arrive at the top while you are reading page three. The page you
 // are on must not slide out from under you, but it must not outlive the list.
 watch(pages, (n) => { if (page.value >= n) page.value = n - 1; });
 // Re-ordering resets the page, as filtering does.
-watch([filter, all, sort], () => { page.value = 0; });
+watch([filter, all, sort, perPage], () => { page.value = 0; });
 
 const tone = (kind: string) =>
   kind.startsWith('gate.deny') || kind === 'agent.failed' ? 'deny'
@@ -98,7 +100,7 @@ function detail(e: Event): string {
     </header>
 
     <Toolbar v-model:filter="filter" v-model:sort="sort" :sorts="SORTS"
-             label="Filter events"
+             v-model:per-page="perPage" :sizes="SIZES" label="Filter events"
              :count="`${kept.length} event${kept.length === 1 ? '' : 's'}`">
       <button class="ghost scope" :class="{ on: !all }" @click="all = false">What changed</button>
       <button class="ghost scope" :class="{ on: all }" @click="all = true">Everything</button>

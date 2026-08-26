@@ -452,3 +452,45 @@ describe('a fresh installation starts empty', () => {
   });
 });
 
+describe('the whole company is readable, not only the board\'s slice', () => {
+  test('a broadcast is one message again, however many rows it took', () => {
+    // Sending to everyone writes one row per recipient. Read back as company
+    // traffic that is one message, not four copies of it.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Talkative', business: 'x', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      const l = a.company.ledger;
+      l.upsertAgent({ id: 'ora', name: 'Ora', tier: 'lead', role: 'Head', department: '',
+        reportsTo: 'vale', status: 'active', activity: '', mandate: '',
+        hiredAt: systemClock.iso(), hiredBy: 'vale', model: 'm' });
+
+      const fanout = l.sendMessage('vale', null, 'to the whole company');
+      l.sendMessage('vale', 'ora', 'just for you');
+      l.sendMessage('ora', 'vale', 'and back');
+
+      const all = l.allMessages();
+      console.log(JSON.stringify({
+        fanout,
+        rows: l.db.prepare('SELECT COUNT(*) n FROM messages').get().n,
+        collapsed: all.length,
+        broadcasts: all.filter((m) => m.broadcast).map((m) => ({ to: m.to, body: m.body })),
+        directed: all.filter((m) => !m.broadcast).map((m) => m.from + '->' + m.to).sort(),
+        boardSlice: l.messagesFor('cali').length,
+      }));
+    `);
+    const r = JSON.parse(out) as Record<string, unknown>;
+    // The sender is not a recipient of their own broadcast.
+    assert.equal(r['fanout'], 2, 'cali and ora each get a row; vale does not');
+    assert.equal(r['rows'], 4, 'two broadcast rows plus two direct');
+    assert.equal(r['collapsed'], 3, 'read back as three messages');
+    assert.deepEqual(r['broadcasts'], [{ to: null, body: 'to the whole company' }],
+      'a collapsed broadcast names no single recipient, because it had none');
+    assert.deepEqual(r['directed'], ['ora->vale', 'vale->ora']);
+    // And the board's own inbox is still just its slice.
+    assert.equal(r['boardSlice'], 1, 'cali got the broadcast and nothing else');
+  });
+});
+
