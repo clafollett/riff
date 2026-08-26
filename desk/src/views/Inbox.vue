@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { api, type Inbox, type Message, type Event, type State } from '../api';
 import { render } from '../markdown';
 import { onEvents } from '../live';
@@ -144,18 +144,93 @@ const posting = ref(false);
 const roster = computed(() => props.state.agents
   .filter((a) => a.id !== box.value?.me && a.status !== 'departed'));
 
-const pick = (id: string) => {
-  toEveryone.value = false;
-  audience.value = audience.value.includes(id)
-    ? audience.value.filter((x) => x !== id)
-    : [...audience.value, id];
-};
-// Addressing the company is its own thing, not the roster with every box
+/**
+ * The To line: type, and pick from what matches.
+ *
+ * This was a row of toggles, one per member of staff. A company that hires
+ * well outgrows that — forty toggles is not a control, it is a wall you read
+ * before you may write. Typing narrows; every choice becomes a tag you can
+ * take back off.
+ */
+const EVERYONE = '*everyone';   // '*' is not legal in an agent id, so it cannot collide
+type Option = { id: string; label: string; hint: string };
+
+const query = ref('');
+const menuOpen = ref(false);
+const highlight = ref(0);
+const toField = ref<HTMLInputElement | null>(null);
+
+const matches = computed<Option[]>(() => {
+  const q = query.value.trim().toLowerCase();
+  const hit = (...fields: string[]) => !q || fields.some((f) => f.toLowerCase().includes(q));
+  const company: Option[] = !toEveryone.value && hit('everyone', 'all')
+    ? [{ id: EVERYONE, label: 'Everyone', hint: `one broadcast to all ${roster.value.length}` }]
+    : [];
+  const people = roster.value
+    .filter((a) => !audience.value.includes(a.id))
+    .filter((a) => hit(a.name, a.role, a.department, a.id))
+    .map((a) => ({ id: a.id, label: a.name, hint: a.role }));
+  return [...company, ...people];
+});
+
+// A long roster must not become a long menu. Eight is what fits without
+// covering the message you came here to write.
+const SHOWN = 8;
+const options = computed(() => matches.value.slice(0, SHOWN));
+const hidden = computed(() => Math.max(0, matches.value.length - SHOWN));
+watch(options, (o) => { if (highlight.value >= o.length) highlight.value = 0; });
+
+/** What is currently addressed, as removable tags. */
+const tags = computed(() => (toEveryone.value
+  ? [{ id: EVERYONE, label: 'Everyone' }]
+  : audience.value.map((id) => ({ id, label: nameOf.value(id) }))));
+
+// Addressing the company is its own thing, not the roster with every name
 // ticked: a broadcast reads as "→ everyone" and names nobody.
-const pickEveryone = () => {
-  toEveryone.value = !toEveryone.value;
-  if (toEveryone.value) audience.value = [];
+const choose = (o: { id: string }) => {
+  if (o.id === EVERYONE) { toEveryone.value = true; audience.value = []; }
+  else {
+    toEveryone.value = false;
+    if (!audience.value.includes(o.id)) audience.value = [...audience.value, o.id];
+  }
+  query.value = '';
+  highlight.value = 0;
+  menuOpen.value = true;   // stay open: addressing several is the common case
 };
+
+const drop = (id: string) => {
+  if (id === EVERYONE) toEveryone.value = false;
+  else audience.value = audience.value.filter((x) => x !== id);
+};
+
+const onKey = (e: KeyboardEvent) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    menuOpen.value = true;
+    const n = options.value.length;
+    if (n) highlight.value = (highlight.value + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+    return;
+  }
+  if (e.key === 'Enter' || e.key === ',') {
+    const o = menuOpen.value ? options.value[highlight.value] : undefined;
+    if (o) { e.preventDefault(); choose(o); }
+    return;
+  }
+  if (e.key === 'Escape') { menuOpen.value = false; return; }
+  // Backspace on an empty field takes the last one back off, as every other
+  // recipient field on earth does.
+  if (e.key === 'Backspace' && !query.value) {
+    const last = tags.value.at(-1);
+    if (last) drop(last.id);
+  }
+};
+
+watch(query, () => { menuOpen.value = true; highlight.value = 0; });
+watch(composing, async (on) => {
+  if (!on) return;
+  await nextTick();
+  toField.value?.focus();
+});
 
 const canPost = computed(() =>
   Boolean(note.value.trim()) && (toEveryone.value || audience.value.length > 0));
@@ -165,6 +240,8 @@ const discard = () => {
   note.value = '';
   audience.value = [];
   toEveryone.value = false;
+  query.value = '';
+  menuOpen.value = false;
 };
 
 const post = async () => {
@@ -245,15 +322,33 @@ const when = (iso: string) => {
     </header>
 
     <section v-if="composing" class="compose">
-      <div class="to">
+      <div class="to" @click="toField?.focus()">
         <span class="faint mono lbl">to</span>
-        <button class="chip" :class="{ on: toEveryone }" :aria-pressed="toEveryone"
-                title="Everyone on the payroll, as one broadcast."
-                @click="pickEveryone">Everyone</button>
-        <span class="sep" />
-        <button v-for="a in roster" :key="a.id" class="chip"
-                :class="{ on: audience.includes(a.id) }" :aria-pressed="audience.includes(a.id)"
-                :title="a.role" @click="pick(a.id)">{{ a.name }}</button>
+        <span v-for="t in tags" :key="t.id" class="tag" :class="{ all: t.id === EVERYONE }">
+          {{ t.label }}
+          <button class="x" :aria-label="`Remove ${t.label}`" @click.stop="drop(t.id)">×</button>
+        </span>
+        <span class="field">
+          <input ref="toField" v-model="query" type="text" class="typeahead"
+                 role="combobox" aria-autocomplete="list" aria-controls="to-options"
+                 :aria-expanded="menuOpen"
+                 :aria-activedescendant="menuOpen && options.length ? `to-opt-${highlight}` : null"
+                 :placeholder="tags.length ? '' : 'Type a name, or Everyone'"
+                 aria-label="Recipients"
+                 @focus="menuOpen = true" @blur="menuOpen = false" @keydown="onKey" />
+          <ul v-if="menuOpen && options.length" id="to-options" class="options" role="listbox">
+            <li v-for="(o, i) in options" :id="`to-opt-${i}`" :key="o.id" role="option"
+                class="opt" :class="{ on: i === highlight, all: o.id === EVERYONE }"
+                :aria-selected="i === highlight"
+                @mousedown.prevent="choose(o)" @mouseenter="highlight = i">
+              <span class="opt-name">{{ o.label }}</span>
+              <span class="opt-hint faint">{{ o.hint }}</span>
+            </li>
+            <li v-if="hidden" class="opt more faint" aria-hidden="true">
+              +{{ hidden }} more — keep typing
+            </li>
+          </ul>
+        </span>
       </div>
       <textarea v-model="note" rows="5"
         placeholder="Markdown is fine. They read it when they next wake — you do not wait here for an answer." />
@@ -350,13 +445,38 @@ const when = (iso: string) => {
 
 .compose { border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel);
   padding: 14px 16px; margin-bottom: 18px; display: flex; flex-direction: column; gap: 10px; }
-.compose .to { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.compose .to { display: flex; align-items: center; flex-wrap: wrap; gap: 5px;
+  background: #15100d; border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 7px 10px; cursor: text; }
+.compose .to:focus-within { border-color: var(--line-2); box-shadow: 0 0 0 1px var(--line-2); }
 .compose .lbl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; margin-right: 3px; }
-.compose .sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
-.compose .chip { font: inherit; font-size: 11px; color: var(--faint); background: none;
-  border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
-.compose .chip:hover { color: var(--ink); }
-.compose .chip.on { color: var(--gold); border-color: var(--gold); }
+
+.tag { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+  color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+  border-radius: 999px; padding: 2px 4px 2px 9px; white-space: nowrap; }
+.tag.all { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tag .x { font: inherit; font-size: 13px; line-height: 1; color: inherit; opacity: .55;
+  background: none; border: 0; border-radius: 999px; padding: 1px 4px; cursor: pointer; }
+.tag .x:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
+
+/* The menu hangs off the input, not the row, so wrapped tags do not move it. */
+.compose .field { position: relative; flex: 1; min-width: 140px; }
+.typeahead { width: 100%; font: inherit; font-size: 13px; color: var(--ink);
+  background: none; border: 0; padding: 2px 0; }
+.typeahead:focus { outline: none; }
+
+.options { position: absolute; z-index: 5; top: calc(100% + 6px); left: -6px; min-width: 260px;
+  max-width: 340px; margin: 0; padding: 4px; list-style: none; background: #1b1512;
+  border: 1px solid var(--line-2); border-radius: 6px; box-shadow: 0 10px 28px #0009; }
+.opt { display: flex; align-items: baseline; gap: 8px; padding: 6px 9px; border-radius: 4px;
+  font-size: 13px; cursor: pointer; }
+.opt.on { background: #2a211b; }
+.opt.all .opt-name { color: var(--accent); }
+.opt-hint { font-size: 11px; margin-left: auto; white-space: nowrap; }
+.opt.more { cursor: default; font-size: 11px; justify-content: center; }
+.opt.more:hover { background: none; }
 .compose textarea { font: inherit; font-size: 14px; line-height: 1.55; background: #15100d;
   color: var(--ink); border: 1px solid var(--line-2); border-radius: 6px; padding: 10px 12px;
   resize: vertical; }

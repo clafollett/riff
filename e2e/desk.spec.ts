@@ -571,15 +571,29 @@ test('a message can be started from scratch, to one person or to the company', a
   await page.getByRole('button', { name: 'Compose' }).click();
 
   const composer = page.locator('.compose');
+  const to = composer.getByRole('combobox', { name: 'Recipients' });
   await expect(composer).toBeVisible();
+  await expect(to).toBeFocused();
+
   // Nothing is sendable before somebody is picked.
   await composer.locator('textarea').fill('Fen — the floor number, in the summary, today.');
   await expect(composer.getByRole('button', { name: 'Send' })).toBeDisabled();
 
-  await composer.getByRole('button', { name: 'Fen', exact: true }).click();
-  await expect(composer.getByRole('button', { name: 'Send' })).toBeEnabled();
+  // Typing narrows the roster; the choice becomes a tag.
+  await to.fill('fe');
+  await expect(composer.getByRole('option')).toHaveCount(1);
+  await to.press('Enter');
+  await expect(composer.locator('.tag')).toHaveText(/Fen/);
+  await expect(to).toHaveValue('', { timeout: 2000 });
+
+  // A tag comes back off with backspace, the way every recipient field works.
+  await to.press('Backspace');
+  await expect(composer.locator('.tag')).toHaveCount(0);
+  await expect(composer.getByRole('button', { name: 'Send' })).toBeDisabled();
+
+  await to.fill('fen');
+  await to.press('Enter');
   await composer.getByRole('button', { name: 'Send' }).click();
-  // Sending puts the composer away.
   await expect(page.locator('.compose')).toHaveCount(0);
 
   const search = page.getByRole('searchbox', { name: 'Filter messages' });
@@ -591,13 +605,37 @@ test('a message can be started from scratch, to one person or to the company', a
   // And the whole company, which is a broadcast rather than the roster with
   // every name ticked.
   await page.getByRole('button', { name: 'Compose' }).click();
-  await page.locator('.compose').getByRole('button', { name: 'Everyone' }).click();
+  const to2 = page.locator('.compose').getByRole('combobox', { name: 'Recipients' });
+  await to2.fill('every');
+  await to2.press('Enter');
+  await expect(page.locator('.compose .tag.all')).toHaveText(/Everyone/);
   await page.locator('.compose textarea').fill('All hands: we publish the detection floor.');
   await page.locator('.compose').getByRole('button', { name: 'Send' }).click();
 
   await search.fill('All hands');
   await expect(page.locator('.msg')).toHaveCount(1);
   await expect(page.locator('.msg .addressed')).toHaveText(/EVERYONE/i);
+});
+
+test('a long roster stays a field to type in, not a wall to read', async ({ page }) => {
+  // Forty toggles is not a control. The menu caps at what fits above the
+  // message you came here to write, and says how much it is not showing.
+  await go(page, 'Inbox');
+  await page.getByRole('button', { name: 'Compose' }).click();
+  const to = page.getByRole('combobox', { name: 'Recipients' });
+
+  // Focus alone offers the roster — a small company still behaves like a list.
+  await expect(page.locator('.compose .opt').first()).toBeVisible();
+
+  // Matching is not only on the name: role and department find people too.
+  await to.fill('proof');
+  await expect(page.getByRole('option', { name: /Fen/ })).toBeVisible();
+
+  await to.fill('nobody here is called this');
+  await expect(page.locator('.compose .options')).toHaveCount(0);
+
+  await to.press('Escape');
+  await expect(page.locator('.compose .options')).toHaveCount(0);
 });
 
 test('the console updates itself as the company works', async ({ page }) => {
