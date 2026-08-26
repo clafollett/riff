@@ -9,7 +9,8 @@
 # this repository, not in a dotfile, not in your shell profile. What the
 # configuration holds is a COMMAND that prints it:
 #
-#   RIFF_TOKEN_CMD="security find-generic-password -s riff -a claude -w"
+#   RIFF_TOKEN_CMD="pass show riff/claude-token"        # or op / keepassxc-cli
+#   RIFF_TOKEN_CMD="secret-tool lookup service riff account claude"
 #
 # That line is not a secret, which is the point — it can sit in a config file
 # without the file needing to be protected, backed up carefully, or kept out of

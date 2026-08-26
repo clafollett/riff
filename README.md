@@ -181,8 +181,16 @@ docker/up.sh up --build
 `docker/.env` holds a **command that prints the token**, not the token:
 
 ```
-RIFF_TOKEN_CMD="security find-generic-password -s riff -a claude -w"
+RIFF_TOKEN_CMD="<any command that prints your token>"
 ```
+
+| your vault | the command |
+| - | - |
+| `pass` | `pass show riff/claude-token` |
+| 1Password | `op read "op://Private/Claude Code/credential"` |
+| KeePassXC | `keepassxc-cli show -s -a Password ~/vault.kdbx 'Claude Code'` |
+| macOS Keychain | `security find-generic-password -s riff -a claude -w` |
+| gnome-keyring | `secret-tool lookup service riff account claude` |
 
 `up.sh` runs it at launch and hands the result to compose through the
 environment, so the credential is never written to a file, never an argument
