@@ -37,11 +37,11 @@ RUN npm ci --no-fund --no-audit \
  && chown -R labs:labs /app/node_modules
 COPY --chown=labs:labs docker/entrypoint.sh /entrypoint.sh
 USER labs
-RUN git config --global user.name "Helmsted" \
- && git config --global user.email "helmsted@localhost" \
+RUN git config --global user.name "Riff" \
+ && git config --global user.email "riff@localhost" \
  && git config --global init.defaultBranch main \
  && git config --global --add safe.directory '*'
-ENV NODE_ENV=development HELMSTED_ROOT=/data HELMSTED_CONTAINED=1 PORT=4173
+ENV NODE_ENV=development RIFF_ROOT=/data RIFF_CONTAINED=1 PORT=4173
 ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
 
 # ------------------------------------------------------------------- runtime
@@ -78,21 +78,21 @@ USER labs
 
 # git refuses to commit without an identity, and the world is a git repo that
 # every shift writes to. Individual commits are attributed per agent.
-RUN git config --global user.name  "Helmsted" \
- && git config --global user.email "helmsted@localhost" \
+RUN git config --global user.name  "Riff" \
+ && git config --global user.email "riff@localhost" \
  && git config --global init.defaultBranch main \
  && git config --global --add safe.directory '*'
 
-# HELMSTED_ROOT is the INSTALLATION root — companies/ and archive/ live under
+# RIFF_ROOT is the INSTALLATION root — companies/ and archive/ live under
 # it. It must point at the mounted volume: set to a path outside the mount and
 # every company is written to the container's own filesystem and destroyed on
 # the next restart, silently.
 #
-# HELMSTED_CONTAINED opens the shell. The runtime also requires a container
+# RIFF_CONTAINED opens the shell. The runtime also requires a container
 # marker file, so this variable on its own does nothing on someone's laptop.
 ENV NODE_ENV=production \
-    HELMSTED_ROOT=/data \
-    HELMSTED_CONTAINED=1 \
+    RIFF_ROOT=/data \
+    RIFF_CONTAINED=1 \
     PORT=4173 \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false

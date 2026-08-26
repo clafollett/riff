@@ -26,7 +26,7 @@ const state = ref<State | null>(null);
 const events = ref<Event[]>([]);
 const err = ref('');
 
-const railWidth = ref(rememberedWidth('helmsted.railWidth', 208));
+const railWidth = ref(rememberedWidth('riff.railWidth', 208));
 const companies = ref<CompanyRef[]>([]);
 const active = ref('');
 const picking = ref(false);
@@ -50,7 +50,7 @@ const fetchList = async () => { companies.value = (await api.companies()).compan
  * it. Without this a reload lands on whichever company happens to have the
  * freshest ledger file, which is not a choice anyone made.
  */
-const REMEMBERED = 'helmsted.company';
+const REMEMBERED = 'riff.company';
 const remembered = (): string => {
   try { return localStorage.getItem(REMEMBERED) ?? ''; } catch { return ''; }
 };
@@ -226,7 +226,7 @@ const util = computed(() => {
     </nav>
 
     <Splitter v-model="railWidth" :min="170" :max="420"
-              storage-key="helmsted.railWidth" label="Sidebar width" />
+              storage-key="riff.railWidth" label="Sidebar width" />
 
     <main class="main">
       <Companies v-if="view === 'companies'" :list="companies" :active="active"

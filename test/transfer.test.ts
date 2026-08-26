@@ -16,7 +16,7 @@ const run = (script: string): string => {
   const home = process.env['TEST_HOME']!;
   return execFileSync(process.execPath, ['--input-type=module', '-e', script], {
     encoding: 'utf8',
-    env: { ...process.env, HOME: home, HELMSTED_ROOT: join(home, '.helmsted'), HELMSTED_COMPANY_ID: '' },
+    env: { ...process.env, HOME: home, RIFF_ROOT: join(home, '.riff'), RIFF_COMPANY_ID: '' },
     cwd: process.cwd(),
   });
 };
@@ -31,7 +31,7 @@ const PRELUDE = `
 let home: string;
 let out: string;
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), 'helmsted-transfer-'));
+  home = mkdtempSync(join(tmpdir(), 'riff-transfer-'));
   out = join(home, 'out');
   mkdirSync(out, { recursive: true });
   process.env['TEST_HOME'] = home;
@@ -240,7 +240,7 @@ describe('an archive from someone else is data, not a promise', () => {
     // output directory it has already been written somewhere else.
     refuses(`
       write('${out}/evil.tar.gz', [
-        member('helmsted.json', JSON.stringify({ format: 1, slug: 'e', name: 'E', business: '', exportedAt: '', counts: {} })),
+        member('riff.json', JSON.stringify({ format: 1, slug: 'e', name: 'E', business: '', exportedAt: '', counts: {} })),
         member('../../pwned', 'owned'),
       ]);
     `, /outside the company directory/);
@@ -249,7 +249,7 @@ describe('an archive from someone else is data, not a promise', () => {
   test('an absolute member is refused too', () => {
     refuses(`
       write('${out}/evil.tar.gz', [
-        member('helmsted.json', '{"format":1}'),
+        member('riff.json', '{"format":1}'),
         member('${home}/pwned', 'owned'),
       ]);
     `, /outside the company directory/);
@@ -262,20 +262,20 @@ describe('an archive from someone else is data, not a promise', () => {
       const stage = '${home}/evil'; mkdirSync(stage + '/world', { recursive: true });
       writeFileSync(stage + '/config.json', JSON.stringify({ company: { name: 'x', business: '' } }));
       writeFileSync(stage + '/ledger.db', '');
-      writeFileSync(stage + '/helmsted.json', JSON.stringify({ format: 1, slug: 'evil', name: 'Evil', business: '', exportedAt: '', counts: {} }));
+      writeFileSync(stage + '/riff.json', JSON.stringify({ format: 1, slug: 'evil', name: 'Evil', business: '', exportedAt: '', counts: {} }));
       symlinkSync('/etc/passwd', stage + '/world/leak');
       execFileSync('tar', ['-czf', '${out}/evil.tar.gz', '-C', stage, '.']);
     `, /symbolic link/);
   });
 
-  test('an export from a newer Helmsted is refused, not half-read', () => {
+  test('an export from a newer Riff is refused, not half-read', () => {
     refuses(`
       const stage = '${home}/evil'; mkdirSync(stage, { recursive: true });
       writeFileSync(stage + '/config.json', '{}');
       writeFileSync(stage + '/ledger.db', '');
-      writeFileSync(stage + '/helmsted.json', JSON.stringify({ format: 99, slug: 'e', name: 'E', business: '', exportedAt: '', counts: {} }));
+      writeFileSync(stage + '/riff.json', JSON.stringify({ format: 99, slug: 'e', name: 'E', business: '', exportedAt: '', counts: {} }));
       execFileSync('tar', ['-czf', '${out}/evil.tar.gz', '-C', stage, '.']);
-    `, /newer Helmsted/);
+    `, /newer Riff/);
   });
 
   test('a tarball that is not a company is refused by name, not by stack trace', () => {
@@ -283,6 +283,6 @@ describe('an archive from someone else is data, not a promise', () => {
       const stage = '${home}/evil'; mkdirSync(stage, { recursive: true });
       writeFileSync(stage + '/holiday.jpg', 'not a company');
       execFileSync('tar', ['-czf', '${out}/evil.tar.gz', '-C', stage, '.']);
-    `, /no helmsted\.json/);
+    `, /no riff\.json/);
   });
 });

@@ -1,6 +1,6 @@
 # Architecture
 
-How Helmsted actually works, and why the awkward decisions are the way they are.
+How Riff actually works, and why the awkward decisions are the way they are.
 
 ---
 
@@ -46,7 +46,7 @@ gets built without a compiler and a package manager, and the answer to that is
 not an allowlist that shrinks forever — it is a box with no route to the
 internet.
 
-Opening it requires **both** an explicit `HELMSTED_CONTAINED=1` and a container
+Opening it requires **both** an explicit `RIFF_CONTAINED=1` and a container
 marker file on disk. The variable alone would let a mistyped export on a laptop
 hand out a terminal; the marker alone would open one in any container at all.
 Either missing means no shell.

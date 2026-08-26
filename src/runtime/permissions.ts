@@ -40,7 +40,7 @@ import { TOOL_PREFIX } from './tools.ts';
 const SHELL_TOOLS = new Set(['Bash', 'BashOutput', 'KillShell', 'KillTask']);
 
 export const shellIsContained = (env: NodeJS.ProcessEnv = process.env): boolean =>
-  env['HELMSTED_CONTAINED'] === '1'
+  env['RIFF_CONTAINED'] === '1'
   && (existsSync('/.dockerenv') || existsSync('/run/.containerenv'));
 
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'NotebookRead']);

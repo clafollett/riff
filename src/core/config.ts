@@ -12,24 +12,24 @@ import { userInfo } from 'node:os';
  * checkout, and it must survive the project folder being moved or renamed.
  *
  * One installation holds MANY companies, each self-contained under
- * ~/.helmsted/companies/<slug>/ with its own world, ledger and config. A
+ * ~/.riff/companies/<slug>/ with its own world, ledger and config. A
  * company is a directory you can copy, archive, or delete whole — nothing
  * about one reaches into another.
  *
  * Resolution order, first match wins:
- *   1. HELMSTED_WORLD / HELMSTED_LEDGER   move one piece
- *   2. HELMSTED_HOME                      point at one company directly
- *   3. HELMSTED_COMPANY_ID                pick a company by slug
- *   4. ./helmsted.config.json             project-local, for development
+ *   1. RIFF_WORLD / RIFF_LEDGER   move one piece
+ *   2. RIFF_HOME                      point at one company directly
+ *   3. RIFF_COMPANY_ID                pick a company by slug
+ *   4. ./riff.config.json             project-local, for development
  *   5. the only company that exists       the common case
  *   6. built-in defaults                  only ever used to WRITE a new one
  *
- * Identity — HELMSTED_COMPANY, HELMSTED_BUSINESS, HELMSTED_CHAIR,
- * HELMSTED_CEO — overrides the stored config on every read, which is what
+ * Identity — RIFF_COMPANY, RIFF_BUSINESS, RIFF_CHAIR,
+ * RIFF_CEO — overrides the stored config on every read, which is what
  * makes a container run reproducible from environment alone.
  */
 
-export type HelmstedConfig = {
+export type RiffConfig = {
   version: 1;
   /**
    * Where the company is, and where its two halves sit inside it.
@@ -55,7 +55,7 @@ export type HelmstedConfig = {
   ceo: { id: string; name: string };
   /**
    * External MCP servers handed to every staff session — an image generator,
-   * a calendar, an inbox. Helmsted knows nothing about any specific provider;
+   * a calendar, an inbox. Riff knows nothing about any specific provider;
    * plugging one in is a config change, not a code change.
    *
    * Credentials belong in headers here, and this file is gitignored. Anything
@@ -75,7 +75,7 @@ export type HelmstedConfig = {
 
 /** Best guess at who is running this, for the first-run prompt to confirm. */
 export const guessKeeperName = (): string => {
-  const fromEnv = process.env['HELMSTED_CHAIR'];
+  const fromEnv = process.env['RIFF_CHAIR'];
   if (fromEnv && fromEnv.trim()) return fromEnv.trim();
   try {
     const g = execFileSync('git', ['config', '--get', 'user.name'],
@@ -90,22 +90,22 @@ export const guessKeeperName = (): string => {
 export const slugId = (name: string): string =>
   name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'keeper';
 
-const PROJECT_CONFIG = 'helmsted.config.json';
+const PROJECT_CONFIG = 'riff.config.json';
 const CONFIG_NAME = 'config.json';
 
 /**
  * An error the operator can act on, as opposed to a defect. Scripts print the
  * message and stop; a stack trace here would bury the one line that helps.
  */
-const OPERATOR_ERROR = Symbol.for('helmsted.operatorError');
+const OPERATOR_ERROR = Symbol.for('riff.operatorError');
 export const operatorError = (message: string): Error =>
   Object.assign(new Error(message), { [OPERATOR_ERROR]: true });
 export const isOperatorError = (e: unknown): boolean =>
   e instanceof Error && (e as unknown as Record<symbol, unknown>)[OPERATOR_ERROR] === true;
 
-const readConfigFile = (path: string): Partial<HelmstedConfig> | null => {
+const readConfigFile = (path: string): Partial<RiffConfig> | null => {
   if (!existsSync(path)) return null;
-  try { return JSON.parse(readFileSync(path, 'utf8')) as Partial<HelmstedConfig>; }
+  try { return JSON.parse(readFileSync(path, 'utf8')) as Partial<RiffConfig>; }
   catch { return null; }
 };
 
@@ -118,7 +118,33 @@ const readConfigFile = (path: string): Partial<HelmstedConfig> | null => {
  * someone imports the module early is not a boundary.
  */
 export const installRoot = (env = process.env): string =>
-  env['HELMSTED_ROOT']?.trim() || join(homedir(), '.helmsted');
+  env['RIFF_ROOT']?.trim() || join(homedir(), '.riff');
+
+/**
+ * The name changed; the companies did not.
+ *
+ * This project was called Helmsted, and before that something else again. An
+ * installation is a directory of live git repositories and SQLite ledgers —
+ * renaming the product must not strand it, and must not ask anyone to move it
+ * by hand. One rename, once, and only when the new location does not exist:
+ * if both are there, somebody has already made a decision and this must not
+ * second-guess it.
+ *
+ * Returns what it moved, so a caller can say so rather than silently
+ * relocating someone's work.
+ */
+export const migrateInstallRoot = (env = process.env): { from: string; to: string } | null => {
+  if (env['RIFF_ROOT']?.trim()) return null;        // explicitly placed; not ours to move
+  const to = join(homedir(), '.riff');
+  if (existsSync(to)) return null;
+  for (const legacy of ['.helmsted']) {
+    const from = join(homedir(), legacy);
+    if (!existsSync(from)) continue;
+    renameSync(from, to);
+    return { from, to };
+  }
+  return null;
+};
 
 export const companiesDir = (env = process.env): string => join(installRoot(env), 'companies');
 
@@ -176,8 +202,8 @@ export const listCompanies = (): CompanyRef[] => {
 };
 
 /**
- * The first layout put a single company flat in ~/.helmsted. Anyone who ran
- * Helmsted before companies existed has a live world there, with its own git
+ * The first layout put a single company flat in ~/.riff. Anyone who ran
+ * Riff before companies existed has a live world there, with its own git
  * history, so this moves it rather than leaving it stranded. Idempotent, and
  * it never overwrites an existing company directory.
  */
@@ -214,7 +240,7 @@ const abs = (base: string, p: string): string => (isAbsolute(p) ? p : resolve(ba
 /**
  * A stored path is honoured only if it lands inside the company it was read
  * from. An absolute one pointing anywhere else is a leftover from another
- * machine, not an instruction — HELMSTED_WORLD and HELMSTED_LEDGER are how
+ * machine, not an instruction — RIFF_WORLD and RIFF_LEDGER are how
  * you deliberately put a world somewhere unusual.
  */
 const within = (base: string, p: string | undefined, fallback: string): string => {
@@ -230,12 +256,12 @@ const within = (base: string, p: string | undefined, fallback: string): string =
  * Kept as an explicit pick rather than a delete, so a field added to the type
  * later is written by default instead of silently dropped.
  */
-export const persisted = (cfg: HelmstedConfig & { running?: boolean }): Record<string, unknown> => {
+export const persisted = (cfg: RiffConfig & { running?: boolean }): Record<string, unknown> => {
   const { home: _h, worldDir: _w, ledgerPath: _l, ...rest } = cfg;
   return rest;
 };
 
-const fromHome = (home: string): HelmstedConfig => {
+const fromHome = (home: string): RiffConfig => {
   const name = guessKeeperName();
   return {
     version: 1,
@@ -258,16 +284,16 @@ const fromHome = (home: string): HelmstedConfig => {
  * than picking one and writing to it. The caller names it.
  */
 export const resolveSlug = (env = process.env): string | null => {
-  const explicit = env['HELMSTED_COMPANY_ID']?.trim();
+  const explicit = env['RIFF_COMPANY_ID']?.trim();
   if (explicit) return slugId(explicit);
   const all = listCompanies();
   return all.length === 1 ? all[0]!.slug : null;
 };
 
-export const resolveConfig = (cwd = process.cwd(), slug?: string): HelmstedConfig => {
+export const resolveConfig = (cwd = process.cwd(), slug?: string): RiffConfig => {
   const env = process.env;
   const pick = slug ?? resolveSlug(env);
-  const explicitHome = env['HELMSTED_HOME'] ? abs(cwd, env['HELMSTED_HOME']) : null;
+  const explicitHome = env['RIFF_HOME'] ? abs(cwd, env['RIFF_HOME']) : null;
 
   // Several companies exist and nobody said which. Falling through here would
   // scaffold a brand new world at the INSTALL ROOT, next to the companies
@@ -278,7 +304,7 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): HelmstedConfi
     if (all.length > 1) {
       throw operatorError(
         `This installation holds ${all.length} companies and none was named.\n` +
-        `  Pass --company <slug>, or set HELMSTED_COMPANY_ID.\n` +
+        `  Pass --company <slug>, or set RIFF_COMPANY_ID.\n` +
         // Sorted, not by recency: a list you read to pick a name should be in
         // the same order every time, whatever you ran last.
         `  Known: ${all.map((c) => c.slug).sort().join(', ')}`,
@@ -298,10 +324,10 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): HelmstedConfi
 
   const merged = { ...fromHome(base), ...homeCfg, ...projectCfg, home: base };
 
-  // An explicit HELMSTED_CHAIR wins; otherwise the stored chair is kept
+  // An explicit RIFF_CHAIR wins; otherwise the stored chair is kept
   // forever, because renaming them mid-life would orphan every approval,
   // note and commit already attributed to them.
-  const chairName = env['HELMSTED_CHAIR']?.trim() || merged.board?.[0]?.name || guessKeeperName();
+  const chairName = env['RIFF_CHAIR']?.trim() || merged.board?.[0]?.name || guessKeeperName();
   const board = merged.board?.length
     ? merged.board
     : [{ id: slugId(chairName), name: chairName, role: 'Chairman' }];
@@ -309,15 +335,15 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): HelmstedConfi
   return {
     version: 1,
     home: base,
-    worldDir: env['HELMSTED_WORLD'] ? abs(cwd, env['HELMSTED_WORLD']) : within(base, merged.worldDir, 'world'),
-    ledgerPath: env['HELMSTED_LEDGER'] ? abs(cwd, env['HELMSTED_LEDGER']) : within(base, merged.ledgerPath, 'ledger.db'),
+    worldDir: env['RIFF_WORLD'] ? abs(cwd, env['RIFF_WORLD']) : within(base, merged.worldDir, 'world'),
+    ledgerPath: env['RIFF_LEDGER'] ? abs(cwd, env['RIFF_LEDGER']) : within(base, merged.ledgerPath, 'ledger.db'),
     company: {
-      name: env['HELMSTED_COMPANY']?.trim() || merged.company?.name || 'Untitled Company',
-      business: env['HELMSTED_BUSINESS']?.trim() || merged.company?.business || '',
+      name: env['RIFF_COMPANY']?.trim() || merged.company?.name || 'Untitled Company',
+      business: env['RIFF_BUSINESS']?.trim() || merged.company?.business || '',
     },
     board,
-    ceo: env['HELMSTED_CEO']?.trim()
-      ? { id: slugId(env['HELMSTED_CEO'].trim()), name: env['HELMSTED_CEO'].trim() }
+    ceo: env['RIFF_CEO']?.trim()
+      ? { id: slugId(env['RIFF_CEO'].trim()), name: env['RIFF_CEO'].trim() }
       : merged.ceo ?? { id: 'ceo', name: 'CEO' },
     connectors: merged.connectors ?? {},
   };
@@ -333,7 +359,7 @@ export const setRunningFlag = (home: string, running: boolean): void => {
 };
 
 /** Create the company's home and write the config. Idempotent. */
-export const scaffoldConfig = (cfg: HelmstedConfig): { created: boolean; path: string } => {
+export const scaffoldConfig = (cfg: RiffConfig): { created: boolean; path: string } => {
   mkdirSync(cfg.home, { recursive: true });
   mkdirSync(cfg.worldDir, { recursive: true });
   mkdirSync(resolve(cfg.ledgerPath, '..'), { recursive: true });
@@ -345,5 +371,5 @@ export const scaffoldConfig = (cfg: HelmstedConfig): { created: boolean; path: s
   return { created: true, path };
 };
 
-export const isInitialised = (cfg: HelmstedConfig): boolean =>
+export const isInitialised = (cfg: RiffConfig): boolean =>
   existsSync(join(cfg.home, CONFIG_NAME)) && existsSync(cfg.ledgerPath);

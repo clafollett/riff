@@ -6,7 +6,7 @@ import { Scheduler } from '../runtime/scheduler.ts';
 import { found } from './genesis.ts';
 import {
   archiveDir, companyHome, listCompanies, persisted, resolveConfig, scaffoldConfig,
-  setRunningFlag, slugId, type CompanyRef, type HelmstedConfig,
+  setRunningFlag, slugId, type CompanyRef, type RiffConfig,
 } from '../core/config.ts';
 import type { Clock } from '../core/clock.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -26,7 +26,7 @@ import { join } from 'node:path';
  */
 export type Company = {
   slug: string;
-  cfg: HelmstedConfig;
+  cfg: RiffConfig;
   ledger: Ledger;
   world: World;
   gate: Gate;
@@ -107,7 +107,7 @@ export class Registry {
     const chair = input.chair.trim() || 'Chair';
     const ceo = input.ceo.trim() || 'CEO';
     const home = companyHome(slug);
-    const cfg: HelmstedConfig = {
+    const cfg: RiffConfig = {
       version: 1,
       home,
       worldDir: `${home}/world`,
@@ -121,7 +121,7 @@ export class Registry {
     return { ok: true, company: this.#build(slug, cfg) };
   }
 
-  #build(slug: string, cfg: HelmstedConfig): Company {
+  #build(slug: string, cfg: RiffConfig): Company {
     const { ledger, world } = found(cfg, this.#clock);
     const constitution = constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) });
     const gate = new Gate(ledger, constitution, {
@@ -175,8 +175,8 @@ export class Registry {
     if (wanted !== slug) renameSync(from, to);
 
     const path = join(to, 'config.json');
-    const cfg = JSON.parse(readFileSync(path, 'utf8')) as HelmstedConfig;
-    const next: HelmstedConfig = {
+    const cfg = JSON.parse(readFileSync(path, 'utf8')) as RiffConfig;
+    const next: RiffConfig = {
       ...cfg,
       home: to,
       worldDir: join(to, 'world'),
@@ -193,7 +193,7 @@ export class Registry {
 
   /**
    * Remove a company from the list without destroying it. The directory moves
-   * to ~/.helmsted/archive/<slug>-<stamp>/, git history and all.
+   * to ~/.riff/archive/<slug>-<stamp>/, git history and all.
    */
   async archive(slug: string): Promise<{ ok: true; at: string } | { ok: false; reason: string }> {
     if (!this.has(slug)) return { ok: false, reason: `no company '${slug}'` };

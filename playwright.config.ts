@@ -12,7 +12,7 @@ import { join } from 'node:path';
  * left holding a deleted inode and served an empty company for the whole run,
  * no matter what the fixtures wrote. Nothing to race on if nothing is reused.
  */
-export const TEST_HOME = join(tmpdir(), `helmsted-e2e-${process.pid}-${Date.now()}`);
+export const TEST_HOME = join(tmpdir(), `riff-e2e-${process.pid}-${Date.now()}`);
 export const PORT = 4174;
 
 /**
@@ -25,12 +25,12 @@ export const COMPANY = {
   // The INSTALLATION root, not just one company's home. Without this the
   // server lists — and can open — the operator's real companies, because the
   // companies directory is derived from the home directory.
-  HELMSTED_ROOT: TEST_HOME,
-  HELMSTED_HOME: join(TEST_HOME, 'companies', 'testwright-co'),
-  HELMSTED_COMPANY: 'Testwright Co',
-  HELMSTED_BUSINESS: 'proving the console renders',
-  HELMSTED_CHAIR: 'Tester',
-  HELMSTED_CEO: 'Wren',
+  RIFF_ROOT: TEST_HOME,
+  RIFF_HOME: join(TEST_HOME, 'companies', 'testwright-co'),
+  RIFF_COMPANY: 'Testwright Co',
+  RIFF_BUSINESS: 'proving the console renders',
+  RIFF_CHAIR: 'Tester',
+  RIFF_CEO: 'Wren',
 };
 
 export default defineConfig({

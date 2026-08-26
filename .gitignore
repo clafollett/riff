@@ -5,9 +5,9 @@ dist/
 .env.*
 !.env.example
 
-# Companies live OUTSIDE this repo (~/.helmsted by default) — they are data,
+# Companies live OUTSIDE this repo (~/.riff by default) — they are data,
 # not source, and they must survive this folder being moved or deleted. These
-# two only exist if you deliberately point HELMSTED_ROOT back in here while
+# two only exist if you deliberately point RIFF_ROOT back in here while
 # developing; they are ignored so a company's history never mixes with the
 # source history.
 /world/

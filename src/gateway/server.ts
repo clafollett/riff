@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { systemClock } from '../core/clock.ts';
 import {
-  guessKeeperName, listCompanies, migrateLegacyLayout, resolveSlug,
+  guessKeeperName, listCompanies, migrateInstallRoot, migrateLegacyLayout, resolveSlug,
 } from '../core/config.ts';
 import { Registry, type Company } from '../company/registry.ts';
 import { exportCompany, exportName, importCompany } from '../company/transfer.ts';
@@ -15,14 +15,19 @@ import { extname, join, resolve, sep } from 'node:path';
 const PORT = Number(process.env['PORT'] ?? 4173);
 const clock = systemClock;
 
-// The first layout put one company flat in ~/.helmsted. Move it before
+// The first layout put one company flat in ~/.riff. Move it before
 // anything opens it, so an existing world is never stranded by an upgrade.
+// Before anything reads a path: the installation may still be under the name
+// this project used to have.
+const moved = migrateInstallRoot();
+if (moved) console.log(`\n  Moved ${moved.from} → ${moved.to}`);
+
 const migrated = migrateLegacyLayout();
 
 /**
  * One writer per installation, taken before anything opens a ledger.
  *
- * The host and the container mount the same ~/.helmsted on purpose — a company
+ * The host and the container mount the same ~/.riff on purpose — a company
  * founded one way is there the other way. Two servers on it is not a
  * conflicting file, it is two schedulers waking the same staff: doubled spend,
  * two sessions committing to one git repository, and a ledger recording both
@@ -47,10 +52,10 @@ const registry = new Registry(clock);
 // not a good first impression. Founding one deliberately does start it.
 if (!listCompanies().length) {
   registry.found({
-    name: process.env['HELMSTED_COMPANY']?.trim() || 'Untitled Company',
-    business: process.env['HELMSTED_BUSINESS']?.trim() || '',
-    ceo: process.env['HELMSTED_CEO']?.trim() || 'CEO',
-    chair: process.env['HELMSTED_CHAIR']?.trim() || guessKeeperName(),
+    name: process.env['RIFF_COMPANY']?.trim() || 'Untitled Company',
+    business: process.env['RIFF_BUSINESS']?.trim() || '',
+    ceo: process.env['RIFF_CEO']?.trim() || 'CEO',
+    chair: process.env['RIFF_CHAIR']?.trim() || guessKeeperName(),
   });
 }
 
@@ -504,7 +509,7 @@ server.listen(PORT, () => {
   const resumed = new Set(registry.resume());
 
   const all = registry.list();
-  console.log(`\n  Helmsted · ${all.length} compan${all.length === 1 ? 'y' : 'ies'}`);
+  console.log(`\n  Riff · ${all.length} compan${all.length === 1 ? 'y' : 'ies'}`);
   for (const c of all) {
     const mark = c.running ? (resumed.has(c.slug) ? '● resumed' : '● working') : '○ paused ';
     console.log(`    ${mark}  ${c.slug.padEnd(22)} ${c.name}${c.business ? ` — ${c.business}` : ''}`);

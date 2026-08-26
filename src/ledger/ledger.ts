@@ -34,7 +34,7 @@ export class Ledger {
   }
 
   /**
-   * Fold forward anything an older Helmsted wrote under a name this one no
+   * Fold forward anything an older Riff wrote under a name this one no
    * longer uses.
    *
    * This started life as a bed and breakfast, and the first ledgers recorded

@@ -8,7 +8,7 @@ import Splitter, { rememberedWidth } from '../Splitter.vue';
 
 const props = defineProps<{ state: State; events: Event[] }>();
 const who = computed(() => namer(props.state));
-const listWidth = ref(rememberedWidth('helmsted.commonsWidth', 268));
+const listWidth = ref(rememberedWidth('riff.commonsWidth', 268));
 const docs = ref<CommonsDoc[]>([]);
 const open = ref<CommonsDoc | null>(null);
 const body = ref('');
@@ -29,8 +29,8 @@ const ORDERS: Array<{ key: Order; label: string }> = [
   { key: 'title', label: 'A–Z' },
 ];
 const order = ref<Order>(
-  (localStorage.getItem('helmsted.commonsOrder') as Order | null) ?? 'written');
-watch(order, (o) => localStorage.setItem('helmsted.commonsOrder', o));
+  (localStorage.getItem('riff.commonsOrder') as Order | null) ?? 'written');
+watch(order, (o) => localStorage.setItem('riff.commonsOrder', o));
 
 const stamp = (d: CommonsDoc) => d.updated ?? d.created ?? '';
 const sorted = computed(() => {
@@ -122,7 +122,7 @@ const listed = computed(() => {
     </aside>
 
     <Splitter v-model="listWidth" :min="200" :max="520"
-              storage-key="helmsted.commonsWidth" label="Document list width" />
+              storage-key="riff.commonsWidth" label="Document list width" />
 
     <article class="reader">
       <template v-if="open">

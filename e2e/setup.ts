@@ -1,5 +1,5 @@
 import { COMPANY } from '../playwright.config.ts';
-import { resolveConfig, scaffoldConfig, type HelmstedConfig } from '../src/core/config.ts';
+import { resolveConfig, scaffoldConfig, type RiffConfig } from '../src/core/config.ts';
 import { found } from '../src/company/genesis.ts';
 import { fillSeat } from '../src/company/hire.ts';
 import { World } from '../src/worldfs/world.ts';
@@ -12,7 +12,7 @@ import { systemClock } from '../src/core/clock.ts';
 export default async function globalSetup(): Promise<void> {
   Object.assign(process.env, COMPANY);
 
-  const cfg: HelmstedConfig = resolveConfig();
+  const cfg: RiffConfig = resolveConfig();
   scaffoldConfig(cfg);
   const { ledger } = found(cfg, systemClock);
   const world = new World(cfg.worldDir, systemClock);

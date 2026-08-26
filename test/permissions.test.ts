@@ -51,7 +51,7 @@ const allowed = (r: PermissionResult | null, what = ''): void => {
 };
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'helmsted-perm-'));
+  dir = mkdtempSync(join(tmpdir(), 'riff-perm-'));
   clock = fixedClock('2026-08-25T09:00:00.000Z');
   ledger = new Ledger(':memory:', clock);
   ledger.upsertAgent(agent('chair', 'board', null));
@@ -106,7 +106,7 @@ describe('the shell is decided by where the runtime is', () => {
   test('the environment variable alone is not enough to open a shell', () => {
     // A mistyped export on someone's laptop must not hand out a terminal.
     // Outside a container the marker file is absent, so this stays false.
-    assert.equal(shellIsContained({ HELMSTED_CONTAINED: '1' } as never), false);
+    assert.equal(shellIsContained({ RIFF_CONTAINED: '1' } as never), false);
     assert.equal(shellIsContained({} as never), false);
   });
 });

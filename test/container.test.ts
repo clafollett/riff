@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
  * The container's environment is a contract with src/core/config.ts, and
  * nothing was checking it.
  *
- * It had already rotted: the Dockerfile set HELMSTED_HOME=/world from the
+ * It had already rotted: the Dockerfile set RIFF_HOME=/world from the
  * single-company era, so under the current resolver every company would have
  * been written to the container's own filesystem instead of the mounted
  * volume — and destroyed, silently, on the next restart. These tests are the
@@ -52,23 +52,23 @@ const factoryBlock = service('factory');
 
 describe('the container writes where the volume is', () => {
   test('the installation root is set, and set to the mount', () => {
-    const m = /HELMSTED_ROOT=(\S+)/.exec(dockerfile);
-    assert.ok(m, 'the Dockerfile must set HELMSTED_ROOT');
+    const m = /RIFF_ROOT=(\S+)/.exec(dockerfile);
+    assert.ok(m, 'the Dockerfile must set RIFF_ROOT');
     assert.ok(m[1]!.startsWith(MOUNT),
-      `HELMSTED_ROOT is ${m[1]} — anything outside ${MOUNT} is lost on restart`);
+      `RIFF_ROOT is ${m[1]} — anything outside ${MOUNT} is lost on restart`);
   });
 
   test('compose agrees with the image about where that is', () => {
-    assert.match(compose, /HELMSTED_ROOT:\s*\/data/);
+    assert.match(compose, /RIFF_ROOT:\s*\/data/);
     assert.match(compose, new RegExp(`:${MOUNT}\\b`), 'the volume must be mounted at the root');
   });
 
   test('the container and the host share one installation', () => {
     // Compose interpolates ${HOME} client-side, in the process that runs the
     // command — so it is the invoking user's home, never the daemon's. And it
-    // points at the SAME ~/.helmsted the host uses: a second directory would
+    // points at the SAME ~/.riff the host uses: a second directory would
     // mean a company founded one way is invisible the other.
-    assert.match(compose, /\$\{HELMSTED_DATA:-\$\{HOME\}\/\.helmsted\}/);
+    assert.match(compose, /\$\{RIFF_DATA:-\$\{HOME\}\/\.riff\}/);
   });
 
   test('it checks it can write the mount before doing anything', () => {
@@ -83,25 +83,25 @@ describe('the container writes where the volume is', () => {
   test('the entrypoint refuses to start if the root escapes the mount', () => {
     // Belt and braces: if someone overrides it at run time, fail loudly rather
     // than writing a whole company somewhere it will not survive.
-    assert.match(entrypoint, /HELMSTED_ROOT/);
+    assert.match(entrypoint, /RIFF_ROOT/);
     assert.match(entrypoint, /exit 1/);
   });
 
   test('the single-company variable is gone from the image', () => {
-    // HELMSTED_HOME means "one company lives here". Setting it installation-wide
+    // RIFF_HOME means "one company lives here". Setting it installation-wide
     // is what broke this.
-    assert.ok(!/ENV[\s\S]*HELMSTED_HOME=/.test(dockerfile), 'HELMSTED_HOME must not be set image-wide');
+    assert.ok(!/ENV[\s\S]*RIFF_HOME=/.test(dockerfile), 'RIFF_HOME must not be set image-wide');
   });
 });
 
 describe('the container only sets variables the code reads', () => {
-  test('every HELMSTED_* it sets is one config.ts looks up', () => {
+  test('every RIFF_* it sets is one config.ts looks up', () => {
     const set = new Set<string>();
     for (const src of [dockerfile, compose]) {
-      for (const m of src.matchAll(/\b(HELMSTED_[A-Z_]+)\b/g)) set.add(m[1]!);
+      for (const m of src.matchAll(/\b(RIFF_[A-Z_]+)\b/g)) set.add(m[1]!);
     }
     // Consumed by compose itself, before the container exists.
-    const composeOnly = new Set(['HELMSTED_DATA']);
+    const composeOnly = new Set(['RIFF_DATA']);
     for (const name of set) {
       if (composeOnly.has(name)) continue;
       assert.ok(allSource.includes(`'${name}'`),
@@ -112,14 +112,14 @@ describe('the container only sets variables the code reads', () => {
 
 describe('the shell is only open inside the box', () => {
   test('the image declares itself contained', () => {
-    assert.match(dockerfile, /HELMSTED_CONTAINED=1/);
+    assert.match(dockerfile, /RIFF_CONTAINED=1/);
   });
 
   test('and the runtime still demands a container marker as well', () => {
     // The variable alone must never be enough — a mistyped export on someone's
     // laptop would otherwise hand an agent a terminal.
     const perms = readFileSync('src/runtime/permissions.ts', 'utf8');
-    assert.match(perms, /HELMSTED_CONTAINED/);
+    assert.match(perms, /RIFF_CONTAINED/);
     assert.match(perms, /dockerenv|containerenv/);
   });
 });
@@ -211,7 +211,7 @@ describe('the example env file describes this container, not an imagined one', (
    * and look at what actually came out.
    */
   const launch = (args: string[] = ['up']): { out: string; argv: string; env: string; asked: boolean } => {
-    const dir = mkdtempSync(join(tmpdir(), 'helmsted-launch-'));
+    const dir = mkdtempSync(join(tmpdir(), 'riff-launch-'));
     // A stub `docker` that records how it was called, so the test can prove
     // the token was passed by environment and never as an argument.
     writeFileSync(join(dir, 'docker'),
@@ -223,9 +223,9 @@ describe('the example env file describes this container, not an imagined one', (
       env: {
         ...process.env,
         PATH: `${dir}:${process.env['PATH'] ?? ''}`,
-        HELMSTED_TOKEN_CMD: `sh -c 'echo VAULT-OPENED >&2; printf %s ${SENTINEL}'`,
+        RIFF_TOKEN_CMD: `sh -c 'echo VAULT-OPENED >&2; printf %s ${SENTINEL}'`,
         CLAUDE_CODE_OAUTH_TOKEN: '',
-        HELMSTED_ENV: '',
+        RIFF_ENV: '',
       },
     });
     assert.equal(r.status, 0, `up.sh ${args.join(' ')} failed: ${r.stderr}`);

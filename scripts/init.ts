@@ -2,19 +2,19 @@
  * Found a company.
  *
  *   node scripts/init.ts
- *   HELMSTED_COMPANY="LaFollett Labs LLC" HELMSTED_BUSINESS="AI and agentic systems" \
- *   HELMSTED_CHAIR="Cali" node scripts/init.ts
+ *   RIFF_COMPANY="LaFollett Labs LLC" RIFF_BUSINESS="AI and agentic systems" \
+ *   RIFF_CHAIR="Cali" node scripts/init.ts
  */
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { resolveConfig, scaffoldConfig, isInitialised, slugId, type HelmstedConfig } from '../src/core/config.ts';
+import { resolveConfig, scaffoldConfig, isInitialised, slugId, type RiffConfig } from '../src/core/config.ts';
 import { found } from '../src/company/genesis.ts';
 import { systemClock } from '../src/core/clock.ts';
 import { takeCompanyFlag } from '../src/core/cli.ts';
 
 takeCompanyFlag();
 
-let cfg: HelmstedConfig = resolveConfig();
+let cfg: RiffConfig = resolveConfig();
 
 if (isInitialised(cfg)) {
   console.log(`\n  ${cfg.company.name} already exists at ${cfg.home}.\n`);
@@ -22,7 +22,7 @@ if (isInitialised(cfg)) {
 }
 
 // Only ask when somebody is there to answer; scripted runs use the env vars.
-if (stdin.isTTY && !process.env['HELMSTED_COMPANY']) {
+if (stdin.isTTY && !process.env['RIFF_COMPANY']) {
   const rl = createInterface({ input: stdin, output: stdout });
   console.log(`\n  Founding a company at ${cfg.home}`);
   const name = (await rl.question(`  Company name? [${cfg.company.name}] `)).trim();

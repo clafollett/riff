@@ -1,4 +1,4 @@
-# Helmsted
+# Riff
 
 Agentic company runner. One installation holds many companies; each is a
 directory with its own world, ledger and scheduler.
@@ -50,7 +50,7 @@ After editing a `.vue` file, verify it renders — do not rely on the typechecke
 ## Data lives outside the repo
 
 ```
-~/.helmsted/                    the installation. NEVER in the working tree.
+~/.riff/                    the installation. NEVER in the working tree.
   .lock                         one writer; heartbeat, not pid
   companies/<slug>/
     config.json                 identity only — never its own paths
@@ -67,8 +67,8 @@ Any test that touches config, registry, transfer or the gateway **must** run
 against a throwaway root, or it reads and writes the operator's real companies:
 
 ```ts
-env: { ...process.env, HOME: tmp, HELMSTED_ROOT: join(tmp, '.helmsted'),
-       HELMSTED_COMPANY_ID: '' }
+env: { ...process.env, HOME: tmp, RIFF_ROOT: join(tmp, '.riff'),
+       RIFF_COMPANY_ID: '' }
 ```
 
 `HOME` alone is not enough. See `test/registry.test.ts` for the pattern.
@@ -87,7 +87,7 @@ if a control could be argued with in a prompt:
 ```
 
 Shell is decided by `shellIsContained()`, which requires both
-`HELMSTED_CONTAINED=1` and a container marker, and fails closed. Do not relax
+`RIFF_CONTAINED=1` and a container marker, and fails closed. Do not relax
 either signal.
 
 Never weaken these to make a test pass. Read `SECURITY.md` before touching
@@ -126,7 +126,7 @@ Use `docker/up.sh`, never raw `docker compose` — compose interpolates the toke
 variable on every subcommand, so plain `docker compose logs` fails before it
 prints a line.
 
-`docker/.env` holds `HELMSTED_TOKEN_CMD`, a command that prints the token. It
+`docker/.env` holds `RIFF_TOKEN_CMD`, a command that prints the token. It
 must never hold the token itself, and nothing may write the resolved value to
 disk or to a log.
 
@@ -134,4 +134,4 @@ disk or to a log.
 
 Staff agents never read it. Sessions are created with `settingSources: []`,
 which disables project and user `CLAUDE.md` loading, and their file access is
-confined to their own world. This file is for people working on Helmsted.
+confined to their own world. This file is for people working on Riff.

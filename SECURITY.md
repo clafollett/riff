@@ -1,15 +1,15 @@
 # Security
 
-Helmsted runs autonomous agents that write files, run shell commands, and spend
+Riff runs autonomous agents that write files, run shell commands, and spend
 money. That is the point of it, and it is also the whole security problem. This
 document says what is actually contained, what is not, and how to check both
 yourself rather than take our word for it.
 
 ## Reporting a vulnerability
 
-Open a [security advisory](https://github.com/clafollett/helmsted/security/advisories/new)
+Open a [security advisory](https://github.com/clafollett/riff/security/advisories/new)
 rather than a public issue. If you would rather not use GitHub, email
-`cali.lafollett@gmail.com` with `helmsted` in the subject.
+`cali.lafollett@gmail.com` with `riff` in the subject.
 
 There is no bounty. There is a fast answer and public credit unless you would
 rather not have it.
@@ -42,7 +42,7 @@ is in [`src/runtime/permissions.ts`](src/runtime/permissions.ts):
 
 ```ts
 export const shellIsContained = (env = process.env): boolean =>
-  env['HELMSTED_CONTAINED'] === '1'
+  env['RIFF_CONTAINED'] === '1'
   && (existsSync('/.dockerenv') || existsSync('/run/.containerenv'));
 ```
 
@@ -84,12 +84,12 @@ Verified against a live stack, and worth re-running if you change anything:
 
 ### Your data is outside the box
 
-`~/.helmsted` is a bind mount, so every company is ordinary files on your disk
+`~/.riff` is a bind mount, so every company is ordinary files on your disk
 whether the container is running or not. `docker/backup.sh` snapshots them to a
 destination that is deliberately **not** mounted into any container — a copy the
 agents can also reach is not a backup, it is a second thing to lose.
 
-`docker/entrypoint.sh` refuses to start if `HELMSTED_ROOT` escapes the mount,
+`docker/entrypoint.sh` refuses to start if `RIFF_ROOT` escapes the mount,
 which is the failure that once wrote a whole company to a layer that vanished on
 restart.
 
@@ -111,11 +111,11 @@ be read still cannot be sent anywhere.
 
 ### One writer per installation
 
-The host and the container mount the same `~/.helmsted` on purpose. Two servers
+The host and the container mount the same `~/.riff` on purpose. Two servers
 on it is not a conflicting file — it is two schedulers waking the same staff,
 doubling the spend, committing to one git repository from two sessions, and
 writing both their accounts into one ledger. The gateway takes a lock at
-`~/.helmsted/.lock` before anything opens a ledger, and refuses to start
+`~/.riff/.lock` before anything opens a ledger, and refuses to start
 against a live one.
 
 Liveness is a heartbeat rather than a pid, because a container's pid 7 says
@@ -129,7 +129,7 @@ same instant cannot both pass a cap that only one of them fits under.
 
 ### An imported company is data, not a promise
 
-`.helmsted.tar.gz` files arrive from other people. Before anything is unpacked,
+`.riff.tar.gz` files arrive from other people. Before anything is unpacked,
 every member path is checked — absolute paths, drive letters and any `..`
 component are refused, because `../../pwned` is a legal tar member and by the
 time you notice it in the output directory it has already been written somewhere
@@ -148,7 +148,7 @@ from someone you do not trust, that is the risk you are taking.
 
 The SDK loads `~/.claude` settings and `CLAUDE.md` by default, which would give
 every staff member the same borrowed personality and leak private operator
-instructions into every session. Helmsted passes `settingSources: []` and a
+instructions into every session. Riff passes `settingSources: []` and a
 plain-string system prompt, so a persona is its own.
 
 ## What is NOT contained
@@ -171,7 +171,7 @@ Say these out loud before you run it unattended.
 ## Checking it yourself
 
 ```bash
-npm test          # 119 unit tests, including the container env contract
+npm test          # 122 unit tests, including the container env contract
 npm run test:ui   # 35 browser tests against a throwaway installation
 ```
 

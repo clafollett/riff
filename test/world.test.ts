@@ -14,7 +14,7 @@ let world: World;
 const clock = fixedClock('2026-08-24T14:30:00.000Z');
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'helmsted-'));
+  dir = mkdtempSync(join(tmpdir(), 'riff-'));
   world = new World(join(dir, 'world'), clock);
   world.ensure();
 });
@@ -209,7 +209,7 @@ test('a new world ignores what the operating system drops in it', () => {
   // picks it up — so browsing the world in a file manager silently authors
   // commits in a staff member's name and inflates the artifact count they are
   // measured on.
-  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'helmsted-ignore-'));
+  const dir = mkdtempSync(join(realpathSync(tmpdir()), 'riff-ignore-'));
   try {
     const w = new World(join(dir, 'world'), fixedClock('2026-08-25T00:00:00.000Z'));
     w.ensure();

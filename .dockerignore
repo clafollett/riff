@@ -16,6 +16,6 @@ docker/.env
 
 # A developer's own company lives outside the repo, but never ship one if a
 # checkout happens to contain one.
-helmsted.config.json
+riff.config.json
 world
 ledger.db

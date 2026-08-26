@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for looking. Helmsted is small on purpose and the bar for adding to it
+Thanks for looking. Riff is small on purpose and the bar for adding to it
 is deliberately high, so this is mostly about what *not* to send.
 
 ## Before you write code

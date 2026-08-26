@@ -39,7 +39,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       # Builds the console, then drives it against a throwaway installation —
-      # HELMSTED_ROOT is set by the suite, so this never touches a real one.
+      # RIFF_ROOT is set by the suite, so this never touches a real one.
       - run: npm run test:ui
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -54,5 +54,5 @@ jobs:
       - uses: actions/checkout@v4
       # The image is where the staff get a shell, so a change that breaks the
       # build is a change that breaks the only place this is safe to run.
-      - run: docker build -f docker/Dockerfile -t helmsted:ci .
-      - run: docker build -f docker/Dockerfile --target dev -t helmsted:ci-dev .
+      - run: docker build -f docker/Dockerfile -t riff:ci .
+      - run: docker build -f docker/Dockerfile --target dev -t riff:ci-dev .

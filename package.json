@@ -1,5 +1,5 @@
 {
-  "name": "helmsted",
+  "name": "riff",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/clafollett/helmsted.git"
+    "url": "git+https://github.com/clafollett/riff.git"
   },
   "engines": {
     "node": ">=26"

@@ -6,7 +6,7 @@ import {
 } from 'node:fs';
 import { basename, join } from 'node:path';
 import { companiesDir, companyHome, installRoot, operatorError, persisted, slugId,
-  type HelmstedConfig } from '../core/config.ts';
+  type RiffConfig } from '../core/config.ts';
 
 /**
  * Moving a company between machines.
@@ -23,9 +23,15 @@ import { companiesDir, companyHome, installRoot, operatorError, persisted, slugI
  * sake of a file extension.
  */
 
-/** Bumped only when an older Helmsted could not read what a newer one writes. */
+/** Bumped only when an older Riff could not read what a newer one writes. */
 const FORMAT = 1;
-const MANIFEST = 'helmsted.json';
+const MANIFEST = 'riff.json';
+/**
+ * Manifests written under an older name. Exports already in someone's
+ * Downloads folder do not rename themselves, and refusing to read one because
+ * the project changed its name would be a self-inflicted wound.
+ */
+const LEGACY_MANIFESTS = ['helmsted.json'];
 
 /**
  * A tarball entry count no honest company reaches. The archive arrived from
@@ -57,8 +63,8 @@ const staging = (what: string): string => {
   return mkdtempSync(join(dir, what + '-'));
 };
 
-const readConfig = (home: string): HelmstedConfig =>
-  JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')) as HelmstedConfig;
+const readConfig = (home: string): RiffConfig =>
+  JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')) as RiffConfig;
 
 // --------------------------------------------------------------------- out
 
@@ -128,7 +134,7 @@ export const exportCompany = (slug: string, outPath: string): Manifest => {
 
 /** What an exported file should be called. Safe as a filename on every OS. */
 export const exportName = (slug: string, at = new Date()): string =>
-  `${slug}-${at.toISOString().slice(0, 19).replace(/[:T]/g, '-')}.helmsted.tar.gz`;
+  `${slug}-${at.toISOString().slice(0, 19).replace(/[:T]/g, '-')}.riff.tar.gz`;
 
 // ---------------------------------------------------------------------- in
 
@@ -143,7 +149,7 @@ export const exportName = (slug: string, at = new Date()): string =>
 const checkedEntries = (archive: string): string[] => {
   let listing: string;
   try { listing = tar(['-tzf', archive]); }
-  catch { throw operatorError('That file is not a Helmsted export (it is not a readable .tar.gz).'); }
+  catch { throw operatorError('That file is not a Riff export (it is not a readable .tar.gz).'); }
 
   const entries = listing.split('\n').map((l) => l.trim()).filter(Boolean);
   if (!entries.length) throw operatorError('That archive is empty.');
@@ -195,14 +201,17 @@ export const importCompany = (
     tar(['-xzf', archive, '-C', work, '--no-same-owner']);
     refuseLinks(work);
 
-    const manifestPath = join(work, MANIFEST);
+    let manifestPath = join(work, MANIFEST);
     if (!existsSync(manifestPath)) {
-      throw operatorError('That archive is not a Helmsted export — it has no helmsted.json.');
+      manifestPath = LEGACY_MANIFESTS.map((n) => join(work, n)).find(existsSync) ?? manifestPath;
+    }
+    if (!existsSync(manifestPath)) {
+      throw operatorError('That archive is not a Riff export — it has no riff.json.');
     }
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Manifest;
     if (!Number.isFinite(manifest.format) || manifest.format > FORMAT) {
       throw operatorError(
-        `That export was written by a newer Helmsted (format ${manifest.format}; this one reads ${FORMAT}).`,
+        `That export was written by a newer Riff (format ${manifest.format}; this one reads ${FORMAT}).`,
       );
     }
     if (!existsSync(join(work, 'config.json')) || !existsSync(join(work, 'ledger.db'))) {
@@ -217,12 +226,12 @@ export const importCompany = (
     for (let n = 2; existsSync(companyHome(slug)); n++) slug = `${wanted}-${n}`;
     const renamed = slug !== manifest.slug;
 
-    // A config written by an older Helmsted states where it used to live. Those
+    // A config written by an older Riff states where it used to live. Those
     // paths describe someone else's disk, so they are dropped rather than
     // rewritten — a company is located by the directory it is in.
     const home = companyHome(slug);
-    const cfg = JSON.parse(readFileSync(join(work, 'config.json'), 'utf8')) as HelmstedConfig;
-    const next: HelmstedConfig = {
+    const cfg = JSON.parse(readFileSync(join(work, 'config.json'), 'utf8')) as RiffConfig;
+    const next: RiffConfig = {
       ...cfg,
       home,
       worldDir: join(home, 'world'),
@@ -249,8 +258,11 @@ export const importCompany = (
 export const peek = (archive: string): Manifest | null => {
   try {
     checkedEntries(archive);
-    const out = tar(['-xzOf', archive, `./${MANIFEST}`]);
-    return JSON.parse(out) as Manifest;
+    for (const name of [MANIFEST, ...LEGACY_MANIFESTS]) {
+      try { return JSON.parse(tar(['-xzOf', archive, `./${name}`])) as Manifest; }
+      catch { /* try the next name */ }
+    }
+    return null;
   } catch { return null; }
 };
 

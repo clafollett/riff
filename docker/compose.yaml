@@ -10,7 +10,7 @@
 #   cp .env.example .env        # then put your token in it
 #   docker compose up --build
 #
-name: helmsted
+name: riff
 
 services:
   factory:
@@ -29,12 +29,12 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:?run "claude setup-token" and put it in docker/.env}
       # The installation root. Must stay under the mount, or companies are
       # written to the container's own filesystem and lost on restart.
-      HELMSTED_ROOT: /data
+      RIFF_ROOT: /data
       # Only used when the installation is empty, to name the first company.
-      HELMSTED_COMPANY: ${HELMSTED_COMPANY:-Untitled Company}
-      HELMSTED_BUSINESS: ${HELMSTED_BUSINESS:-}
-      HELMSTED_CHAIR: ${HELMSTED_CHAIR:-Chair}
-      HELMSTED_CEO: ${HELMSTED_CEO:-CEO}
+      RIFF_COMPANY: ${RIFF_COMPANY:-Untitled Company}
+      RIFF_BUSINESS: ${RIFF_BUSINESS:-}
+      RIFF_CHAIR: ${RIFF_CHAIR:-Chair}
+      RIFF_CEO: ${RIFF_CEO:-CEO}
       # Everything that speaks HTTP reads these. Anything that ignores them
       # still has no route — the network is internal.
       HTTP_PROXY: http://egress:8888
@@ -48,7 +48,7 @@ services:
     # docker/.env to run as yourself. The entrypoint says so if it matters.
     # user: "${UID:-10001}:${GID:-10001}"
     volumes:
-      # THE SAME ~/.helmsted the host uses. One installation, not two — the
+      # THE SAME ~/.riff the host uses. One installation, not two — the
       # layout is identical either way, so a company founded on the host is
       # simply there when you start the container, and the other way round.
       #
@@ -56,7 +56,7 @@ services:
       # ordinary directory on your disk: readable without Docker, backed up by
       # whatever already backs up your home folder, and still there when the
       # container is thrown away.
-      - ${HELMSTED_DATA:-${HOME}/.helmsted}:/data
+      - ${RIFF_DATA:-${HOME}/.riff}:/data
     restart: unless-stopped
     # An agent shell should not be able to fork-bomb the host or read the
     # kernel keyring on the way to a privilege escalation.

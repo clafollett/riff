@@ -9,23 +9,23 @@ import { execFileSync } from 'node:child_process';
  * One installation, many companies.
  *
  * Every test here runs against a throwaway HOME, because the module reads
- * ~/.helmsted at import time and a test that can archive the operator's real
+ * ~/.riff at import time and a test that can archive the operator's real
  * company is not a test.
  */
 const run = (script: string): string => {
   const home = process.env['TEST_HOME']!;
   return execFileSync(process.execPath, ['--input-type=module', '-e', script], {
     encoding: 'utf8',
-    // HELMSTED_ROOT is the containment boundary; HOME alone is not, because
+    // RIFF_ROOT is the containment boundary; HOME alone is not, because
     // a module that snapshots homedir() at import escapes it.
-    env: { ...process.env, HOME: home, HELMSTED_ROOT: join(home, '.helmsted'), HELMSTED_COMPANY_ID: '' },
+    env: { ...process.env, HOME: home, RIFF_ROOT: join(home, '.riff'), RIFF_COMPANY_ID: '' },
     cwd: process.cwd(),
   });
 };
 
 let home: string;
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), 'helmsted-registry-'));
+  home = mkdtempSync(join(tmpdir(), 'riff-registry-'));
   process.env['TEST_HOME'] = home;
 });
 afterEach(() => {
@@ -198,9 +198,9 @@ describe('working, and staying that way', () => {
 
 describe('the legacy layout', () => {
   test('a company stored flat is moved into companies/, git and all', () => {
-    // The first version put one company directly in ~/.helmsted. Anyone who
-    // ran Helmsted before this existed has a live world there.
-    const root = join(home, '.helmsted');
+    // The first version put one company directly in ~/.riff. Anyone who
+    // ran Riff before this existed has a live world there.
+    const root = join(home, '.riff');
     mkdirSync(join(root, 'world', 'commons'), { recursive: true });
     writeFileSync(join(root, 'config.json'), JSON.stringify({
       version: 1, home: root, worldDir: join(root, 'world'), ledgerPath: join(root, 'ledger.db'),
@@ -232,7 +232,7 @@ describe('the legacy layout', () => {
   });
 
   test('a fresh install has no legacy layout to move', () => {
-    mkdirSync(join(home, '.helmsted'), { recursive: true });
+    mkdirSync(join(home, '.riff'), { recursive: true });
     const out = run(`
       const { migrateLegacyLayout } = await import('${process.cwd()}/src/core/config.ts');
       console.log(JSON.stringify(migrateLegacyLayout()));
@@ -298,3 +298,51 @@ describe('opening a company is not something that happened to it', () => {
     assert.ok(r.real.includes('work.paused'), 'pausing something that was running is still recorded');
   });
 });
+
+describe('the product was renamed; the installations were not', () => {
+  // Riff was Helmsted, and Helmsted was something else again. An installation
+  // is a directory of live git repositories and SQLite ledgers — renaming the
+  // product must not strand one, and must not ask anyone to move it by hand.
+  const migrate = (setup: string) => JSON.parse(run(`
+    const { migrateInstallRoot, listCompanies } = await import('${process.cwd()}/src/core/config.ts');
+    const { mkdirSync, writeFileSync, existsSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const home = '${process.env['TEST_HOME'] ?? ''}' || process.env.HOME;
+    ${setup}
+    const moved = migrateInstallRoot({});
+    console.log(JSON.stringify({
+      moved: moved ? true : false,
+      companies: listCompanies().map((c) => c.slug),
+      oldGone: !existsSync(join(home, '.helmsted')),
+      newThere: existsSync(join(home, '.riff')),
+    }));
+  `)) as Record<string, unknown>;
+
+  const seed = (dir: string, slug: string) => `
+    mkdirSync(join(home, '${dir}', 'companies', '${slug}'), { recursive: true });
+    writeFileSync(join(home, '${dir}', 'companies', '${slug}', 'config.json'), JSON.stringify({
+      version: 1, company: { name: '${slug}', business: '' }, board: [], ceo: { id: 'c', name: 'C' },
+    }));`;
+
+  test('an installation under the old name is carried over, companies and all', () => {
+    const r = migrate(seed('.helmsted', 'carried'));
+    assert.equal(r['moved'], true);
+    assert.deepEqual(r['companies'], ['carried']);
+    assert.equal(r['oldGone'], true);
+    assert.equal(r['newThere'], true);
+  });
+
+  test('it does not run twice, and does not run when there is nothing to move', () => {
+    const r = migrate(seed('.riff', 'already-here'));
+    assert.equal(r['moved'], false, 'nothing to migrate when only the new name exists');
+    assert.deepEqual(r['companies'], ['already-here']);
+  });
+
+  test('with both present it refuses, because somebody already decided', () => {
+    // Moving here would clobber a real installation with an older one.
+    const r = migrate(seed('.riff', 'live') + seed('.helmsted', 'stale'));
+    assert.equal(r['moved'], false);
+    assert.deepEqual(r['companies'], ['live'], 'the live installation must be untouched');
+  });
+});
+

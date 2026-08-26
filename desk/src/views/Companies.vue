@@ -207,7 +207,7 @@ const receive = async (e: Event) => {
           <h2>Archive {{ mode.c.name }}</h2>
           <p class="muted note">
             This does not delete anything. The whole directory moves to
-            <code>~/.helmsted/archive/</code>, git history and all, and you can
+            <code>~/.riff/archive/</code>, git history and all, and you can
             move it back or throw it away yourself once you are sure.
           </p>
           <label>Type <b>{{ mode.c.name }}</b> to confirm<input v-model="confirmName" /></label>

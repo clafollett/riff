@@ -8,9 +8,9 @@
 set -eu
 
 # Fail loudly rather than writing a whole company somewhere it will not survive.
-case "${HELMSTED_ROOT:-}" in
+case "${RIFF_ROOT:-}" in
   /data*) ;;
-  *) echo "HELMSTED_ROOT must live under the mounted volume; got '${HELMSTED_ROOT:-unset}'" >&2
+  *) echo "RIFF_ROOT must live under the mounted volume; got '${RIFF_ROOT:-unset}'" >&2
      exit 1 ;;
 esac
 
@@ -29,7 +29,7 @@ if ! touch /data/.write-test 2>/dev/null; then
   The host directory behind the mount is owned by someone else. On Linux,
   either give it to this user:
 
-      sudo chown -R $(id -u):$(id -g) "\${HELMSTED_DATA:-\$HOME/.helmsted}"
+      sudo chown -R $(id -u):$(id -g) "\${RIFF_DATA:-\$HOME/.riff}"
 
   or run the container as yourself, by adding to docker/.env:
 

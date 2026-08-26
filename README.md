@@ -1,4 +1,4 @@
-# Helmsted
+# Riff
 
 Give it a company name, a line of business, and two names — yours and your
 CEO's. It founds the company, and the CEO hires the rest.
@@ -69,7 +69,7 @@ silent.
 ## Two kinds of storage, one rule
 
 ```
-~/.helmsted/                     outside this repo — it is data, not source
+~/.riff/                     outside this repo — it is data, not source
   companies/<slug>/              one company, entirely self-contained
     world/                       a git repo of its own
       staff/<id>/                persona · memory · journal · notes · drafts
@@ -106,7 +106,7 @@ an attributed append-only log, a diff engine, and free time travel. Every
 commit is authored **as the agent who made the change**, so
 
 ```bash
-git -C ~/.helmsted/companies/<slug>/world log --since=3.days
+git -C ~/.riff/companies/<slug>/world log --since=3.days
 ```
 
 answers *"what did they do while I was gone?"* — with diffs. The Desk's Record
@@ -151,16 +151,16 @@ notice.
 Location resolves, never hardcoded:
 
 ```
-HELMSTED_WORLD / HELMSTED_LEDGER  →  HELMSTED_HOME  →  HELMSTED_COMPANY_ID
-                                  →  ./helmsted.config.json  →  the only company
+RIFF_WORLD / RIFF_LEDGER  →  RIFF_HOME  →  RIFF_COMPANY_ID
+                                  →  ./riff.config.json  →  the only company
                                   →  built-in defaults
 ```
 
-`HELMSTED_ROOT` moves the whole installation, which is how the test suite keeps
+`RIFF_ROOT` moves the whole installation, which is how the test suite keeps
 its hands off yours.
 
-Identity — `HELMSTED_COMPANY`, `HELMSTED_BUSINESS`, `HELMSTED_CHAIR`,
-`HELMSTED_CEO` — overrides the stored config on every read, which is what makes
+Identity — `RIFF_COMPANY`, `RIFF_BUSINESS`, `RIFF_CHAIR`,
+`RIFF_CEO` — overrides the stored config on every read, which is what makes
 a container run reproducible from environment alone.
 
 ---
@@ -181,7 +181,7 @@ docker/up.sh up --build
 `docker/.env` holds a **command that prints the token**, not the token:
 
 ```
-HELMSTED_TOKEN_CMD="security find-generic-password -s helmsted -a claude -w"
+RIFF_TOKEN_CMD="security find-generic-password -s riff -a claude -w"
 ```
 
 `up.sh` runs it at launch and hands the result to compose through the
@@ -193,7 +193,7 @@ example file. A literal token in `docker/.env` still works.
 Only the subcommands that start something ask for it, so `up.sh logs`, `ps`,
 `down` and `config` never make your password manager prompt. To keep this
 checkout free of your configuration entirely, put the file anywhere and set
-`HELMSTED_ENV` to its path.
+`RIFF_ENV` to its path.
 
 Use `docker/up.sh` rather than raw `docker compose` for everything: compose
 interpolates the token variable on every subcommand, so plain
@@ -222,16 +222,16 @@ Companies live in a **bind mount**, not a named volume, so every one of them is
 an ordinary directory on your disk:
 
 ```
-~/.helmsted/companies/<slug>/world/    a git repo you can read without Docker
+~/.riff/companies/<slug>/world/    a git repo you can read without Docker
 ```
 
 Readable, greppable, and covered by whatever already backs up your home folder.
 Throw the container away and nothing is lost.
 
-It is the **same `~/.helmsted` the host uses** — one installation, not two, so
+It is the **same `~/.riff` the host uses** — one installation, not two, so
 a company founded on the host is simply there when you start the container.
 
-Only one of them may run it at a time. A lock at `~/.helmsted/.lock` is taken
+Only one of them may run it at a time. A lock at `~/.riff/.lock` is taken
 before anything opens a ledger, and whichever starts second refuses and names
 the first rather than scheduling every agent twice. Liveness is a heartbeat
 rather than a pid, because a container's pid 7 says nothing about the host, so
@@ -249,15 +249,15 @@ For a snapshot the agents cannot reach — they have a shell and write access to
 their own data, so a copy they can also touch is not a backup:
 
 ```bash
-docker/backup.sh              # → ~/helmsted-backups/helmsted-<stamp>.tar.gz
+docker/backup.sh              # → ~/riff-backups/riff-<stamp>.tar.gz
 ```
 
 Run it from the host, on a schedule if you like. It keeps the last 30, and
 because each world is a git repository the history is inside the tarball too.
 
-### Working on Helmsted itself
+### Working on Riff itself
 
-Editing Helmsted is faster on the host — tsgo, `node --test` and Playwright all
+Editing Riff is faster on the host — tsgo, `node --test` and Playwright all
 run natively and none of them need a container. Reach for the box when you want
 agents to have a real shell while you work:
 
@@ -275,7 +275,7 @@ The token is yours to generate and yours alone to see:
 claude setup-token
 ```
 
-Store it in your password manager and point `HELMSTED_TOKEN_CMD` at it. Nothing
+Store it in your password manager and point `RIFF_TOKEN_CMD` at it. Nothing
 in this project ever needs the value written down.
 
 ---
@@ -286,7 +286,7 @@ in this project ever needs the value written down.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 119 unit tests |
+| `npm test` | 122 unit tests |
 | `npm run test:ui` | 35 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |
@@ -315,7 +315,7 @@ every tool call and every gate decision.
 }
 ```
 
-Helmsted knows nothing about any provider. Anything a connector reaches still
+Riff knows nothing about any provider. Anything a connector reaches still
 crosses the gate: touching the outside world is `external.write`, which always
 lands as a draft. Credentials go in that file, which is gitignored.
 
@@ -351,7 +351,7 @@ its git history intact. An export you cannot `git log` is a screenshot, not a
 company.
 
 ```
-Companies → Export        writes <slug>-<stamp>.helmsted.tar.gz
+Companies → Export        writes <slug>-<stamp>.riff.tar.gz
 Companies → Import        reads one back
 ```
 

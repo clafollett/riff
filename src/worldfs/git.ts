@@ -43,8 +43,8 @@ export class WorldGit {
       // Not inside any repo. Fall through and initialise.
     }
     this.#git(['init', '-q', '-b', 'main']);
-    this.#git(['config', 'user.name', 'Helmsted']);
-    this.#git(['config', 'user.email', 'helmsted@localhost']);
+    this.#git(['config', 'user.name', 'Riff']);
+    this.#git(['config', 'user.email', 'riff@localhost']);
     this.#ignoreDroppings();
   }
 
@@ -64,7 +64,7 @@ export class WorldGit {
     // staff member's name or count toward what they made.
     this.#git(['add', '.gitignore']);
     this.#git([
-      '-c', 'user.name=Helmsted', '-c', 'user.email=helmsted@localhost',
+      '-c', 'user.name=Riff', '-c', 'user.email=riff@localhost',
       'commit', '-q', '-m', 'Ignore what the operating system drops here',
     ]);
   }
@@ -84,7 +84,7 @@ export class WorldGit {
 
     this.#git([
       '-c', `user.name=${actor.name}`,
-      '-c', `user.email=${actor.id}@helmsted.local`,
+      '-c', `user.email=${actor.id}@riff.local`,
       'commit', '-q', '-m', message,
     ]);
     return this.#git(['rev-parse', 'HEAD']);

@@ -569,7 +569,7 @@ test.describe('many companies, one console', () => {
       page.waitForEvent('download'),
       card.getByRole('button', { name: 'Export' }).click(),
     ]).then(([d]) => d);
-    expect(download.suggestedFilename()).toMatch(/\.helmsted\.tar\.gz$/);
+    expect(download.suggestedFilename()).toMatch(/\.riff\.tar\.gz$/);
     const file = await download.path();
 
     const before = await page.locator('.card').count();
@@ -591,7 +591,7 @@ test.describe('many companies, one console', () => {
     await page.getByLabel('Company export file').setInputFiles({
       name: 'holiday.tar.gz', mimeType: 'application/gzip', buffer: Buffer.from('not a company at all'),
     });
-    await expect(page.locator('.oops')).toContainText('not a Helmsted export');
+    await expect(page.locator('.oops')).toContainText('not a Riff export');
     await expect(page.locator('.landed')).toHaveCount(0);
   });
 

@@ -3,15 +3,15 @@
 #   docker compose -f docker/compose.yaml -f docker/compose.dev.yaml up
 #
 # Everything from compose.yaml still applies — the walled network, the egress
-# allowlist, the shared ~/.helmsted. This only changes how the code gets in and
+# allowlist, the shared ~/.riff. This only changes how the code gets in and
 # how fast it comes back:
 #
 #   the working tree is MOUNTED, not copied, so edits land immediately
 #   the server runs under `node --watch` and restarts itself on save
 #   the Desk runs under Vite, so the console hot-reloads without a refresh
 #
-# Use it when you want to work on Helmsted while agents have a real shell.
-# Editing Helmsted on its own is faster on the host — tsgo, node --test and
+# Use it when you want to work on Riff while agents have a real shell.
+# Editing Riff on its own is faster on the host — tsgo, node --test and
 # Playwright all run natively there, and none of them need a container.
 services:
   factory:
@@ -24,7 +24,7 @@ services:
     environment:
       NODE_ENV: development
     volumes:
-      - ${HELMSTED_DATA:-${HOME}/.helmsted}:/data
+      - ${RIFF_DATA:-${HOME}/.riff}:/data
       # The working tree, live. node_modules stays the container's own — the
       # host's may hold binaries built for a different platform.
       - ..:/app
@@ -45,7 +45,7 @@ services:
     environment:
       NODE_ENV: development
       # Where the gateway is, now that it is a different container.
-      HELMSTED_API: http://factory:4173
+      RIFF_API: http://factory:4173
     volumes:
       - ..:/app
       - /app/node_modules

@@ -22,6 +22,6 @@ export const takeCompanyFlag = (argv = process.argv): void => {
     const all = listCompanies().map((c) => c.slug).sort().join(', ');
     throw operatorError(`--company needs a slug. Known: ${all || '(none)'}`);
   }
-  process.env['HELMSTED_COMPANY_ID'] = slugId(value);
+  process.env['RIFF_COMPANY_ID'] = slugId(value);
   argv.splice(i, 2);
 };

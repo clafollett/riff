@@ -6,7 +6,7 @@ import { installRoot, operatorError } from './config.ts';
 /**
  * One writer per installation.
  *
- * The host and the container mount the same ~/.helmsted, which is the point —
+ * The host and the container mount the same ~/.riff, which is the point —
  * a company founded one way is there the other way. But two servers on it
  * means two schedulers waking the same agents: doubled token spend, two
  * sessions writing one git repository, and a ledger taking both their words
@@ -42,7 +42,7 @@ export const takeInstallationLock = (): Lock => {
   const age = held ? Date.now() - held.beat : Infinity;
   if (held && age < STALE_MS) {
     throw operatorError(
-      `Another Helmsted is already running against ${installRoot()}.\n` +
+      `Another Riff is already running against ${installRoot()}.\n` +
       `  Started ${held.startedAt} on ${held.host}, in ${held.where}.\n` +
       `  Two servers here would wake every agent twice — stop that one first.`,
     );

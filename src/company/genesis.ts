@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { Ledger } from '../ledger/ledger.ts';
 import { World } from '../worldfs/world.ts';
 import { constitutionFor, RULES_TEXT } from '../policy/rules.ts';
-import { scaffoldConfig, type HelmstedConfig } from '../core/config.ts';
+import { scaffoldConfig, type RiffConfig } from '../core/config.ts';
 import type { Clock } from '../core/clock.ts';
 
 /**
@@ -15,7 +15,7 @@ import type { Clock } from '../core/clock.ts';
  * That is the whole bet. A cast written by me is a simulation of a company; a
  * cast the CEO argues for is the beginning of one.
  */
-export const found = (cfg: HelmstedConfig, clock: Clock): {
+export const found = (cfg: RiffConfig, clock: Clock): {
   ledger: Ledger; world: World; firstRun: boolean;
 } => {
   const firstRun = !existsSync(cfg.ledgerPath);

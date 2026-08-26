@@ -8,7 +8,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 /**
  * One writer per installation.
  *
- * The host and the container mount the same ~/.helmsted on purpose. Two
+ * The host and the container mount the same ~/.riff on purpose. Two
  * servers on it is not a conflicting file — it is two schedulers waking the
  * same staff, doubling the spend, committing to one git repository from two
  * sessions, and writing both their accounts into one ledger.
@@ -22,13 +22,13 @@ const cwd = process.cwd();
 let home: string;
 let root: string;
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), 'helmsted-lock-'));
-  root = join(home, '.helmsted');
+  home = mkdtempSync(join(tmpdir(), 'riff-lock-'));
+  root = join(home, '.riff');
   mkdirSync(root, { recursive: true });
 });
 afterEach(() => rmSync(home, { recursive: true, force: true }));
 
-const env = () => ({ ...process.env, HOME: home, HELMSTED_ROOT: root, HELMSTED_COMPANY_ID: '' });
+const env = () => ({ ...process.env, HOME: home, RIFF_ROOT: root, RIFF_COMPANY_ID: '' });
 
 /** Take the lock in a child, report what happened, and let go. */
 const attempt = (): { ok: boolean; message: string } => {
@@ -73,7 +73,7 @@ describe('one writer per installation', () => {
     writeLock(0);
     const { ok, message } = attempt();
     assert.equal(ok, false);
-    assert.match(message, /Another Helmsted is already running/);
+    assert.match(message, /Another Riff is already running/);
     assert.match(message, /another-machine/, 'say which machine');
     assert.match(message, /a container/, 'and where, since that is what you act on');
   });
