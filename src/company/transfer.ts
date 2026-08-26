@@ -26,12 +26,6 @@ import { companiesDir, companyHome, installRoot, operatorError, persisted, slugI
 /** Bumped only when an older Riff could not read what a newer one writes. */
 const FORMAT = 1;
 const MANIFEST = 'riff.json';
-/**
- * Manifests written under an older name. Exports already in someone's
- * Downloads folder do not rename themselves, and refusing to read one because
- * the project changed its name would be a self-inflicted wound.
- */
-const LEGACY_MANIFESTS = ['helmsted.json'];
 
 /**
  * A tarball entry count no honest company reaches. The archive arrived from
@@ -201,10 +195,7 @@ export const importCompany = (
     tar(['-xzf', archive, '-C', work, '--no-same-owner']);
     refuseLinks(work);
 
-    let manifestPath = join(work, MANIFEST);
-    if (!existsSync(manifestPath)) {
-      manifestPath = LEGACY_MANIFESTS.map((n) => join(work, n)).find(existsSync) ?? manifestPath;
-    }
+    const manifestPath = join(work, MANIFEST);
     if (!existsSync(manifestPath)) {
       throw operatorError('That archive is not a Riff export — it has no riff.json.');
     }
@@ -258,11 +249,7 @@ export const importCompany = (
 export const peek = (archive: string): Manifest | null => {
   try {
     checkedEntries(archive);
-    for (const name of [MANIFEST, ...LEGACY_MANIFESTS]) {
-      try { return JSON.parse(tar(['-xzOf', archive, `./${name}`])) as Manifest; }
-      catch { /* try the next name */ }
-    }
-    return null;
+    return JSON.parse(tar(['-xzOf', archive, `./${MANIFEST}`])) as Manifest;
   } catch { return null; }
 };
 

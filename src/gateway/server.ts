@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { systemClock } from '../core/clock.ts';
 import {
-  guessKeeperName, listCompanies, migrateInstallRoot, migrateLegacyLayout, resolveSlug,
+  guessKeeperName, listCompanies, migrateLegacyLayout, resolveSlug,
 } from '../core/config.ts';
 import { Registry, type Company } from '../company/registry.ts';
 import { exportCompany, exportName, importCompany } from '../company/transfer.ts';
@@ -17,11 +17,6 @@ const clock = systemClock;
 
 // The first layout put one company flat in ~/.riff. Move it before
 // anything opens it, so an existing world is never stranded by an upgrade.
-// Before anything reads a path: the installation may still be under the name
-// this project used to have.
-const moved = migrateInstallRoot();
-if (moved) console.log(`\n  Moved ${moved.from} → ${moved.to}`);
-
 const migrated = migrateLegacyLayout();
 
 /**

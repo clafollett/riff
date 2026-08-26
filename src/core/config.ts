@@ -120,31 +120,6 @@ const readConfigFile = (path: string): Partial<RiffConfig> | null => {
 export const installRoot = (env = process.env): string =>
   env['RIFF_ROOT']?.trim() || join(homedir(), '.riff');
 
-/**
- * The name changed; the companies did not.
- *
- * This project was called Helmsted, and before that something else again. An
- * installation is a directory of live git repositories and SQLite ledgers —
- * renaming the product must not strand it, and must not ask anyone to move it
- * by hand. One rename, once, and only when the new location does not exist:
- * if both are there, somebody has already made a decision and this must not
- * second-guess it.
- *
- * Returns what it moved, so a caller can say so rather than silently
- * relocating someone's work.
- */
-export const migrateInstallRoot = (env = process.env): { from: string; to: string } | null => {
-  if (env['RIFF_ROOT']?.trim()) return null;        // explicitly placed; not ours to move
-  const to = join(homedir(), '.riff');
-  if (existsSync(to)) return null;
-  for (const legacy of ['.helmsted']) {
-    const from = join(homedir(), legacy);
-    if (!existsSync(from)) continue;
-    renameSync(from, to);
-    return { from, to };
-  }
-  return null;
-};
 
 export const companiesDir = (env = process.env): string => join(installRoot(env), 'companies');
 
