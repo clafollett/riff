@@ -304,6 +304,59 @@ test('mail addressed to the board is readable, and says so before you look', asy
   await expect(page.locator('.msg.open .body h2').first()).toHaveText('The noise floor is real');
 });
 
+test('every paged list sorts, and sorting sends you back to page one', async ({ page }) => {
+  // Three lists had grown three different idioms, and only the commons could
+  // be sorted at all. Staying on page three of a list that has just been
+  // re-ordered shows you items you were never looking at.
+  for (const view of ['Inbox', 'Feed']) {
+    await go(page, view);
+    await expect(page.locator('.bar .chip').first()).toBeVisible();
+
+    // Order is a real control, not decoration.
+    const chips = await page.locator('.bar .chip').allInnerTexts();
+    expect(chips.length).toBeGreaterThan(1);
+    await expect(page.locator('.bar .chip[aria-pressed="true"]')).toHaveCount(1);
+
+    // Only the inbox has enough in the fixture to need a second page; the
+    // feed's paging is the same component and is covered by its own test.
+    if (await page.locator('.pager').count()) {
+      await expect(page.locator('.pager')).toContainText('page 1 of');
+      await page.getByRole('button', { name: 'Older' }).click();
+      await expect(page.locator('.pager')).toContainText('page 2 of');
+
+      // Re-order from page two: it must land back on page one.
+      await page.locator('.bar .chip', { hasText: 'Oldest' }).click();
+      await expect(page.locator('.pager')).toContainText('page 1 of');
+    } else {
+      await page.locator('.bar .chip', { hasText: 'Oldest' }).click();
+    }
+    await expect(page.locator('.bar .chip[aria-pressed="true"]')).toHaveText('Oldest');
+  }
+});
+
+test('the inbox can put what needs you at the top', async ({ page }) => {
+  await go(page, 'Inbox');
+  await page.locator('.msg').first().locator('.row').click();
+  await page.locator('.msg').first().getByRole('button', { name: 'Mark read' }).click();
+  await expect(page.locator('.msg.unread')).not.toHaveCount(await page.locator('.msg').count());
+
+  await page.locator('.bar .chip', { hasText: 'Unread first' }).click();
+  // Everything read must sink below everything unread.
+  const flags = await page.locator('.msg').evaluateAll(
+    (els) => els.map((e) => e.classList.contains('unread')));
+  const firstRead = flags.indexOf(false);
+  if (firstRead !== -1) {
+    expect(flags.slice(firstRead).every((u) => !u)).toBe(true);
+  }
+
+  // Put it back: the tests after this one expect the fixture's read state.
+  await page.locator('.bar .chip', { hasText: 'Newest' }).click();
+  const read = page.locator('.msg:not(.unread)').first();
+  await read.locator('.row').click();
+  await read.getByRole('button', { name: 'Mark unread' }).click();
+  await expect(page.locator('.msg:not(.unread)')).toHaveCount(0);
+});
+
 test('every message says who it was written to', async ({ page }) => {
   // The inbox showed the sender and nothing else, so a note written to you and
   // a note copied to the whole company looked identical.

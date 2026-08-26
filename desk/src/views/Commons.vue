@@ -5,6 +5,7 @@ import { render } from '../markdown';
 import { onEvents } from '../live';
 import { namer } from '../names';
 import Splitter, { rememberedWidth } from '../Splitter.vue';
+import Toolbar, { type SortOption } from '../Toolbar.vue';
 
 const props = defineProps<{ state: State; events: Event[] }>();
 const who = computed(() => namer(props.state));
@@ -23,7 +24,7 @@ const load = async () => { docs.value = (await api.commons()).documents; };
  * title wants neither.
  */
 type Order = 'written' | 'recent' | 'title';
-const ORDERS: Array<{ key: Order; label: string }> = [
+const ORDERS: SortOption[] = [
   { key: 'written', label: 'Order written' },
   { key: 'recent', label: 'Recently changed' },
   { key: 'title', label: 'A–Z' },
@@ -102,11 +103,9 @@ const listed = computed(() => {
           A ceiling, not a quota. At the top, adding means removing something that stopped being true.
         </p>
       </header>
-      <input v-model="find" class="find" placeholder="filter…" aria-label="Filter documents" />
-      <div class="sorts">
-        <button v-for="o in ORDERS" :key="o.key" class="sort" :class="{ on: order === o.key }"
-                @click="order = o.key">{{ o.label }}</button>
-      </div>
+      <Toolbar v-model:filter="find" :sort="order" :sorts="ORDERS"
+               label="Filter documents"
+               @update:sort="order = $event as Order" />
       <button v-for="d in listed" :key="d.path" class="doc" :class="{ on: open?.path === d.path }" @click="read(d)">
         <span class="n faint mono">{{ seq.get(d.path) }}</span>
         <span class="lines">

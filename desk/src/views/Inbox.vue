@@ -5,6 +5,7 @@ import { render } from '../markdown';
 import { onEvents } from '../live';
 import { namer } from '../names';
 import Pager from '../Pager.vue';
+import Toolbar, { type SortOption } from '../Toolbar.vue';
 
 const props = defineProps<{ state: State; events: Event[] }>();
 const emit = defineEmits<{ changed: [] }>();
@@ -36,14 +37,42 @@ const matching = computed(() => {
     (nameOf.value(m.from) + ' ' + m.body).toLowerCase().includes(q));
 });
 
-const pages = computed(() => Math.max(1, Math.ceil(matching.value.length / PER_PAGE)));
+/**
+ * Orderings worth having on mail. "Unread first" is the one that earns its
+ * place: a fortnight away leaves the things that need you buried under the
+ * things that do not.
+ */
+const SORTS: SortOption[] = [
+  { key: 'newest', label: 'Newest' },
+  { key: 'oldest', label: 'Oldest' },
+  { key: 'unread', label: 'Unread first' },
+  { key: 'sender', label: 'Sender' },
+];
+const sort = ref<string>(localStorage.getItem('riff.inboxSort') ?? 'newest');
+watch(sort, (v) => { try { localStorage.setItem('riff.inboxSort', v); } catch { /* no storage */ } });
+
+const ordered = computed(() => {
+  const list = [...matching.value];
+  const newest = (a: Message, b: Message) => b.sentAt.localeCompare(a.sentAt) || b.id.localeCompare(a.id);
+  if (sort.value === 'oldest') list.sort((a, b) => -newest(a, b));
+  else if (sort.value === 'sender') {
+    list.sort((a, b) => nameOf.value(a.from).localeCompare(nameOf.value(b.from)) || newest(a, b));
+  } else if (sort.value === 'unread') {
+    list.sort((a, b) => Number(Boolean(a.readAt)) - Number(Boolean(b.readAt)) || newest(a, b));
+  } else list.sort(newest);
+  return list;
+});
+
+const pages = computed(() => Math.max(1, Math.ceil(ordered.value.length / PER_PAGE)));
 const shown = computed(() =>
-  matching.value.slice(page.value * PER_PAGE, page.value * PER_PAGE + PER_PAGE));
+  ordered.value.slice(page.value * PER_PAGE, page.value * PER_PAGE + PER_PAGE));
 
 // New mail arriving must not slide the page out from under you, but a filter
 // that shortens the list past where you are should.
 watch(pages, (n) => { if (page.value >= n) page.value = n - 1; });
-watch(filter, () => { page.value = 0; });
+// Re-ordering resets the page for the same reason filtering does: page three
+// of a list that has just been re-sorted shows you items you never asked for.
+watch([filter, sort], () => { page.value = 0; closeAll(); });
 
 /**
  * The first line worth showing, for a message nobody has opened yet.
@@ -118,18 +147,16 @@ const when = (iso: string) => {
           unread to keep it in front of you.
         </p>
       </div>
-      <input v-model="filter" placeholder="filter…" aria-label="Filter messages" />
     </header>
 
-    <div v-if="all.length" class="bar">
-      <span class="faint mono count">
-        {{ matching.length }} message{{ matching.length === 1 ? '' : 's' }}<template v-if="unread.length">, {{ unread.length }} unread</template>
-      </span>
-      <span class="grow" />
+    <Toolbar v-if="all.length" v-model:filter="filter" v-model:sort="sort"
+             :sorts="SORTS" label="Filter messages"
+             :count="`${matching.length} message${matching.length === 1 ? '' : 's'}`
+                     + (unread.length ? `, ${unread.length} unread` : '')">
       <button class="ghost" @click="openAll">Expand page</button>
       <button class="ghost" @click="closeAll">Collapse all</button>
       <button v-if="unread.length" class="ghost" @click="readAll">Mark all read</button>
-    </div>
+    </Toolbar>
 
     <p v-if="box && !all.length" class="muted empty">
       Nothing yet. Anything a staff member addresses to you arrives here.

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import type { Event, State } from '../api';
 import { namer } from '../names';
 import Pager from '../Pager.vue';
+import Toolbar, { type SortOption } from '../Toolbar.vue';
 
 const props = defineProps<{ events: Event[]; state: State }>();
 const who = computed(() => namer(props.state));
@@ -45,14 +46,33 @@ const matches = (e: Event) => !filter.value
 const kept = computed(() => props.events.filter((e) => (all.value || !ROUTINE.has(e.kind)) && matches(e)));
 const hidden = computed(() => props.events.filter((e) => ROUTINE.has(e.kind) && matches(e)).length);
 
-const pages = computed(() => Math.max(1, Math.ceil(kept.value.length / PER_PAGE)));
+const SORTS: SortOption[] = [
+  { key: 'newest', label: 'Newest' },
+  { key: 'oldest', label: 'Oldest' },
+  { key: 'actor', label: 'By person' },
+];
+const sort = ref<string>(localStorage.getItem('riff.feedSort') ?? 'newest');
+watch(sort, (v) => { try { localStorage.setItem('riff.feedSort', v); } catch { /* no storage */ } });
+
+const ordered = computed(() => {
+  const list = [...kept.value];
+  // The stream arrives newest-first, so that order needs no work.
+  if (sort.value === 'oldest') list.reverse();
+  else if (sort.value === 'actor') {
+    list.sort((a, b) => who.value(a.actor).localeCompare(who.value(b.actor)) || b.seq - a.seq);
+  }
+  return list;
+});
+
+const pages = computed(() => Math.max(1, Math.ceil(ordered.value.length / PER_PAGE)));
 const shown = computed(() =>
-  kept.value.slice(page.value * PER_PAGE, page.value * PER_PAGE + PER_PAGE));
+  ordered.value.slice(page.value * PER_PAGE, page.value * PER_PAGE + PER_PAGE));
 
 // Live events arrive at the top while you are reading page three. The page you
 // are on must not slide out from under you, but it must not outlive the list.
 watch(pages, (n) => { if (page.value >= n) page.value = n - 1; });
-watch([filter, all], () => { page.value = 0; });
+// Re-ordering resets the page, as filtering does.
+watch([filter, all, sort], () => { page.value = 0; });
 
 const tone = (kind: string) =>
   kind.startsWith('gate.deny') || kind === 'agent.failed' ? 'deny'
@@ -75,17 +95,14 @@ function detail(e: Event): string {
         <h1>Feed</h1>
         <p class="muted lede">Live. Newest first. Nothing here is retold to you later.</p>
       </div>
-      <input v-model="filter" placeholder="filter…" aria-label="Filter events" />
     </header>
 
-    <div class="bar">
-      <span class="faint mono count">
-        {{ kept.length }} event{{ kept.length === 1 ? '' : 's' }}
-      </span>
-      <span class="grow" />
-      <button class="ghost" :class="{ on: !all }" @click="all = false">What changed</button>
-      <button class="ghost" :class="{ on: all }" @click="all = true">Everything</button>
-    </div>
+    <Toolbar v-model:filter="filter" v-model:sort="sort" :sorts="SORTS"
+             label="Filter events"
+             :count="`${kept.length} event${kept.length === 1 ? '' : 's'}`">
+      <button class="ghost scope" :class="{ on: !all }" @click="all = false">What changed</button>
+      <button class="ghost scope" :class="{ on: all }" @click="all = true">Everything</button>
+    </Toolbar>
 
     <ol class="feed">
       <li v-for="e in shown" :key="e.id" :class="tone(e.kind)">
@@ -125,9 +142,9 @@ input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   border-bottom: 1px solid var(--line); margin-bottom: 10px; }
 .count { font-size: 11px; }
 .grow { flex: 1; }
-.bar .ghost { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+.scope { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
   border: 1px solid transparent; border-radius: 4px; padding: 3px 7px; }
-.bar .ghost.on { color: var(--gold); border-color: var(--line-2); }
+.scope.on { color: var(--gold); border-color: var(--line-2); }
 
 .feed { list-style: none; }
 .feed li { display: grid; grid-template-columns: 74px 116px 168px 1fr; gap: 12px; align-items: baseline;
