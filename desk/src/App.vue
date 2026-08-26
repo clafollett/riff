@@ -233,10 +233,19 @@ const util = computed(() => {
                  @switch="select" @changed="loadCompanies" />
       <div v-else-if="err" class="err">Can't reach the company — {{ err }}</div>
       <component v-else-if="state" :is="current" :state="state" :events="events" @changed="refresh" />
-      <div v-else-if="!companies.length" class="pad">
-        <p class="muted">No companies yet.</p>
-        <button class="go" @click="view = 'companies'">Found one</button>
-      </div>
+        <!-- A second machine's first act is usually importing, not founding.
+             Offering only one of them made the other look unsupported. -->
+        <div v-else-if="!companies.length" class="pad blank">
+          <h1>Nothing here yet</h1>
+          <p class="muted">
+            Found a company and its CEO will hire the rest — or bring one over
+            from another machine as a single file.
+          </p>
+          <div class="row">
+            <button class="go" @click="view = 'companies'">Found a company</button>
+            <button class="ghost" @click="view = 'companies'">Import one</button>
+          </div>
+        </div>
       <div v-else class="muted pad">Opening the books…</div>
     </main>
 
@@ -313,6 +322,10 @@ const util = computed(() => {
 .grow { flex: 1; }
 .who { padding: 0 20px; font-size: 12px; line-height: 1.7; }
 .main { overflow-y: auto; }
+.blank { max-width: 46ch; }
+.blank h1 { font-size: 26px; margin-bottom: 8px; }
+.blank p { font-size: 14px; line-height: 1.6; margin-bottom: 18px; }
+.blank .row { display: flex; gap: 10px; }
 .toasts { position: fixed; right: 20px; bottom: 48px; z-index: 30;
   display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
 .toast { display: flex; flex-direction: column; gap: 3px; text-align: left;

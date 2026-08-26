@@ -163,6 +163,32 @@ describe('a company travels whole', () => {
     assert.equal(cfg['ledgerPath'], undefined);
   });
 
+  test('a session id does not travel — it means nothing on the other machine', () => {
+    // The runtime keeps conversations wherever it keeps them; in the container
+    // that is a tmpfs. The id lives in the ledger, on the durable volume. Ship
+    // the ledger to somebody else and every agent tries to resume a transcript
+    // that was never on their disk, and every shift fails on arrival.
+    const res = JSON.parse(run(`${PRELUDE}
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Chatty Co', business: 'x', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      a.company.ledger.setMeta('session:vale', 'a-transcript-only-this-machine-has');
+      a.company.ledger.setMeta('applied:apr_x', 'keep me');
+      await r.close('chatty-co');
+
+      const file = '${out}/chatty.tar.gz';
+      T.exportCompany('chatty-co', file);
+      const landed = T.importCompany(file);
+      const back = new Registry(systemClock).get(landed.slug);
+      console.log(JSON.stringify({
+        session: back.ledger.getMeta('session:vale'),
+        other: back.ledger.getMeta('applied:apr_x'),
+      }));
+    `)) as Record<string, unknown>;
+    assert.equal(res['session'], null, 'the session id must not survive the trip');
+    assert.equal(res['other'], 'keep me', 'but other meta is the company\'s own state');
+  });
+
   test('an imported company arrives paused, whatever it was doing when it left', () => {
     // Someone else's company spending your subscription the moment the copy
     // finishes is not a feature.

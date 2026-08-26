@@ -189,13 +189,23 @@ const buildTickPrompt = (d: TickDeps): string => {
  * `{type:'preset'}` form) keeps the Claude Code preset prompt out of a persona
  * that is supposed to be their own.
  */
-export const tick = async (d: TickDeps): Promise<TickResult> => {
+/**
+ * Errors that mean "the transcript you asked me to continue is gone", as
+ * opposed to anything about the work. Matched on the message because the SDK
+ * surfaces it as a result string rather than a typed error.
+ */
+const LOST_SESSION = /No conversation found with session ID|session .* not found/i;
+
+export const tick = async (
+  d: TickDeps,
+  opts?: { withoutResume?: boolean },
+): Promise<TickResult> => {
   const { agent, ledger, gate, world, clock } = d;
   const { server, capabilities } = createTools({
     actor: agent.id, ledger, gate, world, clock,
   });
 
-  const resume = ledger.getMeta(`session:${agent.id}`);
+  const resume = opts?.withoutResume ? null : ledger.getMeta(`session:${agent.id}`);
   ledger.emit(agent.id, 'agent.woke', null, { resumed: Boolean(resume) });
 
   let costUsd = 0;
@@ -271,6 +281,21 @@ export const tick = async (d: TickDeps): Promise<TickResult> => {
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     ledger.emit(agent.id, 'agent.failed', null, { error });
+    // A conversation the runtime no longer has is not a failed shift.
+    //
+    // The session id lives in the ledger, on the durable volume. The
+    // conversation lives wherever the runtime keeps it, which in the container
+    // is a tmpfs — so every restart wipes the transcripts while the ids
+    // survive, and every agent then fails to resume something that is gone.
+    // Nothing cleared the id, so the failure repeated forever rather than
+    // healing. Forget it and take the shift again from a cold start; the
+    // persona, memory and world are the durable context, and resume was only
+    // ever an optimisation on top of them.
+    if (resume && LOST_SESSION.test(error)) {
+      ledger.setMeta(`session:${agent.id}`, '');
+      ledger.emit(agent.id, 'session.reset', null, { was: resume });
+      return tick(d, { withoutResume: true });
+    }
     return { agentId: agent.id, ok: false, summary: '', costUsd, turns, error };
   }
 };

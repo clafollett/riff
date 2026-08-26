@@ -91,6 +91,17 @@ export const exportCompany = (slug: string, outPath: string): Manifest => {
       src.exec(`VACUUM INTO '${join(work, 'ledger.db').replace(/'/g, "''")}'`);
     } finally { src.close(); }
 
+    // Strip what only meant something on this machine.
+    //
+    // `session:<agent>` points at a conversation held by the runtime, which in
+    // the container is a tmpfs. It is meaningless on the machine the company
+    // is going to — and worse than meaningless, because resuming a transcript
+    // that was never there fails every shift on arrival. The same mistake as
+    // storing absolute paths in config.json, in a different table.
+    const copy = new DatabaseSync(join(work, 'ledger.db'));
+    try { copy.exec("DELETE FROM meta WHERE key LIKE 'session:%'"); }
+    finally { copy.close(); }
+
     if (existsSync(join(home, 'world'))) {
       // node_modules is regenerable, enormous, and the only thing in a world
       // that routinely contains symlinks — which the importer refuses.
@@ -235,6 +246,13 @@ export const importCompany = (
     };
     writeFileSync(join(work, 'config.json'), JSON.stringify(persisted(next), null, 2) + '\n', 'utf8');
     rmSync(manifestPath, { force: true });
+
+    // Belt and braces: an archive written before exports learned to strip
+    // these still carries them, and it must not brick every shift on arrival.
+    const arriving = new DatabaseSync(join(work, 'ledger.db'));
+    try { arriving.exec("DELETE FROM meta WHERE key LIKE 'session:%'"); }
+    catch { /* an older schema without meta is still importable */ }
+    finally { arriving.close(); }
 
     mkdirSync(companiesDir(), { recursive: true });
     renameSync(work, home);

@@ -41,18 +41,16 @@ try {
 
 const registry = new Registry(clock);
 
-// A fresh checkout on any machine becomes a working installation with no setup
-// step. This one is NOT started: it is a placeholder nobody has named yet, and
-// spending someone's rate limit on a company they have not chosen to found is
-// not a good first impression. Founding one deliberately does start it.
-if (!listCompanies().length) {
-  registry.found({
-    name: process.env['RIFF_COMPANY']?.trim() || 'Untitled Company',
-    business: process.env['RIFF_BUSINESS']?.trim() || '',
-    ceo: process.env['RIFF_CEO']?.trim() || 'CEO',
-    chair: process.env['RIFF_CHAIR']?.trim() || guessKeeperName(),
-  });
-}
+// A fresh installation starts empty, and says so.
+//
+// This used to found "Untitled Company" so a new checkout was never blank. It
+// meant the first thing anyone saw was a company they did not ask for, sitting
+// next to the one they came to import — and importing is exactly what a second
+// machine does first. The console has an empty state that offers both founding
+// and importing; that is a better first screen than a placeholder.
+//
+// RIFF_COMPANY and friends still seed a company when one is founded, so a
+// container can be brought up configured from environment alone.
 
 // ---------------------------------------------------------------- SSE fan-out
 // Per company. A watcher on one company must never receive another's events —

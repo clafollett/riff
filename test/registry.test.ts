@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 /**
  * One installation, many companies.
@@ -421,6 +421,34 @@ describe('what someone says they are doing leaves a trace', () => {
     assert.equal(r.data[0]!['activity'], 'reading the brief');
     assert.equal(r.data[1]!['activity'], 'writing the charter');
     assert.equal(r.data[1]!['from'], 'reading the brief', 'the previous value is what makes it recoverable');
+  });
+});
+
+describe('a fresh installation starts empty', () => {
+  test('the server founds nothing, and still serves', async () => {
+    // It used to found "Untitled Company" so a new checkout was never blank.
+    // The first thing anyone saw was a company they had not asked for, sitting
+    // next to the one they came to import — and importing is what a second
+    // machine does first.
+    const port = 4400 + (process.pid % 400);
+    const child = spawn(process.execPath, ['src/gateway/server.ts'], {
+      cwd: process.cwd(), stdio: 'ignore',
+      env: { ...process.env, HOME: home, RIFF_ROOT: join(home, '.riff'),
+             RIFF_COMPANY_ID: '', PORT: String(port) },
+    });
+    try {
+      type Listing = { companies: unknown[] };
+      let body: Listing | null = null;
+      for (let i = 0; i < 40 && !body; i++) {
+        await new Promise((r) => setTimeout(r, 250));
+        try { body = await (await fetch(`http://localhost:${port}/api/companies`)).json() as Listing; }
+        catch { /* not listening yet */ }
+      }
+      assert.ok(body, 'the server should come up against an empty installation');
+      assert.deepEqual(body.companies, [], 'and found nothing on its own');
+      const page = await fetch(`http://localhost:${port}/`);
+      assert.equal(page.status, 200, 'the console still serves; it has an empty state');
+    } finally { child.kill('SIGTERM'); }
   });
 });
 
