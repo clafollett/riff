@@ -269,7 +269,20 @@ export const tick = async (
         // so no turn is spent reaching for something that cannot be granted.
         // Inside the container the shell is the point, so it is offered.
         ...(shellIsContained() ? {} : { disallowedTools: ['Bash', 'BashOutput', 'KillShell'] }),
-        permissionMode: 'default',   // 'default' is what consults canUseTool
+        // DO NOT CHANGE THIS. 'default' is the only mode that consults
+        // canUseTool, and canUseTool is the gate — the single chokepoint every
+        // tool call crosses. Measured, twice each, with a handler that denies
+        // everything and a model asked to write a file:
+        //
+        //   default  gate asked 2x, file not written
+        //   auto     gate asked 0x, FILE WRITTEN
+        //
+        // 'auto' is not 'bypassPermissions' and does judge actions itself, but
+        // it judges them INSTEAD OF the gate, not alongside it. Under it there
+        // is no shell containment check, no capability routing, no drafts-only
+        // rule and no spend cap — and its judgement is a model's, which is a
+        // control that can be argued with in a prompt. See SECURITY.md.
+        permissionMode: 'default',
 
         // ---- limits ----
         maxTurns: d.maxTurns ?? 24,

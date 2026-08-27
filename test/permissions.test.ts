@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Ledger } from '../src/ledger/ledger.ts';
@@ -135,5 +135,29 @@ describe('paths are classified before they are allowed', () => {
 
   test('an escalation tells the agent to stop, not to try again', async () => {
     assert.match(denied(await call('Write', { file_path: 'staff/ceo/notes/y.md' })).message, /Do not retry/);
+  });
+});
+
+describe('the gate is actually wired to the session', () => {
+  const staff = readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+
+  test("staff sessions run in the one mode that consults the gate", () => {
+    // Measured against the SDK, twice each, with a deny-everything handler and
+    // a model asked to write a file: 'default' consults canUseTool and the
+    // write is refused; 'auto' never calls it and the file lands. 'auto' is
+    // not bypassPermissions — it judges actions with a model of its own — but
+    // it judges them instead of the gate, and a model's judgement is exactly
+    // the kind of control that can be argued with in a prompt.
+    assert.match(staff, /permissionMode: 'default'/,
+      'staff sessions must run in default mode or the gate is not consulted');
+    for (const mode of ['auto', 'bypassPermissions', 'acceptEdits', 'dontAsk']) {
+      assert.ok(!staff.includes(`permissionMode: '${mode}'`),
+        `permissionMode '${mode}' does not consult canUseTool; the gate would be off`);
+    }
+  });
+
+  test('every session is handed canUseTool at all', () => {
+    assert.match(staff, /canUseTool: makeCanUseTool\(/,
+      'a session without canUseTool has no gate, whatever the mode says');
   });
 });
