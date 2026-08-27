@@ -6,6 +6,7 @@ import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { createTools, TOOL_NAMESPACE } from './tools.ts';
 import { makeCanUseTool, shellIsContained } from './permissions.ts';
+import { DEFAULT_POLICY } from '../core/config.ts';
 import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
@@ -247,6 +248,18 @@ export const tick = async (
   /** The last thing the agent said out loud, whether or not it got to finish. */
   let said = '';
   let rateLimit: SDKRateLimitInfo | undefined;
+  /**
+   * The ceiling in force, recorded alongside the count so the two can be read
+   * together.
+   *
+   * They are not the same counter: maxTurns caps the model's turns, while the
+   * num_turns we report counts the loop, so a shift can finish at 62 under a
+   * ceiling of 60 and be neither truncated nor wrong. Without the ceiling
+   * beside it the console reads "62 turns" against a "60 turn" limit and
+   * looks broken. The fallback comes from DEFAULT_POLICY rather than a second
+   * literal here — this one still said 24 long after the ceiling moved to 60.
+   */
+  const ceiling = d.maxTurns ?? DEFAULT_POLICY.maxTurns;
 
   try {
     const q = query({
@@ -285,7 +298,7 @@ export const tick = async (
         permissionMode: 'default',
 
         // ---- limits ----
-        maxTurns: d.maxTurns ?? 24,
+        maxTurns: ceiling,
         ...(d.maxBudgetUsd != null ? { maxBudgetUsd: d.maxBudgetUsd } : {}),
         effort: 'medium',
         thinking: { type: 'adaptive' },
@@ -332,7 +345,7 @@ export const tick = async (
     if (summary) world.appendJournal(agent.id, summary.slice(0, 600));
     world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(summary)}`);
 
-    ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd });
+    ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling });
     return { agentId: agent.id, ok: true, summary, costUsd, turns, ...(rateLimit ? { rateLimit } : {}) };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -364,7 +377,7 @@ export const tick = async (
       const cut = summary || said;
       if (cut) world.appendJournal(agent.id, `${cut.slice(0, 600)}\n\n_Cut at the turn ceiling (${turns}). Resumes next shift._`);
       world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(cut)}`);
-      ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, truncated: true });
+      ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling, truncated: true });
       return { agentId: agent.id, ok: true, summary: cut, costUsd, turns, truncated: true,
                ...(rateLimit ? { rateLimit } : {}) };
     }

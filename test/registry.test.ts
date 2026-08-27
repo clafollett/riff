@@ -1,6 +1,7 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, writeFileSync, readdirSync,
+         readFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
@@ -449,6 +450,27 @@ describe('a fresh installation starts empty', () => {
       // Deliberately not asserting the console renders: that needs desk/dist,
       // which this job does not build. The browser suite covers it.
     } finally { child.kill('SIGTERM'); }
+  });
+});
+
+describe('a shift records the ceiling it ran under', () => {
+  test('the stale second default is gone, so the fallback cannot drift', () => {
+    // staff.ts carried its own `?? 24` long after the ceiling moved to 60.
+    // It never fired, because the scheduler always passes a value — which is
+    // exactly why it sat there wrong.
+    const staff = readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+    assert.ok(!/maxTurns: d\.maxTurns \?\? \d+/.test(staff),
+      'the turn ceiling must fall back to DEFAULT_POLICY, not to a literal');
+    assert.match(staff, /d\.maxTurns \?\? DEFAULT_POLICY\.maxTurns/);
+  });
+
+  test('agent.slept carries the ceiling, so 62 of 60 reads as finished not broken', () => {
+    // num_turns counts the loop; maxTurns caps the model's turns. They differ
+    // by a couple, so the count alone looks like the limit failed.
+    const staff = readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+    const slept = staff.match(/'agent\.slept'[^;]*/g) ?? [];
+    assert.equal(slept.length, 2, 'both the ordinary and the truncated path');
+    for (const s of slept) assert.match(s, /ceiling/, `missing ceiling: ${s}`);
   });
 });
 
