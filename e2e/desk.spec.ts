@@ -361,11 +361,21 @@ test('the whole company can be read, not only what reached you', async ({ page }
   // Mail between two colleagues appears, named for its real recipient.
   await expect(page.locator('.msg .addressed.other').first()).toBeVisible();
 
-  // Read state is a fact about YOUR mail. Somebody else's has none, so the
-  // whole-company view must not paint every row as needing you.
-  await expect(page.locator('.bar .count')).not.toContainText('unread');
-  await expect(page.locator('.msg.unread')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Mark all read' })).toHaveCount(0);
+  // Read state belongs to a recipient. A colleague's mail to another
+  // colleague has none that means anything here — but your own does, and
+  // widening the view used to hide it.
+  const yours = page.locator('.msg.unread');
+  await expect(yours.first()).toBeVisible();
+  await expect(page.locator('.bar .count')).toContainText('unread to you');
+  // Every orange row is one addressed to you, not simply every row.
+  const orange = await yours.count();
+  expect(orange).toBeGreaterThan(0);
+  expect(orange).toBeLessThan(await page.locator('.msg').count());
+  // And a colleague's mail offers no read control, because you cannot read it
+  // on their behalf.
+  const overheard = page.locator('.msg').filter({ has: page.locator('.addressed.other') }).first();
+  await overheard.locator('.row').click();
+  await expect(overheard.getByRole('button', { name: /Mark (read|unread)/ })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'To you' }).click();
   await expect(page.locator('.bar .count')).toHaveText(mine);

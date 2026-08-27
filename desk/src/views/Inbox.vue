@@ -38,12 +38,15 @@ const roleOf = (id: string) => props.state.agents.find((a) => a.id === id)?.role
 
 const all = computed(() => box.value?.messages ?? []);
 /**
- * Unread is a fact about your own mail. A colleague's message to another
- * colleague has no read state that means anything to you, so browsing the
- * whole company must not paint 175 rows orange and claim they need you.
+ * Unread is a fact about your own mail, and it stays true whichever view you
+ * are in. Confining it to the narrow scope kept a colleague's mail to another
+ * colleague from being painted orange — right — but it also hid YOUR unread
+ * mail the moment you widened the view, which is worse. `yours` is the real
+ * distinction, so it does the work in both scopes.
  */
 const mine = computed(() => scope.value === 'mine');
-const unread = computed(() => (mine.value ? all.value.filter((m) => !m.readAt) : []));
+const isNew = (m: Message) => m.yours && !m.readAt;
+const unread = computed(() => all.value.filter(isNew));
 
 const matching = computed(() => {
   const q = filter.value.trim().toLowerCase();
@@ -73,7 +76,7 @@ const ordered = computed(() => {
   else if (sort.value === 'sender') {
     list.sort((a, b) => nameOf.value(a.from).localeCompare(nameOf.value(b.from)) || newest(a, b));
   } else if (sort.value === 'unread') {
-    list.sort((a, b) => Number(Boolean(a.readAt)) - Number(Boolean(b.readAt)) || newest(a, b));
+    list.sort((a, b) => Number(!isNew(a)) - Number(!isNew(b)) || newest(a, b));
   } else list.sort(newest);
   return list;
 });
@@ -371,7 +374,7 @@ const when = (iso: string) => {
              v-model:per-page="perPage" :sizes="SIZES"
              :sorts="SORTS" label="Filter messages"
              :count="`${matching.length} message${matching.length === 1 ? '' : 's'}`
-                     + (unread.length ? `, ${unread.length} unread` : '')">
+                     + (unread.length ? `, ${unread.length} unread${mine ? '' : ' to you'}` : '')">
       <button class="ghost scope" :class="{ on: scope === 'mine' }"
               @click="scope = 'mine'">To you</button>
       <button class="ghost scope" :class="{ on: scope === 'all' }"
@@ -379,7 +382,7 @@ const when = (iso: string) => {
               @click="scope = 'all'">Everyone's</button>
       <button class="ghost" @click="openAll">Expand page</button>
       <button class="ghost" @click="closeAll">Collapse all</button>
-      <button v-if="mine && unread.length" class="ghost" @click="readAll">Mark all read</button>
+      <button v-if="unread.length" class="ghost" @click="readAll">Mark all read</button>
     </Toolbar>
 
     <p v-if="box && !all.length" class="muted empty">
@@ -390,7 +393,7 @@ const when = (iso: string) => {
     </p>
 
     <article v-for="m in shown" :key="m.id" class="msg"
-             :class="{ unread: mine && !m.readAt, open: isOpen(m) }">
+             :class="{ unread: isNew(m), open: isOpen(m) }">
       <button class="row" :aria-expanded="isOpen(m)" @click="toggle(m)">
         <span class="chev" :class="{ down: isOpen(m) }">▸</span>
         <span class="who">{{ nameOf(m.from) }}</span>
@@ -405,7 +408,7 @@ const when = (iso: string) => {
         </span>
         <span v-if="!isOpen(m)" class="preview muted">{{ preview(m.body) }}</span>
         <span class="grow" />
-        <span v-if="mine && !m.readAt" class="new">New</span>
+        <span v-if="isNew(m)" class="new">New</span>
         <span class="when faint mono">{{ when(m.sentAt) }}</span>
       </button>
 
@@ -428,7 +431,7 @@ const when = (iso: string) => {
         </div>
         <div v-else class="actions">
           <button class="ghost" @click="startReply(m)">Reply</button>
-          <button v-if="scope === 'mine'" class="ghost" @click="setRead(m, !m.readAt)">
+          <button v-if="m.yours" class="ghost" @click="setRead(m, !m.readAt)">
             {{ m.readAt ? 'Mark unread' : 'Mark read' }}
           </button>
         </div>

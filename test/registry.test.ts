@@ -519,7 +519,7 @@ describe('the whole company is readable, not only the board\'s slice', () => {
       l.sendMessage('vale', 'ora', 'just for you');
       l.sendMessage('ora', 'vale', 'and back');
 
-      const all = l.allMessages();
+      const all = l.allMessages('cali');
       console.log(JSON.stringify({
         fanout,
         rows: l.db.prepare('SELECT COUNT(*) n FROM messages').get().n,
@@ -541,6 +541,54 @@ describe('the whole company is readable, not only the board\'s slice', () => {
     assert.equal(r['boardSlice'], 1, 'cali got the broadcast and nothing else');
   });
 
+  test('your own unread mail stays unread when you widen the view', () => {
+    // Reading the whole company dropped read state entirely, so your own
+    // unread mail vanished the moment you looked past your own slice. Read
+    // state belongs to a recipient — the viewer's row is the one that counts.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Readable', business: 'x', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      const l = a.company.ledger;
+      l.upsertAgent({ id: 'ora', name: 'Ora', tier: 'lead', role: 'Head', department: '',
+        reportsTo: 'vale', status: 'active', activity: '', mandate: '',
+        hiredAt: systemClock.iso(), hiredBy: 'vale', model: 'm' });
+
+      l.sendMessage('vale', 'cali', 'for the chair');
+      l.sendMessage('vale', 'ora', 'between colleagues');
+      l.sendMessage('vale', null, 'to the whole company');
+
+      const before = l.allMessages('cali');
+      const mineBefore = before.filter((m) => m.yours && !m.readAt).map((m) => m.body).sort();
+
+      // Marking one read from the whole-company view has to hit YOUR row: the
+      // group's MIN(id) is usually somebody else's, and markRead is scoped to
+      // to_agent, so a wrong id silently does nothing.
+      const chairs = before.find((m) => m.body === 'for the chair');
+      const marked = l.markRead('cali', [chairs.id], true);
+
+      const after = l.allMessages('cali');
+      console.log(JSON.stringify({
+        mineBefore,
+        overheardIsNotYours: before.find((m) => m.body === 'between colleagues').yours,
+        broadcastIsYours: before.find((m) => m.body === 'to the whole company').yours,
+        marked,
+        mineAfter: after.filter((m) => m.yours && !m.readAt).map((m) => m.body).sort(),
+        unreadCount: l.unreadCount('cali'),
+      }));
+    `);
+    const r = JSON.parse(out) as Record<string, unknown>;
+    assert.deepEqual(r['mineBefore'], ['for the chair', 'to the whole company'],
+      'both of the things addressed to you, and nothing else');
+    assert.equal(r['overheardIsNotYours'], false, 'mail between colleagues is not yours to read');
+    assert.equal(r['broadcastIsYours'], true, 'a broadcast reached you like everyone else');
+    assert.equal(r['marked'], 1, 'the id offered from the wide view is your own row');
+    assert.deepEqual(r['mineAfter'], ['to the whole company']);
+    assert.equal(r['unreadCount'], 1, 'and the sidebar agrees');
+  });
+
   test('answering mail between two colleagues reaches both of them', () => {
     // Nobody can read a conversation they were left out of, so a reply that
     // went to the sender alone left the other half never knowing.
@@ -558,10 +606,10 @@ describe('the whole company is readable, not only the board\'s slice', () => {
       l.sendMessage('vale', 'ora', 'draft the pricing page');
       const delivered = l.sendMessage('cali', ['vale', 'ora'], 'talk to legal first');
 
-      const reply = l.allMessages().find((m) => m.from === 'cali');
+      const reply = l.allMessages('cali').find((m) => m.from === 'cali');
       console.log(JSON.stringify({
         delivered,
-        collapsed: l.allMessages().length,
+        collapsed: l.allMessages('cali').length,
         broadcast: reply.broadcast,
         reached: [reply.to, ...reply.alsoTo].sort(),
         valeHeard: l.messagesFor('vale').some((m) => m.body === 'talk to legal first'),

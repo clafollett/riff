@@ -424,7 +424,7 @@ const server = createServer(async (req, res) => {
         return json(res, {
           me,
           scope: everything ? 'all' : 'mine',
-          messages: everything ? ledger.allMessages() : ledger.messagesFor(me),
+          messages: everything ? ledger.allMessages(me) : ledger.messagesFor(me),
           unread: ledger.unreadCount(me),
         });
       }

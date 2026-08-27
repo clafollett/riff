@@ -134,6 +134,12 @@ export type Message = {
    * to everybody and names nobody.
    */
   alsoTo: AgentId[];
+  /**
+   * Whether this message reached the person reading it. Read state belongs to
+   * a recipient, so a colleague's mail to a third party has none that means
+   * anything to you — but your own does, whichever view you are looking at.
+   */
+  yours: boolean;
   body: string;
   broadcast: boolean;
   sentAt: string;

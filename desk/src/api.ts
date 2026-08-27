@@ -22,6 +22,8 @@ export type Task = {
 export type Message = {
   id: string; from: string; to: string; alsoTo: string[]; body: string;
   broadcast: boolean; sentAt: string; readAt: string | null;
+  /** Whether it reached you. Only your own mail has read state you can act on. */
+  yours: boolean;
 };
 
 export type Inbox = {
