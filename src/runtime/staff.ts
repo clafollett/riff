@@ -177,6 +177,28 @@ const buildTickPrompt = (d: TickDeps): string => {
     parts.push('', 'Answer what you agree with by changing the work, and say plainly where you disagree.');
   }
 
+  /**
+   * What of yours the board has not answered yet.
+   *
+   * A tool nobody is reminded of is a tool nobody uses. withdraw_draft shipped
+   * and went untouched across 139 shifts while nine drafts sat waiting, six of
+   * them corrections about the other three — because nothing brought the queue
+   * back into view. Decisions were surfaced at wake and pending requests were
+   * not, so the only half of the loop an agent ever saw was the half somebody
+   * else had already closed.
+   */
+  const waiting = ledger.listApprovals('pending').filter((a) => a.requestedBy === agent.id);
+  if (waiting.length) {
+    parts.push('', `## Your drafts still waiting on the board (${waiting.length})`);
+    for (const a of waiting) parts.push(`- \`${a.id}\` — ${a.summary.split('\n')[0]!.slice(0, 140)}`);
+    parts.push(
+      '',
+      'The board reads these in order. Anything here you already know is wrong,',
+      'superseded, or answered by a later one is noise in front of the things that',
+      'are not — withdraw_draft takes one back.',
+    );
+  }
+
   // Mail is marked read here: it has been handed over, and re-delivering it
   // every tick would make the staff answer the same message forever.
   const mail = ledger.inbox(agent.id, true);

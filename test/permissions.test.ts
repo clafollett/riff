@@ -161,3 +161,24 @@ describe('the gate is actually wired to the session', () => {
       'a session without canUseTool has no gate, whatever the mode says');
   });
 });
+
+describe('a waking agent sees both halves of the approval loop', () => {
+  const staff = readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+
+  test('pending drafts are surfaced at wake, not only decided ones', () => {
+    // withdraw_draft shipped and went unused across 139 shifts while nine
+    // drafts sat waiting. The tool was reachable; the queue was not. An agent
+    // saw only the requests somebody else had already closed.
+    assert.match(staff, /Your drafts still waiting on the board/,
+      'a waking agent must be shown its own unanswered requests');
+    assert.match(staff, /listApprovals\('pending'\)[\s\S]{0,120}requestedBy === agent\.id/,
+      "and only its own — a colleague's queue is not this agent's to prune");
+  });
+
+  test('the reminder names the tool that acts on it', () => {
+    // A list with no verb attached is a list that gets read and left alone.
+    const block = staff.slice(staff.indexOf('Your drafts still waiting'));
+    assert.match(block.slice(0, 900), /withdraw_draft/,
+      'the prompt must name the tool, or the reminder changes nothing');
+  });
+});
