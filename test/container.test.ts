@@ -1,9 +1,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, mkdtempSync, writeFileSync, existsSync,
+         copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
 
 /**
  * The container's environment is a contract with src/core/config.ts, and
@@ -291,3 +292,58 @@ describe('the example env file describes this container, not an imagined one', (
   });
 });
 
+describe('the egress wall lets research through without letting anything out', () => {
+  const dir = new URL('../docker/proxy/', import.meta.url).pathname;
+  const compile = (extra?: string): string[] => {
+    const box = mkdtempSync(join(tmpdir(), 'riff-wall-'));
+    const etc = join(box, 'etc', 'tinyproxy');
+    mkdirSync(etc, { recursive: true });
+    copyFileSync(join(dir, 'allowlist.conf'), join(etc, 'allowlist.conf'));
+    // Deliberately no trailing newline: `while read` drops that line without
+    // the `|| [ -n "$line" ]` guard, and the last host vanishes silently.
+    if (extra !== undefined) writeFileSync(join(etc, 'allowlist.local.conf'), extra);
+    const script = readFileSync(join(dir, 'compile-allowlist.sh'), 'utf8')
+      .replaceAll('/etc/tinyproxy', etc);
+    writeFileSync(join(box, 'c.sh'), script);
+    execFileSync('sh', [join(box, 'c.sh')]);
+    const out = readFileSync(join(etc, 'filter.re'), 'utf8').split('\n').filter(Boolean);
+    rmSync(box, { recursive: true, force: true });
+    return out;
+  };
+
+  test('every host is anchored, so no lookalike domain gets through', () => {
+    const rules = compile();
+    // "github.com" unanchored also matches "github.com.evil.example".
+    for (const r of rules) {
+      assert.match(r, /^\^.+\$$/, `${r} is not anchored`);
+      assert.ok(!/(?<!\\)\./.test(r.slice(1, -1)), `${r} has an unescaped dot`);
+    }
+  });
+
+  test('staff can reach documentation, because training data has a cutoff', () => {
+    const rules = compile();
+    for (const host of ['docs.anthropic.com', 'pkg.go.dev', 'docs.aws.amazon.com', 'docs.rs']) {
+      assert.ok(rules.includes(`^${host.replaceAll('.', '\\.')}$`), `${host} is walled off`);
+    }
+  });
+
+  test('the token still has nowhere to go', () => {
+    // The wall is the whole anti-exfiltration argument: widening it for
+    // research must not have opened a general-purpose destination.
+    const rules = compile().join('\n');
+    for (const bad of ['pastebin.com', 'transfer.sh', 'discord.com', 'requestbin.com']) {
+      assert.ok(!rules.includes(bad), `${bad} should not be reachable`);
+    }
+  });
+
+  test("an operator's own hosts are added without editing the repo", () => {
+    const rules = compile('example.internal\nno-trailing-newline.example');
+    assert.ok(rules.includes('^example\\.internal$'));
+    assert.ok(rules.includes('^no-trailing-newline\\.example$'),
+      'a file with no trailing newline must not lose its last host');
+  });
+
+  test('an installation that writes no local file behaves exactly as before', () => {
+    assert.deepEqual(compile(), compile(''));
+  });
+});

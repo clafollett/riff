@@ -5,6 +5,9 @@ RUN apk add --no-cache tinyproxy
 
 COPY tinyproxy.conf /etc/tinyproxy/tinyproxy.conf
 COPY allowlist.conf /etc/tinyproxy/allowlist.conf
+# The operator's own hosts, if they wrote any. The glob matches nothing when
+# the file is absent, which is the whole point — COPY of a missing path fails.
+COPY allowlist.local.conf* /etc/tinyproxy/
 COPY compile-allowlist.sh /compile-allowlist.sh
 COPY entrypoint.sh /entrypoint.sh
 

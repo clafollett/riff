@@ -60,15 +60,43 @@ export type TickResult = {
  *
  * An approval means releasable. It does not mean released.
  */
+/**
+ * What the company can see out, and what it can send out. They are not the
+ * same thing and conflating them cost real work.
+ *
+ * This said only that nothing gets OUT. A reasonable reader concluded nothing
+ * gets IN either: across 423 gated actions a company of engineers never once
+ * reached for WebSearch or WebFetch, and reasoned about a fast-moving field
+ * entirely from training data. Reading out needs nobody's approval and never
+ * did.
+ */
+const READING_OUT = [
+  '## Looking things up',
+  '',
+  'You can read the outside world. WebSearch and WebFetch are yours and need',
+  'no approval — this is reading, not publishing. Your training has a cutoff',
+  'and this field moves faster than it, so look things up rather than',
+  'reasoning from memory, and say which you did.',
+  'Network access is an allowlist. A refused host is the wall doing its job,',
+  'not a fault to work around — if you need one that is not open, ask.',
+  '',
+].join('\n');
+
 const outwardState = (d: TickDeps): string => {
   const channels = Object.keys(d.connectors ?? {});
   if (channels.length) {
     return [
+      READING_OUT,
+      '## Sending things out',
+      '',
       `Connected channels: ${channels.join(', ')}. Approved work can reach them.`,
       'Everything still lands as a draft first — approval is what releases it.',
     ].join('\n');
   }
   return [
+    READING_OUT,
+    '## Sending things out',
+    '',
     'There is no connected channel. Nothing this company writes reaches anyone',
     'outside it, and nothing it has written has ever been published.',
     '',
@@ -123,7 +151,6 @@ const buildSystemPrompt = (d: TickDeps): string => {
     "- You may read colleagues' briefs and memory. They can see that you did.",
     '- Prefer finishing one real thing over starting three.',
     '',
-    '## What the outside world can and cannot see',
     outwardState(d),
   ].filter(Boolean).join('\n');
 };
