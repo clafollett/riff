@@ -49,9 +49,20 @@ export type Event = {
   kind: string; subject: string | null; dataJson: string | null;
 };
 
+export type CompanyPolicy = {
+  maxTurns: number;
+  concurrency: number;
+  baseIntervalMinutes: number;
+  throttleAboveUtilization: number;
+  pauseAboveUtilization: number;
+  commonsCeiling: number;
+  dailyCapCents: number;
+};
+
 export type State = {
   slug: string;
   company: { name: string; business: string };
+  policy: CompanyPolicy;
   board: Array<{ id: string; name: string; role: string }>;
   ceo: { id: string; name: string };
   agents: Agent[];
@@ -123,7 +134,9 @@ export const api = {
     send<{ slug: string }>('/api/companies', 'POST', input),
   setCompanyRunning: (slug: string, running: boolean) =>
     send<{ running: boolean }>(`/api/companies/${encodeURIComponent(slug)}/running`, 'POST', { running }),
-  renameCompany: (slug: string, patch: { name?: string; business?: string; slug?: string }) =>
+  renameCompany: (slug: string,
+                  patch: { name?: string; business?: string; slug?: string;
+                           policy?: Partial<CompanyPolicy> }) =>
     send<{ slug: string }>(`/api/companies/${encodeURIComponent(slug)}`, 'PATCH', patch),
   archiveCompany: (slug: string) =>
     send<{ archived: string; at: string }>(`/api/companies/${encodeURIComponent(slug)}`, 'DELETE'),

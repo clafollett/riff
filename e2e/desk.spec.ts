@@ -667,6 +667,32 @@ test('the brief can be read back and revised, and the CEO is told', async ({ pag
   await expect(page.locator('.msg .body')).toContainText('people who work on boats');
 });
 
+test('how hard a company works is a setting, not a constant in the source', async ({ page }) => {
+  // Every company got the same hardcoded dials. A company writing documents
+  // finished inside 24 turns; a company writing software hit that wall on
+  // every single shift.
+  await go(page, 'Overview', 'Testwright Co');
+  const dials = page.locator('.dials');
+  await expect(dials).toContainText('turns a shift');
+
+  await dials.getByRole('button', { name: 'Tune' }).click();
+  // Nothing to save until something changes.
+  await expect(dials.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+  const turns = dials.locator('input').first();
+  await turns.fill('120');
+  await expect(dials.getByRole('button', { name: 'Save' })).toBeEnabled();
+  await dials.getByRole('button', { name: 'Save' }).click();
+
+  await expect(dials).toContainText('120 turns a shift');
+
+  // And it survives a reload, because it is written down rather than held in
+  // a component that is about to be unmounted.
+  await page.reload();
+  await go(page, 'Overview', 'Testwright Co');
+  await expect(page.locator('.dials')).toContainText('120 turns a shift');
+});
+
 test('the console updates itself as the company works', async ({ page }) => {
   // Views used to load once on mount, so anything the company did while you
   // were looking at a page simply did not appear until you navigated away and

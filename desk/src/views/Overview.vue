@@ -45,6 +45,77 @@ const save = async () => {
   }
 };
 
+// ------------------------------------------------------------------ dials
+/**
+ * The dials, in the words of what they do rather than what they are called.
+ *
+ * `hint` is the thing worth knowing before you move it — every one of these
+ * costs something, and none of the costs are obvious from the number.
+ */
+const DIALS = [
+  { key: 'maxTurns', label: 'Turns a shift',
+    hint: 'A tool call and its result is one turn. Coding burns five before anything works.',
+    min: 1, max: 400, step: 1 },
+  { key: 'concurrency', label: 'Working at once',
+    hint: 'How many staff may be awake together.', min: 1, max: 16, step: 1 },
+  { key: 'baseIntervalMinutes', label: 'Minutes between shifts',
+    hint: 'Rank and throttling stretch this; nobody waits exactly this long.',
+    min: 0.5, max: 720, step: 0.5 },
+  { key: 'commonsCeiling', label: 'Documents in the commons',
+    hint: 'Rule 6. Past it, adding one means removing one.', min: 1, max: 500, step: 1 },
+] as const;
+
+const policy = ref<Record<string, number>>({ ...props.state.policy });
+const tuning = ref(false);
+const saving = ref(false);
+const perr = ref('');
+
+const dirty = computed(() =>
+  DIALS.some((d) => policy.value[d.key] !== props.state.policy[d.key])
+  || pausePct.value !== Math.round(props.state.policy.pauseAboveUtilization * 100)
+  || throttlePct.value !== Math.round(props.state.policy.throttleAboveUtilization * 100));
+
+// Utilization is a fraction everywhere it is used and a percentage everywhere
+// it is read. Doing that conversion in the field is less confusing than
+// asking anyone to type 0.92.
+const throttlePct = ref(Math.round(props.state.policy.throttleAboveUtilization * 100));
+const pausePct = ref(Math.round(props.state.policy.pauseAboveUtilization * 100));
+
+const resetDials = () => {
+  policy.value = { ...props.state.policy };
+  throttlePct.value = Math.round(props.state.policy.throttleAboveUtilization * 100);
+  pausePct.value = Math.round(props.state.policy.pauseAboveUtilization * 100);
+  perr.value = '';
+};
+watch(() => props.state.policy, resetDials, { deep: true });
+watch(() => props.state.slug, () => { tuning.value = false; resetDials(); });
+
+const saveDials = async () => {
+  saving.value = true;
+  perr.value = '';
+  try {
+    await api.renameCompany(props.state.slug, {
+      policy: {
+        ...(Object.fromEntries(DIALS.map((d) => [d.key, Number(policy.value[d.key])]))),
+        throttleAboveUtilization: throttlePct.value / 100,
+        pauseAboveUtilization: pausePct.value / 100,
+      },
+    });
+    // Closing shows what was actually saved, clamped, rather than what was typed.
+    tuning.value = false;
+    emit('changed');
+  } catch (e) {
+    perr.value = e instanceof Error ? e.message : 'Could not save.';
+  } finally {
+    saving.value = false;
+  }
+};
+
+const used = computed(() => {
+  const u = props.state.rateLimit?.utilization;
+  return u == null ? null : Math.round(u * 100);
+});
+
 const facts = computed(() => [
   { label: 'staff', value: String(props.state.headcount) },
   { label: 'commons', value: `${props.state.commons.held}/${props.state.commons.ceiling}` },
@@ -104,6 +175,62 @@ const working = computed(() => props.state.awake.length);
       </div>
     </section>
 
+    <section class="dials">
+      <div class="bar">
+        <h2>How hard it works</h2>
+        <span class="grow" />
+        <button class="ghost" @click="tuning ? (tuning = false, resetDials()) : (tuning = true)">
+          {{ tuning ? 'Done' : 'Tune' }}
+        </button>
+      </div>
+
+      <p v-if="!tuning" class="muted summary">
+        {{ state.policy.maxTurns }} turns a shift · {{ state.policy.concurrency }} working at once ·
+        a shift about every {{ state.policy.baseIntervalMinutes }} min ·
+        rests at {{ Math.round(state.policy.pauseAboveUtilization * 100) }}% of the window<template
+          v-if="used !== null"> · <strong>{{ used }}% used now</strong></template>
+      </p>
+
+      <template v-else>
+        <label v-for="d in DIALS" :key="d.key" class="dial">
+          <span class="k">{{ d.label }}</span>
+          <input v-model.number="policy[d.key]" type="number"
+                 :min="d.min" :max="d.max" :step="d.step" />
+          <span class="why faint">{{ d.hint }}</span>
+        </label>
+
+        <label class="dial">
+          <span class="k">Slow down at</span>
+          <span class="pct"><input v-model.number="throttlePct" type="number" min="0" max="100" />%</span>
+          <span class="why faint">
+            Of the rate-limit window. Past this the gaps between shifts stretch, rather than the
+            company coasting into the wall and losing the rest of the window to retries.
+          </span>
+        </label>
+        <label class="dial">
+          <span class="k">Stop at</span>
+          <span class="pct"><input v-model.number="pausePct" type="number" min="5" max="100" />%</span>
+          <span class="why faint">
+            Your headroom. Slowing down still spends the window, only later — a company that
+            never stops takes all of it, and you find it gone when you sit down to work.
+            100 means never stop.
+          </span>
+        </label>
+
+        <p class="muted note">
+          Saving lets the company go and builds it again, because the scheduler reads these once.
+          Anyone mid-shift finishes first, and it comes back working if it was.
+        </p>
+        <p v-if="perr" class="err">{{ perr }}</p>
+        <div class="row">
+          <button class="go" :disabled="saving || !dirty" @click="saveDials">
+            {{ saving ? 'Saving…' : 'Save' }}
+          </button>
+          <button class="ghost" :disabled="saving" @click="resetDials">Reset</button>
+        </div>
+      </template>
+    </section>
+
     <section class="who">
       <h2>Who answers for it</h2>
       <p v-for="b in state.board" :key="b.id" class="seat">
@@ -139,6 +266,20 @@ textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   border-radius: 6px; padding: 10px 14px; min-width: 96px; }
 .fact .n { font-size: 19px; color: var(--ink); }
 .fact .l { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
+
+.dials { border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+  padding: 16px 18px 18px; margin-bottom: 26px; }
+.summary { font-size: 13px; line-height: 1.6; }
+.summary strong { color: var(--gold); font-weight: normal; }
+.note { font-size: 12px; line-height: 1.55; margin-top: 12px; }
+.dial { display: grid; grid-template-columns: 190px 96px 1fr; align-items: baseline;
+  gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.dial:last-of-type { border-bottom: 0; }
+.dial .k { font-size: 13px; color: var(--ink); }
+.dial .why { font-size: 11.5px; line-height: 1.5; }
+.dial input { width: 74px; font: inherit; font-size: 13px; background: #15100d; color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 5px; padding: 5px 8px; }
+.dial .pct { white-space: nowrap; color: var(--faint); font-size: 12px; }
 
 .seat { font-size: 14px; margin-top: 7px; }
 .seat .nm { color: var(--ink); }

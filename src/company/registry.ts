@@ -5,8 +5,9 @@ import { constitutionFor, type Constitution } from '../policy/rules.ts';
 import { Scheduler } from '../runtime/scheduler.ts';
 import { found } from './genesis.ts';
 import {
-  archiveDir, companyHome, listCompanies, persisted, resolveConfig, scaffoldConfig,
-  setRunningFlag, slugId, type CompanyRef, type RiffConfig,
+  archiveDir, companyHome, DEFAULT_POLICY, listCompanies, persisted, readPolicy,
+  resolveConfig, scaffoldConfig, setRunningFlag, slugId,
+  type CompanyPolicy, type CompanyRef, type RiffConfig,
 } from '../core/config.ts';
 import type { Clock } from '../core/clock.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -116,6 +117,7 @@ export class Registry {
       board: [{ id: slugId(chair), name: chair, role: 'Chairman' }],
       ceo: { id: slugId(ceo), name: ceo },
       connectors: {},
+      policy: DEFAULT_POLICY,
     };
     scaffoldConfig(cfg);
     return { ok: true, company: this.#build(slug, cfg) };
@@ -123,13 +125,26 @@ export class Registry {
 
   #build(slug: string, cfg: RiffConfig): Company {
     const { ledger, world } = found(cfg, this.#clock);
-    const constitution = constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) });
+    const p = cfg.policy;
+    const constitution = constitutionFor({
+      ceo: cfg.ceo.id,
+      board: cfg.board.map((b) => b.id),
+      commonsCeiling: p.commonsCeiling,
+      dailyCapCents: p.dailyCapCents,
+    });
     const gate = new Gate(ledger, constitution, {
       count: () => world.commonsCount(),
       exists: (p) => world.exists(p),
     });
     const scheduler = new Scheduler({
       ledger, gate, world, clock: this.#clock,
+      options: {
+        maxTurns: p.maxTurns,
+        concurrency: p.concurrency,
+        baseIntervalMs: Math.round(p.baseIntervalMinutes * 60_000),
+        throttleAboveUtilization: p.throttleAboveUtilization,
+        pauseAboveUtilization: p.pauseAboveUtilization,
+      },
       ...(Object.keys(cfg.connectors ?? {}).length ? { connectors: cfg.connectors } : {}),
     });
     const company: Company = { slug, cfg, ledger, world, gate, constitution, scheduler };
@@ -161,13 +176,19 @@ export class Registry {
    * approval, note and commit already made, and changing one mid-life orphans
    * all of it — scripts/rename-agent.ts exists to do that job properly.
    */
-  async update(slug: string, patch: { name?: string; business?: string; slug?: string }):
-    Promise<{ ok: true; slug: string } | { ok: false; reason: string }> {
+  async update(
+    slug: string,
+    patch: { name?: string; business?: string; slug?: string; policy?: Partial<CompanyPolicy> },
+  ): Promise<{ ok: true; slug: string } | { ok: false; reason: string }> {
     if (!this.has(slug)) return { ok: false, reason: `no company '${slug}'` };
 
     const wanted = patch.slug?.trim() ? slugId(patch.slug) : slug;
     if (wanted !== slug && this.has(wanted)) return { ok: false, reason: `${wanted} already exists` };
 
+    // The scheduler reads its dials once, at construction, so a policy change
+    // only means anything after the company is let go and built again. That
+    // must not quietly pause a company that was working.
+    const wasRunning = listCompanies().find((c) => c.slug === slug)?.wanted ?? false;
     await this.close(slug);
 
     const from = companyHome(slug);
@@ -185,9 +206,11 @@ export class Registry {
         name: patch.name?.trim() || cfg.company.name,
         business: patch.business?.trim() ?? cfg.company.business,
       },
+      policy: readPolicy({ ...readPolicy(cfg.policy), ...(patch.policy ?? {}) }),
     };
     // Where it lives is the directory's job to say, not the file's.
     writeFileSync(path, JSON.stringify(persisted(next), null, 2) + '\n', 'utf8');
+    if (wasRunning) await this.setRunning(wanted, true);
     return { ok: true, slug: wanted };
   }
 

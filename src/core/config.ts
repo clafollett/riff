@@ -29,6 +29,86 @@ import { userInfo } from 'node:os';
  * makes a container run reproducible from environment alone.
  */
 
+/**
+ * The dials a company is run on.
+ *
+ * Every company used to get identical hardcoded policy, which was fine while
+ * they all did the same kind of work. A company writing documents and a
+ * company writing software do not want the same turn ceiling: the first
+ * finished inside 24 turns and the second hit the wall on every single shift.
+ *
+ * Usage, not money, is the budget worth governing here. On a subscription a
+ * dollar figure means nothing — what runs out is the rate-limit window, and
+ * exhausting it at 3am means the operator cannot work in the morning. So the
+ * ceilings are stated as utilization of that window. `dailyCapCents` is a
+ * different thing entirely and stays: it is the company spending real money
+ * on the outside world, which has nothing to do with what the model costs.
+ */
+export type CompanyPolicy = {
+  /** Model responses in one shift. A tool call and its result is one. */
+  maxTurns: number;
+  /** How many staff may be awake at once. */
+  concurrency: number;
+  /** Base gap between an agent's shifts. Rank and throttle scale it. */
+  baseIntervalMinutes: number;
+  /** Stretch the intervals once the window is this far spent (0–1). */
+  throttleAboveUtilization: number;
+  /**
+   * Stop the company outright at this much of the window (0–1), so the
+   * operator keeps headroom to do their own work. 1 disables it.
+   */
+  pauseAboveUtilization: number;
+  /** R6: how many documents the commons may hold. */
+  commonsCeiling: number;
+  /** R4: per-treasurer, per-day ceiling on real money, in whole cents. */
+  dailyCapCents: number;
+};
+
+/**
+ * Room to do a piece of software, and a window that survives the day.
+ *
+ * 24 turns was the old ceiling and every shift of a coding company hit it —
+ * read a file, edit, run the tests, read the failure, fix it is five turns
+ * before anything works.
+ */
+export const DEFAULT_POLICY: CompanyPolicy = {
+  maxTurns: 60,
+  concurrency: 3,
+  baseIntervalMinutes: 5,
+  throttleAboveUtilization: 0.7,
+  pauseAboveUtilization: 0.92,
+  commonsCeiling: 40,
+  dailyCapCents: 500,
+};
+
+/** Clamp anything a config file or an API caller offers into a workable range. */
+export const readPolicy = (raw: unknown): CompanyPolicy => {
+  const o = (raw ?? {}) as Partial<Record<keyof CompanyPolicy, unknown>>;
+  const num = (k: keyof CompanyPolicy, lo: number, hi: number): number => {
+    const raw = o[k];
+    // Absent is not zero, and Number() disagrees: null, '' and [] all coerce
+    // to a finite 0, which clamps to the minimum instead of falling back. A
+    // missing concurrency would have meant one agent, not three.
+    if (typeof raw !== 'number' && typeof raw !== 'string') return DEFAULT_POLICY[k];
+    if (raw === '') return DEFAULT_POLICY[k];
+    const v = Number(raw);
+    return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : DEFAULT_POLICY[k];
+  };
+  return {
+    maxTurns: Math.round(num('maxTurns', 1, 400)),
+    concurrency: Math.round(num('concurrency', 1, 16)),
+    baseIntervalMinutes: num('baseIntervalMinutes', 0.5, 720),
+    throttleAboveUtilization: num('throttleAboveUtilization', 0, 1),
+    // Throttling after the stop would never happen; keep the pair ordered.
+    pauseAboveUtilization: Math.max(
+      num('pauseAboveUtilization', 0.05, 1),
+      num('throttleAboveUtilization', 0, 1),
+    ),
+    commonsCeiling: Math.round(num('commonsCeiling', 1, 500)),
+    dailyCapCents: Math.round(num('dailyCapCents', 0, 100_000_00)),
+  };
+};
+
 export type RiffConfig = {
   version: 1;
   /**
@@ -63,6 +143,8 @@ export type RiffConfig = {
    * `external.write`, which always lands as a draft.
    */
   connectors: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
+  /** How hard this company works, and what it may authorise. See CompanyPolicy. */
+  policy: CompanyPolicy;
   /**
    * Whether this company should be working.
    *
@@ -247,6 +329,7 @@ const fromHome = (home: string): RiffConfig => {
     board: [{ id: slugId(name), name, role: 'Chairman' }],
     ceo: { id: 'ceo', name: 'CEO' },
     connectors: {},
+    policy: DEFAULT_POLICY,
   };
 };
 
@@ -337,6 +420,9 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): RiffConfig =>
         ? { id: slugId(env['RIFF_CEO'].trim()), name: env['RIFF_CEO'].trim() }
         : { id: 'ceo', name: 'CEO' }),
     connectors: merged.connectors ?? {},
+    // Companies founded before policy existed have none written down, and
+    // read back at the defaults rather than at zero.
+    policy: readPolicy(stored.policy),
   };
 };
 

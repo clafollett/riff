@@ -271,6 +271,10 @@ const server = createServer(async (req, res) => {
         ...(typeof b['name'] === 'string' ? { name: b['name'] } : {}),
         ...(typeof b['business'] === 'string' ? { business: b['business'].slice(0, 2000) } : {}),
         ...(typeof b['slug'] === 'string' ? { slug: b['slug'] } : {}),
+        // Clamped in readPolicy, so a hand-written value cannot ask for a
+        // thousand concurrent agents or a turn ceiling of zero.
+        ...(b['policy'] && typeof b['policy'] === 'object'
+          ? { policy: b['policy'] as Record<string, number> } : {}),
       });
       if (!r.ok) return json(res, { error: r.reason }, 409);
       if (r.slug !== target) { watchers.delete(target); lastSeq.delete(target); }
@@ -317,6 +321,7 @@ const server = createServer(async (req, res) => {
         return json(res, {
           slug: co.slug,
           company: cfg.company,
+          policy: cfg.policy,
           board: cfg.board,
           ceo: cfg.ceo,
           agents,

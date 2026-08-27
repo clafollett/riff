@@ -30,6 +30,13 @@ export type SchedulerOptions = {
    * down early keeps the company alive across it.
    */
   throttleAboveUtilization: number;
+  /**
+   * Stop outright once the window is this far spent, so the operator keeps
+   * headroom for their own work. Throttling only slows the company down; on a
+   * subscription a company that never stops will take the whole window, and
+   * the person who pays for it finds it gone. 1 disables the stop.
+   */
+  pauseAboveUtilization: number;
   maxTurns: number;
   /**
    * Hard ceilings for an unattended run. Neither is a cost estimate — they are
@@ -51,7 +58,10 @@ export const DEFAULT_SCHEDULE: SchedulerOptions = {
   maxTicks: null,
   until: null,
   throttleAboveUtilization: 0.7,
-  maxTurns: 24,
+  pauseAboveUtilization: 0.92,
+  // Read a file, edit it, run the tests, read the failure, fix it: five turns
+  // before anything works. At 24 every shift of a coding company was cut.
+  maxTurns: 60,
 };
 
 type Deps = {
@@ -129,6 +139,19 @@ export class Scheduler {
     }
 
     const u = info.utilization ?? 0;
+
+    // The operator's headroom. Slowing down still spends the window, just
+    // later; only stopping leaves any of it for the person who pays for it.
+    if (this.#opts.pauseAboveUtilization < 1 && u >= this.#opts.pauseAboveUtilization) {
+      this.#pausedUntil = normaliseResetsAt(info.resetsAt) ?? Date.now() + 15 * 60_000;
+      this.#d.ledger.emit('company', 'company.usage_paused', null, {
+        utilization: u, ceiling: this.#opts.pauseAboveUtilization,
+        rateLimitType: info.rateLimitType,
+        resumesAt: new Date(this.#pausedUntil).toISOString(),
+      });
+      return;
+    }
+
     const prev = this.#throttle;
     this.#throttle = info.status === 'allowed_warning' ? 3
       : u > this.#opts.throttleAboveUtilization ? 1 + (u - this.#opts.throttleAboveUtilization) * 6

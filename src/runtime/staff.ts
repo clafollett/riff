@@ -217,6 +217,8 @@ export const tick = async (
   let costUsd = 0;
   let turns = 0;
   let summary = '';
+  /** The last thing the agent said out loud, whether or not it got to finish. */
+  let said = '';
   let rateLimit: SDKRateLimitInfo | undefined;
 
   try {
@@ -256,8 +258,13 @@ export const tick = async (
     });
 
     for await (const m of q) {
-      if (d.trace && m.type === 'assistant') {
+      if (m.type === 'assistant') {
         for (const b of m.message.content) {
+          // Kept whether or not anyone is tracing: when a shift is cut at the
+          // turn ceiling there is no result text, and this is the only record
+          // of what the agent was actually doing when the lights went out.
+          if (b.type === 'text' && b.text.trim()) said = b.text.trim();
+          if (!d.trace) continue;
           if (b.type === 'tool_use') {
             d.trace(`  call  ${b.name} ${JSON.stringify(b.input).slice(0, 110)}`);
           } else if (b.type === 'text' && b.text.trim()) {
@@ -274,7 +281,10 @@ export const tick = async (
       if (m.type === 'result') {
         turns = m.num_turns;
         costUsd = m.total_cost_usd;
-        summary = m.subtype === 'success' ? m.result : `ended: ${m.subtype}`;
+        // "ended: error_max_turns" was going into the journal and the commit
+        // message — an error code standing in for the agent's own account of
+        // its shift. Their last words are a truer record than the subtype.
+        summary = m.subtype === 'success' ? m.result : (said || `ended: ${m.subtype}`);
       }
     }
 
@@ -311,10 +321,11 @@ export const tick = async (
     // the ceiling before it chose to stop. Recording that as a failure made a
     // busy company look broken and buried the errors that actually matter.
     if (OUT_OF_TURNS.test(error)) {
-      if (summary) world.appendJournal(agent.id, summary.slice(0, 600));
-      world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(summary)}`);
+      const cut = summary || said;
+      if (cut) world.appendJournal(agent.id, `${cut.slice(0, 600)}\n\n_Cut at the turn ceiling (${turns}). Resumes next shift._`);
+      world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(cut)}`);
       ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, truncated: true });
-      return { agentId: agent.id, ok: true, summary, costUsd, turns, truncated: true,
+      return { agentId: agent.id, ok: true, summary: cut, costUsd, turns, truncated: true,
                ...(rateLimit ? { rateLimit } : {}) };
     }
 
