@@ -225,3 +225,21 @@ test('a new world ignores what the operating system drops in it', () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+describe('git works on a world the host presents under another uid', () => {
+  test('every git call carries safe.directory, not a config file', () => {
+    // The world is a bind mount. When the uid the host presents it under is
+    // not the uid the factory runs as, git refuses the repo outright —
+    // "detected dubious ownership" — and a shift dies mid-commit on a
+    // directory that was fine a minute earlier. It happened once at 08:51.
+    //
+    // It has to be per-invocation: HOME in the container is a tmpfs, so
+    // `git config --global` is erased on the next restart.
+    const git = readFileSync(new URL('../src/worldfs/git.ts', import.meta.url), 'utf8');
+    assert.match(git, /'-c', `safe\.directory=\$\{this\.#dir\}`/,
+      'git calls must pass safe.directory for the world root');
+    const call = git.match(/execFileSync\('git',[^)]*\)/s)?.[0] ?? '';
+    assert.ok(call.indexOf('safe.directory') < call.indexOf("'-C'"),
+      'safe.directory must come before -C, or git parses it as a subcommand arg');
+  });
+});

@@ -19,7 +19,20 @@ export class WorldGit {
   constructor(dir: string) { this.#dir = dir; }
 
   #git(args: string[]): string {
-    return execFileSync('git', ['-C', this.#dir, ...args], {
+    // `safe.directory` on every call, not in a config file.
+    //
+    // The world lives on a bind mount, and the uid the host presents it under
+    // is not always the uid the factory runs as. Git refuses a repo it thinks
+    // belongs to someone else — "detected dubious ownership" — and that
+    // refusal killed a whole shift mid-commit at 08:51 on a repo that was
+    // readable a minute earlier and a minute later. The staff had already
+    // learned to pass this in their own shell commands; the code that commits
+    // on their behalf had not.
+    //
+    // Per-invocation rather than `git config --global`: HOME here is a tmpfs,
+    // so a config written into it is gone on the next restart, and a control
+    // that survives only until reboot is not a control.
+    return execFileSync('git', ['-c', `safe.directory=${this.#dir}`, '-C', this.#dir, ...args], {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
       // Capture stderr rather than inheriting it. Several calls here are
