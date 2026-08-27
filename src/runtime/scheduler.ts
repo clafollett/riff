@@ -72,6 +72,33 @@ type Deps = {
 };
 
 /**
+ * Who works next, when more people are due than there are slots.
+ *
+ * Longest-waiting first, NOT highest rank. Rank already buys its advantage in
+ * #intervalFor, where a senior comes due about twice as often as a member.
+ * Sorting by rank here spent it a second time: with ten staff and three slots
+ * the same seniors won every contest, and a member could sit due, be passed
+ * over, and still be due on the next pass, indefinitely. Invisible at two
+ * staff, and a mystery about idle juniors at ten.
+ *
+ * Rank breaks ties so the order stays deterministic when two people have
+ * waited exactly as long — which, on a company where nobody has run yet, is
+ * everybody.
+ */
+export const selectDue = (
+  staff: Agent[],
+  opts: { now: number; nextDue: Map<AgentId, number>; inFlight: Set<AgentId>; slots: number },
+): Agent[] => {
+  const overdue = (a: Agent): number => opts.now - (opts.nextDue.get(a.id) ?? 0);
+  return staff
+    .filter((a) => a.tier !== 'board' && a.status === 'active')
+    .filter((a) => !opts.inFlight.has(a.id))
+    .filter((a) => overdue(a) >= 0)
+    .sort((a, b) => overdue(b) - overdue(a) || RANK[a.tier] - RANK[b.tier])
+    .slice(0, Math.max(0, opts.slots));
+};
+
+/**
  * House Rule 5, as a property of the system rather than a request in a prompt:
  * the company keeps working whether or not anyone is watching.
  *
@@ -249,12 +276,10 @@ export class Scheduler {
       }
 
       const now = Date.now();
-      const due = this.#d.ledger.listAgents()
-        .filter((a) => a.tier !== 'board' && a.status === 'active')
-        .filter((a) => !this.#inFlight.has(a.id))
-        .filter((a) => (this.#nextDue.get(a.id) ?? 0) <= now)
-        .sort((a, b) => RANK[a.tier] - RANK[b.tier])
-        .slice(0, Math.max(0, this.#opts.concurrency - this.#inFlight.size));
+const due = selectDue(this.#d.ledger.listAgents(), {
+        now, nextDue: this.#nextDue, inFlight: this.#inFlight,
+        slots: this.#opts.concurrency - this.#inFlight.size,
+      });
 
       for (const a of due) this.#track(this.#wake(a));
 
