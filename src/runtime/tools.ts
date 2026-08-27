@@ -291,6 +291,45 @@ export const createTools = (ctx: Ctx) => {
     },
   );
 
+  /**
+   * Take back a draft you already sent to the board.
+   *
+   * The board's queue had nine items in it and six were corrections about the
+   * other three, because saying "do not approve that one" could only be done
+   * by filing another one. Withdrawing asks for strictly less than was already
+   * asked for, so it needs no approval of its own — and the ledger refuses it
+   * unless the request is yours and still pending.
+   */
+  const withdrawDraft = tool(
+    'withdraw_draft',
+    'Take back one of your own pending drafts, so the board does not act on something you already know is wrong. Yours only, and only while it is still waiting.',
+    { approvalId: z.string(), why: z.string().max(300) },
+    async ({ approvalId, why }) => {
+      const ap = ledger.getApproval(approvalId);
+      if (!ap) return say(`There is no draft ${approvalId}.`);
+      if (ap.requestedBy !== actor) return say(`Draft ${approvalId} is not yours to withdraw.`);
+      if (ap.state !== 'pending') return say(`Draft ${approvalId} was already ${ap.state}.`);
+      if (!ledger.withdrawApproval(approvalId, actor, why)) {
+        return say(`Draft ${approvalId} could not be withdrawn; it may have just been decided.`);
+      }
+      ledger.emit(actor, 'approval.withdrawn', approvalId, { why, summary: ap.summary });
+      return say(`Withdrawn. The board will not see ${approvalId} any more.`);
+    },
+  );
+
+  /** What is still waiting on the board, so a draft can be found to withdraw. */
+  const myDrafts = tool(
+    'my_drafts',
+    'Your own drafts still waiting on the board, oldest first.',
+    {},
+    async () => {
+      const mine = ledger.listApprovals('pending').filter((a) => a.requestedBy === actor);
+      if (!mine.length) return say('Nothing of yours is waiting on the board.');
+      return say(mine.map((a) => `${a.id} — ${a.summary.slice(0, 120)}`).join('\n'));
+    },
+    { annotations: { readOnlyHint: true } },
+  );
+
   const capabilities: Record<string, Capability> = {
     who_is_here: 'world.read', read_colleague: 'world.read_other',
     propose_role: 'hire', retire_role: 'hire',
@@ -300,6 +339,9 @@ export const createTools = (ctx: Ctx) => {
     set_activity: 'world.write',
     open_task: 'task.create', claim_task: 'task.assign', finish_task: 'task.assign',
     spend: 'spend', draft_outward: 'external.write',
+    // Both ask for less than was already granted: one lists your own requests,
+    // the other cancels one. Neither can reach outside the company.
+    withdraw_draft: 'world.read', my_drafts: 'world.read',
   };
 
   const server = createSdkMcpServer({
@@ -311,6 +353,7 @@ export const createTools = (ctx: Ctx) => {
       postToCommons, removeFromCommons, commonsIndex,
       sendMessage, noteAbout, remember, setActivity,
       openTask, claimTask, finishTask, spend, draftOutward,
+      myDrafts, withdrawDraft,
     ],
   });
 

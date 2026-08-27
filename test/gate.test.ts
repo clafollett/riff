@@ -188,3 +188,40 @@ describe('approvals are exactly-once', () => {
     assert.equal(gate.decide(id, 'vim', true, 'sure'), false);
   });
 });
+
+describe('a draft can be taken back by the person who sent it', () => {
+  const draft = (by: string, summary: string) => ledger.createApproval({
+    requestedBy: by, capability: 'external.write', tier: 'board', summary,
+  });
+
+  test('withdrawing clears it from the board without needing the board', () => {
+    // Nine drafts were waiting on a real company and six were corrections
+    // about the other three, because "do not approve that one" could only be
+    // said by filing another draft saying so.
+    const ap = draft('rae', 'hand-carry 0.2.14');
+    assert.equal(ledger.listApprovals('pending').length, 1);
+
+    assert.equal(ledger.withdrawApproval(ap.id, 'rae', 'its README names a file the tarball lacks'), true);
+    assert.equal(ledger.listApprovals('pending').length, 0, 'the board no longer has to read it');
+
+    const after = ledger.getApproval(ap.id)!;
+    assert.equal(after.state, 'rejected', 'not going ahead is what rejected means');
+    assert.equal(after.decidedBy, 'rae', 'and the record says who dropped it');
+    assert.match(after.decisionReason ?? '', /^withdrawn by rae: /);
+  });
+
+  test("you cannot withdraw a colleague's draft", () => {
+    // The identity check is the entire safety of this: it can only ever ask
+    // for less than was already asked for, and only on your own behalf.
+    const ap = draft('rae', "rae's draft");
+    assert.equal(ledger.withdrawApproval(ap.id, 'vim', 'I disagree with it'), false);
+    assert.equal(ledger.getApproval(ap.id)!.state, 'pending', "still rae's to withdraw");
+  });
+
+  test('a decided draft cannot be withdrawn out from under the board', () => {
+    const ap = draft('rae', 'already judged');
+    gate.decide(ap.id, 'chair', true, 'carry it');
+    assert.equal(ledger.withdrawApproval(ap.id, 'rae', 'changed my mind'), false);
+    assert.equal(ledger.getApproval(ap.id)!.state, 'approved', 'the board had already spoken');
+  });
+});

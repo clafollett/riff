@@ -279,6 +279,29 @@ export class Ledger {
     return Number(res.changes) === 1;
   }
 
+  /**
+   * Take back your own pending request.
+   *
+   * Without this the only way to say "do not approve that one" was to file
+   * another draft saying so, and the board's queue became a conversation: nine
+   * items waiting, six of them corrections and withdrawals about the other
+   * three. A queue you have to read in order to discover which entries are
+   * already dead is not a queue.
+   *
+   * Recorded as a rejection because that is what it is — the request is not
+   * going ahead — decided by the person who asked for it. Requiring
+   * requested_by to match is the whole safety of it: this can only ever ask
+   * for less than was already asked for, never more, and nobody can retract
+   * somebody else's request.
+   */
+  withdrawApproval(id: ApprovalId, by: AgentId, reason: string): boolean {
+    const res = this.#db.prepare(
+      `UPDATE approvals SET state='rejected', decided_by=?, decided_at=?, decision_reason=?
+       WHERE id=? AND state='pending' AND requested_by=?`
+    ).run(by, this.#clock.iso(), `withdrawn by ${by}: ${reason}`, id, by);
+    return Number(res.changes) === 1;
+  }
+
   #toApproval(r: Row): Approval {
     return {
       id: str(r['id']), requestedBy: str(r['requested_by']),
