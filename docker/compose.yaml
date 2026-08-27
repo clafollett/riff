@@ -67,10 +67,15 @@ services:
     # Everything the factory needs to write is under /data and these. The rest
     # of the filesystem is read-only, so an agent cannot rewrite its own image.
     read_only: true
+    # A tmpfs mounts root-owned by default, and the factory runs as labs
+    # (10001). /home/labs is the CLI's session store: unwritable, it silently
+    # keeps no transcripts, so every resume fails and every shift starts cold.
+    # It did — 33 resume attempts, 33 resets, 0 successes — while the feature
+    # looked present and the container looked healthy.
     tmpfs:
-      - /tmp:size=512m
-      - /home/labs:size=256m
-      - /app/node_modules/.cache:size=128m
+      - /tmp:size=512m,uid=10001,gid=10001,mode=1777
+      - /home/labs:size=256m,uid=10001,gid=10001,mode=0700
+      - /app/node_modules/.cache:size=128m,uid=10001,gid=10001,mode=0755
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4173/api/companies').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 30s

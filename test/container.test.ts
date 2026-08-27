@@ -347,3 +347,25 @@ describe('the egress wall lets research through without letting anything out', (
     assert.deepEqual(compile(), compile(''));
   });
 });
+
+describe('the session store is somewhere the factory can actually write', () => {
+  const compose = readFileSync(new URL('../docker/compose.yaml', import.meta.url), 'utf8');
+
+  test('every tmpfs is owned by the user the factory runs as', () => {
+    // A tmpfs mounts root-owned. The factory runs as labs (10001), so an
+    // unowned /home/labs is silently unwritable — the CLI keeps no
+    // transcripts, every resume fails, and every shift starts cold. That ran
+    // for 33 shifts looking healthy the whole time.
+    const lines = (compose.match(/^\s+- \/[^\n]*size=\d+m[^\n]*$/gm) ?? []);
+    assert.ok(lines.length >= 3, `expected the tmpfs list, found ${lines.length}`);
+    for (const l of lines) {
+      assert.match(l, /uid=10001/, `tmpfs mounts root-owned: ${l.trim()}`);
+      assert.match(l, /gid=10001/, `tmpfs mounts root-owned: ${l.trim()}`);
+    }
+  });
+
+  test("the CLI's home is one of them", () => {
+    // If HOME is not a writable mount, persistSession is a no-op.
+    assert.match(compose, /\/home\/labs:size=\d+m,uid=10001/);
+  });
+});
