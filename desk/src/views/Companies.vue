@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { api, type CompanyRef } from '../api';
+import { tagline } from '../text.ts';
 
 const props = defineProps<{ list: CompanyRef[]; active: string }>();
 const emit = defineEmits<{ switch: [slug: string]; changed: [] }>();
@@ -139,7 +140,9 @@ const receive = async (e: Event) => {
         <span class="dot" :class="{ live: c.running, busy: c.awake.length }" />
         <span class="names">
           <span class="name">{{ c.name }}</span>
-          <span class="biz muted">{{ c.business || 'no line of business recorded' }}</span>
+          <span class="biz muted" :title="c.business">
+            {{ tagline(c.business, 96) || 'no line of business recorded' }}
+          </span>
         </span>
         <span class="grow" />
         <span class="state mono" :class="{ live: c.running, busy: c.awake.length }">
@@ -202,7 +205,7 @@ const receive = async (e: Event) => {
             ids are on every approval and commit already made.
           </p>
           <label>Company name<input v-model="rename.name" /></label>
-          <label>Line of business<input v-model="rename.business" /></label>
+          <label>Line of business<textarea v-model="rename.business" rows="5" /></label>
           <label>Folder<input v-model="rename.slug" class="mono" /></label>
           <p v-if="err" class="err">{{ err }}</p>
           <div class="row">
@@ -258,9 +261,9 @@ h1 { font-size: 30px; }
   .dot.busy { animation: pulse 1.8s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: .35; } }
 }
-.names { display: flex; flex-direction: column; gap: 2px; }
+.names { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .name { font-family: var(--serif); font-size: 17px; color: var(--ink); }
-.biz { font-size: 12px; }
+.biz { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .grow { flex: 1; }
 .meta { font-size: 11px; }
 .tools { display: flex; align-items: center; gap: 6px; padding: 0 12px;

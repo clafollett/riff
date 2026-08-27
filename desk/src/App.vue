@@ -9,9 +9,11 @@ import Commons from './views/Commons.vue';
 import Work from './views/Work.vue';
 import Companies from './views/Companies.vue';
 import Inbox from './views/Inbox.vue';
+import Overview from './views/Overview.vue';
 import Splitter, { rememberedWidth } from './Splitter.vue';
 
 const VIEWS = [
+  { id: 'overview', label: 'Overview', comp: Overview },
   { id: 'envelope', label: 'Envelope', comp: Envelope },
   { id: 'inbox',    label: 'Inbox',    comp: Inbox },
   { id: 'record',   label: 'Record',   comp: Record },
@@ -187,7 +189,7 @@ const util = computed(() => {
         <button class="switcher" @click="picking = !picking" :aria-expanded="picking">
           <span class="names">
             <span class="co">{{ state?.company.name ?? (companies.length ? 'Pick a company' : 'The Desk') }}</span>
-            <span class="faint biz">{{ state?.company.business }}</span>
+
           </span>
           <span class="chev" :class="{ up: picking }">▾</span>
         </button>
@@ -291,7 +293,7 @@ const util = computed(() => {
 .switcher:hover { border-color: var(--line); background: #1a1512; }
 .switcher .names { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .co { font-family: var(--serif); font-size: 17px; color: var(--ink); line-height: 1.2; }
-.biz { font-size: 11px; }
+
 .chev { margin-left: auto; color: var(--faint); font-size: 11px; padding-top: 3px; }
 .chev.up { transform: rotate(180deg); }
 .menu { position: absolute; left: 12px; right: 12px; top: 100%; z-index: 10;

@@ -7,11 +7,13 @@ import { test, expect, type Page } from '@playwright/test';
  * A screenshot proves the pixels arrived; these prove the content did.
  */
 
-const go = async (page: Page, view: string) => {
+// `heading` differs from the view name only for Overview, whose title is the
+// company's own name — a company's front page is not called "Overview".
+const go = async (page: Page, view: string, heading = view) => {
   await page.getByRole('button', { name: new RegExp(`^${view}`) }).click();
   // The view's own heading is the first one. Rendered agent prose contributes
   // headings of its own further down the page.
-  await expect(page.locator('main h1').first()).toContainText(new RegExp(view, 'i'));
+  await expect(page.locator('main h1').first()).toContainText(new RegExp(heading, 'i'));
 };
 
 /**
@@ -37,7 +39,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('the rail names the company and counts what is waiting', async ({ page }) => {
-  await expect(page.locator('.brand .biz')).toHaveText('proving the console renders');
+  // The name, and nothing else. The line of business was rendered under it
+  // while it was three words; it holds the founder's whole brief now.
+  await expect(page.locator('.brand .co')).toHaveText('Testwright Co');
+  await expect(page.locator('.brand')).not.toContainText('proving the console renders');
   await expect(page.locator('.navitem').filter({ hasText: 'Envelope' }).locator('.pill')).toHaveText('1');
   await expect(page.locator('.status')).toContainText('1 waiting on you');
 });
@@ -638,6 +643,30 @@ test('a long roster stays a field to type in, not a wall to read', async ({ page
   await expect(page.locator('.compose .options')).toHaveCount(0);
 });
 
+test('the brief can be read back and revised, and the CEO is told', async ({ page }) => {
+  // Editing it used to be impossible, and would have been a lie if it were:
+  // the brief is copied into the constitution and the CEO's papers at
+  // founding, so changing config.json changes a file nobody has open.
+  await go(page, 'Overview', 'Testwright Co');
+  await expect(page.locator('.brief .body')).toBeVisible();
+
+  await page.locator('.brief').getByRole('button', { name: 'Edit' }).click();
+  const editor = page.locator('.brief textarea');
+  await editor.fill('Instruments for people who work on boats.\n\nNothing that needs a tutorial.');
+  await page.locator('.brief').getByRole('button', { name: 'Save' }).click();
+
+  await expect(page.locator('.brief .body')).toContainText('people who work on boats');
+  await expect(page.locator('.brief textarea')).toHaveCount(0);
+
+  // The company hears about it, rather than the change sitting in a file.
+  await go(page, 'Inbox');
+  await page.getByRole('button', { name: "Everyone's" }).click();
+  await page.getByRole('searchbox', { name: 'Filter messages' }).fill('revised the brief');
+  await expect(page.locator('.msg')).toHaveCount(1);
+  await page.locator('.msg .row').first().click();
+  await expect(page.locator('.msg .body')).toContainText('people who work on boats');
+});
+
 test('the console updates itself as the company works', async ({ page }) => {
   // Views used to load once on mount, so anything the company did while you
   // were looking at a page simply did not appear until you navigated away and
@@ -728,7 +757,8 @@ test.describe('many companies, one console', () => {
     await page.getByLabel('Company name').fill('Kestrel Provisioning');
     // A paragraph, not a phrase: the founder's one chance to say what this is
     // for, before a CEO who has never met them decides it.
-    const brief = 'Field logistics for crews who work where there is no signal.\n\n'
+    const brief = 'Field logistics for crews who work where there is no signal, no power, '
+      + 'and no patience for ceremony.\n\n'
       + 'Not a SaaS dashboard. Kit that works out of a truck.';
     const business = page.getByLabel('Line of business');
     await expect(business).toHaveRole('textbox');
@@ -742,6 +772,18 @@ test.describe('many companies, one console', () => {
     // the first without the second, because switching unmounted the view whose
     // event refreshed the list.
     await expect(page.locator('.co')).toHaveText('Kestrel Provisioning');
+
+    // The rail carries the name and nothing else. The brief used to be
+    // rendered under it, back when it was three words; a paragraph there
+    // buried the name it belongs to.
+    await expect(page.locator('.brand')).not.toContainText('Field logistics');
+    await expect(page.locator('.brand .biz')).toHaveCount(0);
+
+    // It is legible in full on the company's own page instead.
+    await go(page, 'Overview', 'Kestrel Provisioning');
+    await expect(page.locator('.brief .body')).toContainText('Field logistics for crews');
+    await expect(page.locator('.brief .body')).toContainText('works out of a truck');
+
     await page.locator('.switcher').click();
     await expect(page.locator('.menuitem').filter({ hasText: 'Kestrel' })).toHaveCount(1);
     await expect(page.locator('.menuitem').filter({ hasText: 'Testwright' })).toHaveCount(1);

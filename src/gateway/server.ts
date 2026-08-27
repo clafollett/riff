@@ -266,13 +266,34 @@ const server = createServer(async (req, res) => {
       }
 
       const b = await readBody(req);
+      const was = registry.list().find((c) => c.slug === target)?.business ?? '';
       const r = await registry.update(target, {
         ...(typeof b['name'] === 'string' ? { name: b['name'] } : {}),
-        ...(typeof b['business'] === 'string' ? { business: b['business'] } : {}),
+        ...(typeof b['business'] === 'string' ? { business: b['business'].slice(0, 2000) } : {}),
         ...(typeof b['slug'] === 'string' ? { slug: b['slug'] } : {}),
       });
       if (!r.ok) return json(res, { error: r.reason }, 409);
       if (r.slug !== target) { watchers.delete(target); lastSeq.delete(target); }
+
+      // A brief revised after founding otherwise reaches nobody. It was copied
+      // into the constitution and the CEO's papers on day one and never read
+      // again — editing config.json changes a file no agent has open. So the
+      // founder's new words are delivered the way the founder's words always
+      // are: as mail the CEO reads on their next waking. Rewriting the
+      // constitution behind them is not ours to do; it is theirs to amend.
+      const co2 = registry.get(r.slug);
+      if (co2 && co2.cfg.company.business !== was) {
+        const from = co2.cfg.board[0]?.id ?? 'board';
+        const to = co2.cfg.ceo.id;
+        const text = co2.cfg.company.business
+          ? `The founder has revised the brief for ${co2.cfg.company.name}.\n\n`
+            + `${co2.cfg.company.business}\n\n`
+            + `The constitution still says what it said on day one. Amending it is yours.`
+          : `The founder has withdrawn the written brief for ${co2.cfg.company.name}.`;
+        co2.ledger.sendMessage(from, to, text);
+        co2.ledger.emit(from, 'company.brief', to, { was, now: co2.cfg.company.business });
+        co2.scheduler.nudge(to);
+      }
       return json(res, { slug: r.slug });
     }
 
