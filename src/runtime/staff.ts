@@ -269,6 +269,34 @@ export const tick = async (
   let summary = '';
   /** The last thing the agent said out loud, whether or not it got to finish. */
   let said = '';
+  /**
+   * How full the context is, measured the way the statusline measures it.
+   *
+   * `input_tokens` alone is nearly always a handful — a probe showed 2 against
+   * a 30,433-token context — because everything else sits in cache_creation on
+   * the first turn and cache_read after. All three, or the number is fiction.
+   */
+  let contextTokens = 0;
+  /**
+   * The denominator, from the model's own report rather than a constant.
+   * modelUsage carries an entry per model called during the query, including
+   * an auxiliary Haiku with a 200K window next to a main model with 1M — key
+   * on the agent's model or the percentage is against the wrong ceiling.
+   */
+  let contextWindow = 0;
+  /**
+   * What the shift cost in context, for the record. Omitted rather than
+   * reported as zero when a shift died before any assistant turn — a 0% that
+   * means "unknown" is worse than a gap, because it averages.
+   */
+  const context = (): Record<string, number> => (contextTokens
+    ? {
+        contextTokens,
+        ...(contextWindow
+          ? { contextPct: Math.round((contextTokens / contextWindow) * 1000) / 10, contextWindow }
+          : {}),
+      }
+    : {});
   let rateLimit: SDKRateLimitInfo | undefined;
   /**
    * The ceiling in force, recorded alongside the count so the two can be read
@@ -334,6 +362,10 @@ export const tick = async (
 
     for await (const m of q) {
       if (m.type === 'assistant') {
+        const u = m.message.usage as unknown as Record<string, number | undefined>;
+        contextTokens = (u['input_tokens'] ?? 0)
+          + (u['cache_read_input_tokens'] ?? 0)
+          + (u['cache_creation_input_tokens'] ?? 0);
         for (const b of m.message.content) {
           // Kept whether or not anyone is tracing: when a shift is cut at the
           // turn ceiling there is no result text, and this is the only record
@@ -353,9 +385,20 @@ export const tick = async (
       if (m.type === 'rate_limit_event') {
         rateLimit = m.rate_limit_info;
       }
+      // Compaction is the backstop, not the mechanism. If it fires, our own
+      // threshold was too high — and without this it happens silently and the
+      // persona erodes with nobody the wiser.
+      if (m.type === 'system' && m.subtype === 'compact_boundary') {
+        const c = m.compact_metadata;
+        ledger.emit(agent.id, 'session.compacted', null, {
+          trigger: c.trigger, preTokens: c.pre_tokens,
+          ...(c.post_tokens != null ? { postTokens: c.post_tokens } : {}),
+        });
+      }
       if (m.type === 'result') {
         turns = m.num_turns;
         costUsd = m.total_cost_usd;
+        contextWindow = m.modelUsage?.[agent.model]?.contextWindow ?? contextWindow;
         // "ended: error_max_turns" was going into the journal and the commit
         // message — an error code standing in for the agent's own account of
         // its shift. Their last words are a truer record than the subtype.
@@ -367,7 +410,7 @@ export const tick = async (
     if (summary) world.appendJournal(agent.id, summary.slice(0, 600));
     world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(summary)}`);
 
-    ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling });
+    ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling, ...context() });
     return { agentId: agent.id, ok: true, summary, costUsd, turns, ...(rateLimit ? { rateLimit } : {}) };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -399,7 +442,7 @@ export const tick = async (
       const cut = summary || said;
       if (cut) world.appendJournal(agent.id, `${cut.slice(0, 600)}\n\n_Cut at the turn ceiling (${turns}). Resumes next shift._`);
       world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(cut)}`);
-      ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling, truncated: true });
+      ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling, truncated: true, ...context() });
       return { agentId: agent.id, ok: true, summary: cut, costUsd, turns, truncated: true,
                ...(rateLimit ? { rateLimit } : {}) };
     }

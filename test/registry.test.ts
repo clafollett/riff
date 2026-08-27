@@ -453,6 +453,44 @@ describe('a fresh installation starts empty', () => {
   });
 });
 
+describe('a shift records how full its context got', () => {
+  const staff = () => readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+
+  test('context is all three token fields, not the one called input', () => {
+    // A live probe read input_tokens=2 against a 30,433-token context: the
+    // rest sat in cache_creation on the first turn and cache_read after.
+    // Watching only input_tokens is a threshold that can never be crossed.
+    const src = staff();
+    for (const f of ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens']) {
+      assert.ok(src.includes(`'${f}'`), `context must include ${f}`);
+    }
+  });
+
+  test('the window comes from the agent\'s own model, not whichever is first', () => {
+    // modelUsage carries an auxiliary Haiku at 200K next to a main model at
+    // 1M. Keyed wrong, the percentage is measured against the wrong ceiling.
+    assert.match(staff(), /modelUsage\?\.\[agent\.model\]\?\.contextWindow/);
+  });
+
+  test('a shift that never got a turn reports no context rather than zero', () => {
+    // 0% meaning "unknown" is worse than a gap, because it averages.
+    assert.match(staff(), /const context = \(\): Record<string, number> => \(contextTokens/);
+  });
+
+  test('compaction is recorded, because it means our own threshold was too high', () => {
+    const src = staff();
+    assert.match(src, /subtype === 'compact_boundary'/);
+    assert.match(src, /'session\.compacted'/);
+    assert.match(src, /preTokens: c\.pre_tokens/);
+  });
+
+  test('both sleep paths carry it, the truncated one included', () => {
+    const slept = staff().match(/'agent\.slept'[^;]*/g) ?? [];
+    assert.equal(slept.length, 2);
+    for (const s of slept) assert.match(s, /\.\.\.context\(\)/, `missing context: ${s}`);
+  });
+});
+
 describe('a shift records the ceiling it ran under', () => {
   test('the stale second default is gone, so the fallback cannot drift', () => {
     // staff.ts carried its own `?? 24` long after the ceiling moved to 60.
