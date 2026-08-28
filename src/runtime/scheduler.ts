@@ -45,6 +45,12 @@ export type SchedulerOptions = {
    */
   rotateAtContextPct: number;
   /**
+   * Somewhere with real disk for toolchain caches. Empty leaves every one of
+   * them on its default, which is under $HOME — a tmpfs that is also the
+   * session store. See cacheEnv in staff.ts.
+   */
+  cacheDir: string;
+  /**
    * Hard ceilings for an unattended run. Neither is a cost estimate — they are
    * stops. Leaving something unbounded running on somebody's machine overnight
    * is not a thing to do, and a subscription that gets exhausted at 3am means
@@ -69,6 +75,7 @@ export const DEFAULT_SCHEDULE: SchedulerOptions = {
   // before anything works. At 24 every shift of a coding company was cut.
   maxTurns: 60,
   rotateAtContextPct: 50,
+  cacheDir: '',
 };
 
 type Deps = {
@@ -308,6 +315,7 @@ const due = selectDue(this.#d.ledger.listAgents(), {
         ...(this.#opts.perTickBudgetUsd != null ? { maxBudgetUsd: this.#opts.perTickBudgetUsd } : {}),
         maxTurns: this.#opts.maxTurns,
         rotateAtContextPct: this.#opts.rotateAtContextPct,
+        ...(this.#opts.cacheDir ? { cacheDir: this.#opts.cacheDir } : {}),
         ...(this.#d.connectors ? { connectors: this.#d.connectors } : {}),
         signal: this.#abort.signal,
       });

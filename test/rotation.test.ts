@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldRotate } from '../src/runtime/staff.ts';
+import { shouldRotate, cacheEnv } from '../src/runtime/staff.ts';
 import { readPolicy, DEFAULT_POLICY } from '../src/core/config.ts';
 
 /** Half of a one-million window, which is where the default fires. */
@@ -80,5 +80,33 @@ describe('configuring the threshold', () => {
    */
   test('a threshold too high to ever fire is clamped to one that can', () => {
     assert.equal(readPolicy({ rotateAtContextPct: 99 }).rotateAtContextPct, 90);
+  });
+});
+
+describe('where a toolchain is told to put its cache', () => {
+  /**
+   * $HOME in the container is a 256M tmpfs that is also the CLI's session
+   * store. A cache left on its default fills it, and what breaks is not the
+   * build — it is every resume after it, silently.
+   */
+  test('nothing is left pointing at $HOME', () => {
+    const env = cacheEnv('/data/companies/acme/scratch/cache');
+    assert.ok(Object.values(env).length > 0);
+    for (const [k, v] of Object.entries(env)) {
+      assert.ok(v.startsWith('/data/companies/acme/scratch/cache'), `${k} escaped: ${v}`);
+    }
+  });
+
+  test('the languages this company was told it may choose are covered', () => {
+    // The charter says language is their call, so npm alone is not an answer.
+    const env = cacheEnv('/cache');
+    for (const k of ['npm_config_cache', 'GOMODCACHE', 'GOCACHE', 'CARGO_HOME', 'XDG_CACHE_HOME']) {
+      assert.ok(k in env, `nothing set for ${k}`);
+    }
+  });
+
+  test('caches are per company, like everything else a company touches', () => {
+    assert.notEqual(cacheEnv('/a/scratch/cache')['npm_config_cache'],
+                    cacheEnv('/b/scratch/cache')['npm_config_cache']);
   });
 });

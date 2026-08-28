@@ -125,6 +125,10 @@ export class Registry {
 
   #build(slug: string, cfg: RiffConfig): Company {
     const { ledger, world } = found(cfg, this.#clock);
+    // Made at open, so a volume that cannot be written to says so now rather
+    // than a day later in the middle of somebody's build.
+    const cacheDir = join(cfg.home, 'scratch', 'cache');
+    mkdirSync(cacheDir, { recursive: true });
     const p = cfg.policy;
     const constitution = constitutionFor({
       ceo: cfg.ceo.id,
@@ -141,6 +145,9 @@ export class Registry {
       options: {
         maxTurns: p.maxTurns,
         rotateAtContextPct: p.rotateAtContextPct,
+        // Beside the world, never inside it: the end-of-turn commit stages the
+        // whole tree, and a build cache is not part of anybody's work.
+        cacheDir,
         concurrency: p.concurrency,
         baseIntervalMs: Math.round(p.baseIntervalMinutes * 60_000),
         throttleAboveUtilization: p.throttleAboveUtilization,

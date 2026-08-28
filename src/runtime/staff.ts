@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { query, type SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
@@ -22,6 +23,8 @@ export type TickDeps = {
   /** Replace the conversation mid-shift at this much of the window. See
    *  CompanyPolicy.rotateAtContextPct. */
   rotateAtContextPct?: number;
+  /** Somewhere with real disk for toolchain caches. See cacheEnv. */
+  cacheDir?: string;
   /** External MCP servers (image generation, calendar, inbox). Everything they
    *  reach still crosses the gate — canUseTool sees these calls too. */
   connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
@@ -310,6 +313,37 @@ const HANDOVER_TURNS = 6;
 const MAX_ROTATIONS = 2;
 
 /**
+ * Where a toolchain is told to keep its cache.
+ *
+ * Every one of them defaults somewhere under $HOME, and $HOME in the container
+ * is a 256M tmpfs that is *also* the CLI's session store. So the first
+ * `npm install`, `go build` or `cargo fetch` of any size fills the place the
+ * transcripts live, and what breaks is not the build — it is every resume
+ * after it, silently. That exact failure already cost 33 shifts before anyone
+ * noticed the sessions were never being written.
+ *
+ * The one cache that did get moved out of $HOME went to /tmp, which is a 512M
+ * tmpfs. npm's cache reached 247M installing third-party servers to lint, and
+ * took an unrelated `git commit` down with ENOSPC on the way out.
+ *
+ * There is no version of this that fits in a tmpfs. Caches go on the durable
+ * volume beside the world, where there is room and where they survive a
+ * restart — which is the entire point of a cache.
+ *
+ * The list is not exhaustive and cannot be: this company was told its language
+ * is its own choice. It covers what a staff member is most likely to reach
+ * for, and anything missed lands in /tmp rather than on the session store.
+ */
+export const cacheEnv = (dir: string): Record<string, string> => ({
+  npm_config_cache: join(dir, 'npm'),
+  // Honoured by Go's build cache, pip, and most things that ask politely.
+  XDG_CACHE_HOME: dir,
+  GOMODCACHE: join(dir, 'go-mod'),
+  GOCACHE: join(dir, 'go-build'),
+  CARGO_HOME: join(dir, 'cargo'),
+});
+
+/**
  * Whether to hand this conversation over and carry on in a fresh one.
  *
  * Unknown is not "yes": with no window reported there is no denominator, and
@@ -486,6 +520,11 @@ export const tick = async (
         ...(d.maxBudgetUsd != null ? { maxBudgetUsd: d.maxBudgetUsd } : {}),
         effort: 'medium',
         thinking: { type: 'adaptive' },
+
+        // Spread process.env rather than replace it — omitting `env` inherits
+        // it, so naming the field at all means naming everything the CLI
+        // needs, the subscription token included.
+        ...(d.cacheDir ? { env: { ...process.env, ...cacheEnv(d.cacheDir) } } : {}),
 
         // ---- continuity ----
         ...(session ? { resume: session } : {}),
