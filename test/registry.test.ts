@@ -513,6 +513,23 @@ describe('a shift records the ceiling it ran under', () => {
   });
 });
 
+describe('the house style is a cost control, not a preference', () => {
+  const staff = () => readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+
+  test('it sits in the cached half of the context, not the volatile half', () => {
+    // In buildTickPrompt it would be paid for again on every single wake-up,
+    // which is the opposite of what it is there to do.
+    const src = staff();
+    const system = src.slice(src.indexOf('const buildSystemPrompt'), src.indexOf('const buildTickPrompt'));
+    assert.match(system, /HOUSE_STYLE/);
+    assert.doesNotMatch(src.slice(src.indexOf('const buildTickPrompt')), /HOUSE_STYLE/);
+  });
+
+  test('brevity is never asked for at the cost of a failure nobody then hears about', () => {
+    assert.match(staff(), /never about substance/);
+  });
+});
+
 describe('the founder can say more than a phrase about what to build', () => {
   test('a paragraph is set out on its own, not read into the middle of a sentence', () => {
     // "You are the CEO of X, a company in We are building tooling for teams

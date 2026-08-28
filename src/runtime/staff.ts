@@ -88,6 +88,39 @@ const READING_OUT = [
   '',
 ].join('\n');
 
+/**
+ * How much of a shift is spent producing prose nobody asked for.
+ *
+ * Length is not a matter of taste here, it is the budget. Everything a staff
+ * member writes is read back at cost: their own words sit in their transcript
+ * and are re-read on every turn after, a message body lands verbatim in every
+ * recipient's next wake-up, and a shift that fills its context gets its
+ * conversation replaced. A three-paragraph status note to a colleague is paid
+ * for by the writer, the reader, and again by whoever they tell.
+ *
+ * The house style lives here rather than in an output style because Riff hands
+ * the SDK a plain-string system prompt. There is no preset underneath for a
+ * style to layer onto, and `managedSettings` drops non-restrictive keys like
+ * `outputStyle` on the floor without saying so.
+ */
+const HOUSE_STYLE = [
+  '## How to write',
+  '',
+  'Say the thing and stop. Every word you write is read again — by you next',
+  'shift, and by everyone you addressed — and paid for each time.',
+  '',
+  '- Lead with the result. No preamble, no restating the request, no recap at',
+  '  the end of what you just said above.',
+  '- A message to a colleague is a few sentences. If it wants headings it is a',
+  '  document: write the document and send the path.',
+  '- Report what you did, not what you are about to do.',
+  '- Say the caveat only when it changes what someone should do next.',
+  '',
+  'This is about length, never about substance. A test failure, a refusal, a',
+  'security finding or a number someone will act on gets stated in full.',
+  '',
+].join('\n');
+
 const outwardState = (d: TickDeps): string => {
   const channels = Object.keys(d.connectors ?? {});
   if (channels.length) {
@@ -157,6 +190,7 @@ const buildSystemPrompt = (d: TickDeps): string => {
     "- You may read colleagues' briefs and memory. They can see that you did.",
     '- Prefer finishing one real thing over starting three.',
     '',
+    HOUSE_STYLE,
     outwardState(d),
   ].filter(Boolean).join('\n');
 };
