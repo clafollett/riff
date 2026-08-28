@@ -19,6 +19,9 @@ export type TickDeps = {
    *  The spend cap governs the staff's money; this governs yours. */
   maxBudgetUsd?: number;
   maxTurns?: number;
+  /** Replace the conversation mid-shift at this much of the window. See
+   *  CompanyPolicy.rotateAtContextPct. */
+  rotateAtContextPct?: number;
   /** External MCP servers (image generation, calendar, inbox). Everything they
    *  reach still crosses the gate — canUseTool sees these calls too. */
   connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
@@ -41,6 +44,8 @@ export type TickResult = {
   /** The shift ended at the turn ceiling rather than because the agent
    *  chose to stop. Work happened; there was simply more of it. */
   truncated?: boolean;
+  /** How many times the conversation was replaced mid-shift. */
+  rotations?: number;
 };
 
 /**
@@ -252,6 +257,82 @@ const LOST_SESSION = /No conversation found with session ID|session .* not found
 /** The turn ceiling, which ends a shift rather than breaking one. */
 const OUT_OF_TURNS = /Reached maximum number of turns/i;
 
+/**
+ * Turns held back for the hand-over when a conversation is replaced.
+ *
+ * These are the most expensive turns of the shift — they run against the full
+ * old context, which is the whole reason we are replacing it — and the ones
+ * that least tolerate being cut short. Whatever does not get written down
+ * here does not survive.
+ */
+const HANDOVER_TURNS = 6;
+
+/**
+ * Rotations allowed in one shift. Two is a bound on a pathology, not a
+ * target: an agent that fills the window three times in one wake-up is
+ * looping rather than working, and the next shift is a better place to
+ * notice that than the middle of this one.
+ */
+const MAX_ROTATIONS = 2;
+
+/**
+ * Whether to hand this conversation over and carry on in a fresh one.
+ *
+ * Unknown is not "yes": with no window reported there is no denominator, and
+ * rotating on a guess would throw away a conversation that might be nearly
+ * empty. That is also why the threshold is a percentage — the denominator
+ * belongs to whatever model the company gave this agent, not to us.
+ */
+export const shouldRotate = (s: {
+  contextTokens: number;
+  contextWindow: number;
+  rotateAtPct: number;
+  /** Turns still inside the shift's ceiling. */
+  turnsLeft: number;
+  rotations: number;
+}): boolean => {
+  if (s.rotateAtPct <= 0 || s.rotations >= MAX_ROTATIONS) return false;
+  if (!s.contextWindow || !s.contextTokens) return false;
+  if (s.contextTokens * 100 < s.rotateAtPct * s.contextWindow) return false;
+  // Room to hand over AND to do something afterwards. Rotating with four turns
+  // left spends them all on note-taking for a shift that then ends.
+  return s.turnsLeft >= HANDOVER_TURNS * 2;
+};
+
+/**
+ * What an agent is asked immediately before its conversation is thrown away.
+ *
+ * Rotation is only survivable because of what this produces. Everything not
+ * written to memory or to a file in these turns is gone, and the agent picks
+ * the work back up believing it knows where it was — so this prompt, not the
+ * threshold, is what decides whether rotating costs the company anything.
+ */
+const HANDOVER_PROMPT = [
+  'Stop what you are doing. Your context is nearly full, so this conversation',
+  'is about to be replaced with an empty one.',
+  '',
+  'You are not going home. In a moment you carry on with the same work, in the',
+  'same shift — but with no memory of anything said here. What you write down',
+  'now is all you will have.',
+  '',
+  'Use `remember` for what outlasts today, and your own files under staff/ for',
+  'working detail. Record what you are in the middle of, what you have already',
+  'tried and ruled out so you do not try it again, what you decided and why,',
+  'and the next concrete step.',
+  '',
+  'Do not summarise this conversation for a reader. Write the note you would',
+  'want to find.',
+].join('\n');
+
+/** The first thing the replacement conversation is told. */
+const RESUMED_PROMPT = [
+  'You are part-way through a shift. The earlier half of this conversation is',
+  'gone — what you wrote down before it went is what you have.',
+  '',
+  'Read your memory and your own files, pick the work back up where the note',
+  'says you left it, and finish something.',
+].join('\n');
+
 export const tick = async (
   d: TickDeps,
   opts?: { withoutResume?: boolean },
@@ -261,8 +342,10 @@ export const tick = async (
     actor: agent.id, ledger, gate, world, clock,
   });
 
-  const resume = opts?.withoutResume ? null : ledger.getMeta(`session:${agent.id}`);
-  ledger.emit(agent.id, 'agent.woke', null, { resumed: Boolean(resume) });
+  /** The conversation currently being continued, or null to start a fresh
+   *  one. Changes twice in a shift that rotates. */
+  let session = (opts?.withoutResume ? null : ledger.getMeta(`session:${agent.id}`)) || null;
+  ledger.emit(agent.id, 'agent.woke', null, { resumed: Boolean(session) });
 
   let costUsd = 0;
   let turns = 0;
@@ -310,13 +393,30 @@ export const tick = async (
    * literal here — this one still said 24 long after the ceiling moved to 60.
    */
   const ceiling = d.maxTurns ?? DEFAULT_POLICY.maxTurns;
+  const rotateAt = d.rotateAtContextPct ?? DEFAULT_POLICY.rotateAtContextPct;
+  let rotations = 0;
 
-  try {
+  /**
+   * One conversation's worth of the shift.
+   *
+   * Turns and cost accumulate across every leg; a shift that replaces its
+   * conversation twice still gets one turn ceiling, not three, or rotation
+   * would be a way to buy more turns than the company allowed.
+   */
+  const runLeg = async (prompt: string, maxTurns: number, handover = false): Promise<void> => {
+    // The hand-over's own context is not the shift's context — it is measured
+    // against the conversation we have already decided to discard — and its
+    // closing words are about note-taking rather than about the work.
+    if (!handover) contextTokens = 0;
     const q = query({
-      prompt: buildTickPrompt(d),
+      prompt,
       options: {
         cwd: world.root,
         model: agent.model,
+        // Rebuilt per leg rather than per shift: after a hand-over this is
+        // where the memory the agent just wrote itself comes back in. Build
+        // it once at the top and the replacement conversation starts with a
+        // stale copy of the very notes it was told to rely on.
         systemPrompt: buildSystemPrompt(d),
 
         // ---- isolation ----
@@ -348,13 +448,13 @@ export const tick = async (
         permissionMode: 'default',
 
         // ---- limits ----
-        maxTurns: ceiling,
+        maxTurns,
         ...(d.maxBudgetUsd != null ? { maxBudgetUsd: d.maxBudgetUsd } : {}),
         effort: 'medium',
         thinking: { type: 'adaptive' },
 
         // ---- continuity ----
-        ...(resume ? { resume } : {}),
+        ...(session ? { resume: session } : {}),
         persistSession: true,
         ...(d.signal ? { abortController: abortFrom(d.signal) } : {}),
       },
@@ -362,15 +462,17 @@ export const tick = async (
 
     for await (const m of q) {
       if (m.type === 'assistant') {
-        const u = m.message.usage as unknown as Record<string, number | undefined>;
-        contextTokens = (u['input_tokens'] ?? 0)
-          + (u['cache_read_input_tokens'] ?? 0)
-          + (u['cache_creation_input_tokens'] ?? 0);
+        if (!handover) {
+          const u = m.message.usage as unknown as Record<string, number | undefined>;
+          contextTokens = (u['input_tokens'] ?? 0)
+            + (u['cache_read_input_tokens'] ?? 0)
+            + (u['cache_creation_input_tokens'] ?? 0);
+        }
         for (const b of m.message.content) {
           // Kept whether or not anyone is tracing: when a shift is cut at the
           // turn ceiling there is no result text, and this is the only record
           // of what the agent was actually doing when the lights went out.
-          if (b.type === 'text' && b.text.trim()) said = b.text.trim();
+          if (!handover && b.type === 'text' && b.text.trim()) said = b.text.trim();
           if (!d.trace) continue;
           if (b.type === 'tool_use') {
             d.trace(`  call  ${b.name} ${JSON.stringify(b.input).slice(0, 110)}`);
@@ -380,6 +482,7 @@ export const tick = async (
         }
       }
       if (m.type === 'system' && 'session_id' in m && typeof m.session_id === 'string') {
+        session = m.session_id;
         ledger.setMeta(`session:${agent.id}`, m.session_id);
       }
       if (m.type === 'rate_limit_event') {
@@ -396,8 +499,9 @@ export const tick = async (
         });
       }
       if (m.type === 'result') {
-        turns = m.num_turns;
-        costUsd = m.total_cost_usd;
+        turns += m.num_turns;
+        costUsd += m.total_cost_usd;
+        if (handover) continue;
         contextWindow = m.modelUsage?.[agent.model]?.contextWindow ?? contextWindow;
         // "ended: error_max_turns" was going into the journal and the commit
         // message — an error code standing in for the agent's own account of
@@ -405,51 +509,108 @@ export const tick = async (
         summary = m.subtype === 'success' ? m.result : (said || `ended: ${m.subtype}`);
       }
     }
+  };
 
-    // Their own account of the shift, in their own hand, in the world's git log.
-    if (summary) world.appendJournal(agent.id, summary.slice(0, 600));
-    world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(summary)}`);
+  let prompt = buildTickPrompt(d);
+  let truncated = false;
+  let failure = '';
 
-    ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling, ...context() });
-    return { agentId: agent.id, ok: true, summary, costUsd, turns, ...(rateLimit ? { rateLimit } : {}) };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+  for (;;) {
+    const left = ceiling - turns;
+    if (left <= 0) { truncated = true; break; }
 
-    // A conversation the runtime no longer has is not a failed shift.
-    //
-    // The session id lives in the ledger, on the durable volume. The
-    // conversation lives wherever the runtime keeps it, which in the container
-    // is a tmpfs — so every restart wipes the transcripts while the ids
-    // survive, and every agent asks to resume something that is gone. Nothing
-    // cleared the id, so it repeated forever rather than healing. Forget it and
-    // take the shift again cold; the persona, memory and world are the durable
-    // context, and resume was only ever an optimisation on top of them.
-    //
-    // Checked BEFORE anything is recorded as a failure, because a shift that
-    // recovers did not fail, and saying so puts a red line in the console for
-    // something nobody needs to act on.
-    if (resume && LOST_SESSION.test(error)) {
-      ledger.setMeta(`session:${agent.id}`, '');
-      ledger.emit(agent.id, 'session.reset', null, { was: resume });
-      return tick(d, { withoutResume: true });
+    try {
+      await runLeg(prompt, left);
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+
+      // A conversation the runtime no longer has is not a failed shift.
+      //
+      // The session id lives in the ledger, on the durable volume. The
+      // conversation lives wherever the runtime keeps it, which in the
+      // container is a tmpfs — so every restart wipes the transcripts while
+      // the ids survive, and every agent asks to resume something that is
+      // gone. Nothing cleared the id, so it repeated forever rather than
+      // healing. Forget it and take the leg again cold; the persona, memory
+      // and world are the durable context, and resume was only ever an
+      // optimisation on top of them.
+      //
+      // Checked BEFORE anything is recorded as a failure, because a shift
+      // that recovers did not fail, and saying so puts a red line in the
+      // console for something nobody needs to act on.
+      if (session && LOST_SESSION.test(error)) {
+        ledger.setMeta(`session:${agent.id}`, '');
+        ledger.emit(agent.id, 'session.reset', null, { was: session });
+        session = null;
+        continue;
+      }
+
+      // Running out of turns is a shift ending, not a shift failing. The agent
+      // worked, spent real money and usually wrote something down; it simply
+      // hit the ceiling before it chose to stop. Recording that as a failure
+      // made a busy company look broken and buried the errors that matter.
+      if (OUT_OF_TURNS.test(error)) { truncated = true; break; }
+
+      failure = error;
+      break;
     }
 
-    // Running out of turns is a shift ending, not a shift failing. The agent
-    // worked, spent real money and usually wrote something down; it simply hit
-    // the ceiling before it chose to stop. Recording that as a failure made a
-    // busy company look broken and buried the errors that actually matter.
-    if (OUT_OF_TURNS.test(error)) {
-      const cut = summary || said;
-      if (cut) world.appendJournal(agent.id, `${cut.slice(0, 600)}\n\n_Cut at the turn ceiling (${turns}). Resumes next shift._`);
-      world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(cut)}`);
-      ledger.emit(agent.id, 'agent.slept', null, { turns, costUsd, ceiling, truncated: true, ...context() });
-      return { agentId: agent.id, ok: true, summary: cut, costUsd, turns, truncated: true,
-               ...(rateLimit ? { rateLimit } : {}) };
+    if (!shouldRotate({
+      contextTokens, contextWindow, rotateAtPct: rotateAt,
+      turnsLeft: ceiling - turns, rotations,
+    })) break;
+
+    // Captured before the hand-over runs: those turns are spent against the
+    // old conversation and would report the context we are about to drop as
+    // if it were the context we kept.
+    const was = { was: session, ...context() };
+
+    // The hand-over runs on the OLD conversation, while it still remembers.
+    try {
+      await runLeg(HANDOVER_PROMPT, Math.min(HANDOVER_TURNS, ceiling - turns), true);
+    } catch (err) {
+      // Failing to hand over is not worth failing the shift over — but it is
+      // worth not rotating afterwards. Dropping a conversation that nobody
+      // managed to write down is the one outcome rotation exists to avoid.
+      ledger.emit(agent.id, 'session.rotate_failed', null, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      break;
     }
 
-    ledger.emit(agent.id, 'agent.failed', null, { error });
-    return { agentId: agent.id, ok: false, summary: '', costUsd, turns, error };
+    ledger.emit(agent.id, 'session.rotated', null, { ...was, turns });
+    ledger.setMeta(`session:${agent.id}`, '');
+    session = null;
+    prompt = RESUMED_PROMPT;
+    rotations++;
   }
+
+  if (failure) {
+    ledger.emit(agent.id, 'agent.failed', null, { error: failure });
+    return { agentId: agent.id, ok: false, summary: '', costUsd, turns, error: failure };
+  }
+
+  // Their own account of the shift, in their own hand, in the world's git log.
+  const account = summary || said;
+  if (account) {
+    world.appendJournal(agent.id, truncated
+      ? `${account.slice(0, 600)}\n\n_Cut at the turn ceiling (${turns}). Resumes next shift._`
+      : account.slice(0, 600));
+  }
+  world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(account)}`);
+
+  ledger.emit(agent.id, 'agent.slept', null, {
+    turns, costUsd, ceiling,
+    ...(truncated ? { truncated: true } : {}),
+    ...(rotations ? { rotations } : {}),
+    ...context(),
+  });
+  return {
+    agentId: agent.id, ok: true, summary: account, costUsd, turns,
+    ...(truncated ? { truncated: true } : {}),
+    ...(rotations ? { rotations } : {}),
+    ...(rateLimit ? { rateLimit } : {}),
+  };
 };
 
 const firstLine = (s: string): string =>

@@ -131,6 +131,37 @@ a ten-person roster, the senior agent spent ten turns reading colleagues' briefs
 before doing anything — its first shift hit the turn cap having produced nothing
 at all. Handing it the roster cut the next shift from 27 turns to 12.
 
+### Rotation
+
+A shift is one wake-up but not necessarily one conversation. A resumed session
+gets more expensive the longer it runs — the same shift was measured at 0.074,
+0.292 and 0.457 USD per turn as the transcript grew, for no more work — and
+past roughly half a window accuracy starts paying for it too.
+
+So `staff.ts` measures how full the context is on every assistant message and,
+past `rotateAtContextPct` of the model's own reported window, hands the agent
+over to itself mid-shift:
+
+```
+run a leg → past the threshold? → ask it to write itself a note
+          → drop the conversation → carry on, same shift, empty context
+```
+
+The hand-over runs on the **old** conversation, while it still remembers, and
+the replacement leg rebuilds the system prompt so the memory just written comes
+straight back in. Turns and cost accumulate across legs against one ceiling, so
+rotating is not a way to buy more turns than the company allowed.
+
+The threshold is a percentage because the denominator is not ours to assume: a
+flat token count is half a window on one model and unreachable on another, and
+unreachable does not fail — it silently never rotates. A shift that reports no
+window does not rotate at all.
+
+The runtime's own compaction stays enabled underneath as the backstop. It
+firing means our threshold was too high, so `session.compacted` is recorded
+when it does — compaction preserves the transcript's gist and erodes the
+persona, which is the thing rotation exists to avoid.
+
 ### Isolation
 
 The SDK loads the operator's `~/.claude/settings.json` **and their `CLAUDE.md`**

@@ -484,10 +484,10 @@ describe('a shift records how full its context got', () => {
     assert.match(src, /preTokens: c\.pre_tokens/);
   });
 
-  test('both sleep paths carry it, the truncated one included', () => {
+  test('the sleep record carries it however the shift ended', () => {
     const slept = staff().match(/'agent\.slept'[^;]*/g) ?? [];
-    assert.equal(slept.length, 2);
-    for (const s of slept) assert.match(s, /\.\.\.context\(\)/, `missing context: ${s}`);
+    assert.equal(slept.length, 1);
+    assert.match(slept[0]!, /\.\.\.context\(\)/);
   });
 });
 
@@ -507,8 +507,9 @@ describe('a shift records the ceiling it ran under', () => {
     // by a couple, so the count alone looks like the limit failed.
     const staff = readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
     const slept = staff.match(/'agent\.slept'[^;]*/g) ?? [];
-    assert.equal(slept.length, 2, 'both the ordinary and the truncated path');
-    for (const s of slept) assert.match(s, /ceiling/, `missing ceiling: ${s}`);
+    assert.equal(slept.length, 1, 'one place a shift is recorded, however it ended');
+    assert.match(slept[0]!, /ceiling/);
+    assert.match(slept[0]!, /truncated/, 'and whether the ceiling is what ended it');
   });
 });
 

@@ -57,6 +57,7 @@ export type CompanyPolicy = {
   baseIntervalMinutes: number;
   throttleAboveUtilization: number;
   pauseAboveUtilization: number;
+  rotateAtContextPct: number;
   commonsCeiling: number;
   dailyCapCents: number;
 };

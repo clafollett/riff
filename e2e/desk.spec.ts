@@ -696,6 +696,14 @@ test('how hard a company works is a setting, not a constant in the source', asyn
 
   await expect(dials).toContainText('120 turns a shift');
 
+  // Every dial must be bound to a key the company actually has. A key that is
+  // not on the policy renders an empty box, saves NaN, and silently restores
+  // the default — which looks exactly like the setting not sticking.
+  await dials.getByRole('button', { name: 'Tune' }).click();
+  for (const box of await dials.locator('input').all()) {
+    await expect(box).not.toHaveValue('');
+  }
+
   // And it survives a reload, because it is written down rather than held in
   // a component that is about to be unmounted.
   await page.reload();

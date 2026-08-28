@@ -61,6 +61,9 @@ const DIALS = [
   { key: 'baseIntervalMinutes', label: 'Minutes between shifts',
     hint: 'Rank and throttling stretch this; nobody waits exactly this long.',
     min: 0.5, max: 720, step: 0.5 },
+  { key: 'rotateAtContextPct', label: 'Fresh conversation at % full',
+    hint: 'Mid-shift, the agent writes itself a note and starts over. A long conversation costs six times a short one for the same turn. 0 never rotates.',
+    min: 0, max: 90, step: 5 },
   { key: 'commonsCeiling', label: 'Documents in the commons',
     hint: 'Rule 6. Past it, adding one means removing one.', min: 1, max: 500, step: 1 },
 ] as const;

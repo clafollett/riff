@@ -140,6 +140,7 @@ export class Registry {
       ledger, gate, world, clock: this.#clock,
       options: {
         maxTurns: p.maxTurns,
+        rotateAtContextPct: p.rotateAtContextPct,
         concurrency: p.concurrency,
         baseIntervalMs: Math.round(p.baseIntervalMinutes * 60_000),
         throttleAboveUtilization: p.throttleAboveUtilization,

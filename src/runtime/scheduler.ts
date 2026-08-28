@@ -39,6 +39,12 @@ export type SchedulerOptions = {
   pauseAboveUtilization: number;
   maxTurns: number;
   /**
+   * Replace an agent's conversation mid-shift once it is this much of the
+   * model's context window full (0-100). 0 leaves it to the runtime's own
+   * compaction. See CompanyPolicy.rotateAtContextPct.
+   */
+  rotateAtContextPct: number;
+  /**
    * Hard ceilings for an unattended run. Neither is a cost estimate — they are
    * stops. Leaving something unbounded running on somebody's machine overnight
    * is not a thing to do, and a subscription that gets exhausted at 3am means
@@ -62,6 +68,7 @@ export const DEFAULT_SCHEDULE: SchedulerOptions = {
   // Read a file, edit it, run the tests, read the failure, fix it: five turns
   // before anything works. At 24 every shift of a coding company was cut.
   maxTurns: 60,
+  rotateAtContextPct: 50,
 };
 
 type Deps = {
@@ -300,6 +307,7 @@ const due = selectDue(this.#d.ledger.listAgents(), {
         world: this.#d.world, clock: this.#d.clock,
         ...(this.#opts.perTickBudgetUsd != null ? { maxBudgetUsd: this.#opts.perTickBudgetUsd } : {}),
         maxTurns: this.#opts.maxTurns,
+        rotateAtContextPct: this.#opts.rotateAtContextPct,
         ...(this.#d.connectors ? { connectors: this.#d.connectors } : {}),
         signal: this.#abort.signal,
       });

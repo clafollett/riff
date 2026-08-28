@@ -58,6 +58,17 @@ export type CompanyPolicy = {
    * operator keeps headroom to do their own work. 1 disables it.
    */
   pauseAboveUtilization: number;
+  /**
+   * Replace an agent's conversation once it is this much of the model's
+   * context window full (0–100), handing over to itself first. 0 never
+   * rotates and leaves it to the runtime's own compaction.
+   *
+   * A percentage rather than a token count because the denominator is not
+   * ours to assume: staff run whatever model the company gave them, and a
+   * flat 500,000 is half a window on one model and unreachable on another —
+   * which would not fail, it would silently never rotate.
+   */
+  rotateAtContextPct: number;
   /** R6: how many documents the commons may hold. */
   commonsCeiling: number;
   /** R4: per-treasurer, per-day ceiling on real money, in whole cents. */
@@ -77,6 +88,11 @@ export const DEFAULT_POLICY: CompanyPolicy = {
   baseIntervalMinutes: 5,
   throttleAboveUtilization: 0.7,
   pauseAboveUtilization: 0.92,
+  // Half a window. Cost per turn on a resumed session was measured at 0.074,
+  // 0.292 and 0.457 as it aged — the same shift six times the price for
+  // being further down a transcript. Past roughly half, accuracy starts
+  // paying for it too.
+  rotateAtContextPct: 50,
   commonsCeiling: 40,
   dailyCapCents: 500,
 };
@@ -104,6 +120,10 @@ export const readPolicy = (raw: unknown): CompanyPolicy => {
       num('pauseAboveUtilization', 0.05, 1),
       num('throttleAboveUtilization', 0, 1),
     ),
+    // Capped below the runtime's own compaction point on purpose: rotation
+    // that fires after compaction has already run is rotation that never
+    // fires, because compaction is what it exists to pre-empt.
+    rotateAtContextPct: Math.round(num('rotateAtContextPct', 0, 90)),
     commonsCeiling: Math.round(num('commonsCeiling', 1, 500)),
     dailyCapCents: Math.round(num('dailyCapCents', 0, 100_000_00)),
   };
