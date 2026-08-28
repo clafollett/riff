@@ -157,8 +157,19 @@ describe('the gate is actually wired to the session', () => {
   });
 
   test('every session is handed canUseTool at all', () => {
-    assert.match(staff, /canUseTool: makeCanUseTool\(/,
+    assert.match(staff, /canUseTool: gated/,
       'a session without canUseTool has no gate, whatever the mode says');
+    assert.match(staff, /const gated: CanUseTool = [^;]*makeCanUseTool|makeCanUseTool\(/,
+      'and what it is handed has to be the real gate, not a stand-in');
+  });
+
+  test('the shift can tell whether the gate is still answering', () => {
+    // Three shifts ran with the permission channel dead: every tool came back
+    // `AbortError: Stream closed`, the model kept asking, and 28 turns and
+    // five dollars went by untouched. It failed safe and nobody heard.
+    assert.match(staff, /gateCalls\+\+/, 'nothing counts how often the gate was asked');
+    assert.match(staff, /'shift\.blind'/, 'a blind shift has to be recorded, not just stopped');
+    assert.match(staff, /stop\.abort\(\)/, 'and it has to actually be stopped');
   });
 });
 

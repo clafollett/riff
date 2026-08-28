@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { query, type SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
+import { query, type CanUseTool, type SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 import type { Agent } from '../core/types.ts';
 import type { Ledger } from '../ledger/ledger.ts';
 import type { Gate } from '../policy/gate.ts';
@@ -313,6 +313,44 @@ const HANDOVER_TURNS = 6;
 const MAX_ROTATIONS = 2;
 
 /**
+ * Assistant turns that may ask for tools without the gate hearing about it
+ * before the shift is declared blind.
+ *
+ * One is a race — a message's tool_use blocks are counted as the message
+ * arrives, and the gate is asked microseconds later. Three in a row is not a
+ * race. In a healthy shift the counter moves on every single one.
+ */
+const BLIND_TURNS = 3;
+
+/**
+ * Watches whether the gate is still there.
+ *
+ * Fed one call per assistant message. It compares each message against the
+ * PREVIOUS one, never against itself: a message's tool_use blocks are counted
+ * the moment the message arrives and the gate is asked microseconds later, so
+ * measuring within a turn would report every parallel tool call as a miss.
+ */
+export const blindWatch = (limit = BLIND_TURNS) => {
+  let blind = 0;
+  let gateWas = 0;
+  let lastWantedTools = false;
+  return {
+    /** True once the gate has been silent through `limit` tool-using turns. */
+    turn(gateCalls: number, wantsTools: boolean): boolean {
+      blind = lastWantedTools && gateCalls === gateWas ? blind + 1 : 0;
+      gateWas = gateCalls;
+      lastWantedTools = wantsTools;
+      return blind >= limit;
+    },
+  };
+};
+
+/** Said plainly, because the SDK calls every abort "aborted by user" and that
+ *  is exactly what this looked like the three times it happened. */
+const WENT_BLIND = 'the permission channel died mid-shift: tools were being called and the '
+  + `gate was never asked. Stopped after ${BLIND_TURNS} blind turns.`;
+
+/**
  * Where a toolchain is told to keep its cache.
  *
  * Every one of them defaults somewhere under $HOME, and $HOME in the container
@@ -461,6 +499,36 @@ export const tick = async (
    * literal here — this one still said 24 long after the ceiling moved to 60.
    */
   const ceiling = d.maxTurns ?? DEFAULT_POLICY.maxTurns;
+
+  /**
+   * Every tool call crosses the gate. That is the security invariant the whole
+   * runtime rests on, so a shift making tool calls that the gate never hears
+   * about is not a slow shift — it is the chokepoint being gone.
+   *
+   * It happened three times in one day and nothing noticed, because it fails
+   * safe: the permission channel died, every tool came back
+   * `AbortError: Stream closed`, and the model carried on asking. Twenty-eight
+   * turns, five dollars, nothing touched, and one shift only recorded because
+   * the agent had the presence of mind to say so in words. The two before it
+   * could not even journal it — writing is a tool.
+   *
+   * Failing safe is not the same as failing loudly.
+   */
+  let gateCalls = 0;
+  const gate2 = makeCanUseTool({
+    actor: agent.id, world, gate, toolCapabilities: capabilities,
+    ...(d.trace ? { onDecision: (t, o, why) => d.trace!(`  gate  ${o.padEnd(5)} ${t} ${why}`) } : {}),
+  });
+  const gated: CanUseTool = (name, input, opts) => { gateCalls++; return gate2(name, input, opts); };
+
+  /** One controller for the whole shift, so an abort ends it rather than one leg. */
+  const stop = new AbortController();
+  if (d.signal) {
+    if (d.signal.aborted) stop.abort();
+    else d.signal.addEventListener('abort', () => stop.abort(), { once: true });
+  }
+  const watch = blindWatch();
+  let wentBlind = false;
   const rotateAt = d.rotateAtContextPct ?? DEFAULT_POLICY.rotateAtContextPct;
   let rotations = 0;
 
@@ -491,10 +559,7 @@ export const tick = async (
         settingSources: [],          // no ~/.claude/settings.json, no CLAUDE.md
         strictMcpConfig: true,       // only the tools we hand them
         mcpServers: { [TOOL_NAMESPACE]: server, ...(d.connectors ?? {}) },
-        canUseTool: makeCanUseTool({
-          actor: agent.id, world, gate, toolCapabilities: capabilities,
-          ...(d.trace ? { onDecision: (t, o, why) => d.trace!(`  gate  ${o.padEnd(5)} ${t} ${why}`) } : {}),
-        }),
+        canUseTool: gated,
         // Belt and braces on the host: canUseTool already refuses these, but
         // disallowedTools keeps them out of the tool list the model is shown,
         // so no turn is spent reaching for something that cannot be granted.
@@ -529,12 +594,18 @@ export const tick = async (
         // ---- continuity ----
         ...(session ? { resume: session } : {}),
         persistSession: true,
-        ...(d.signal ? { abortController: abortFrom(d.signal) } : {}),
+        abortController: stop,
       },
     });
 
     for await (const m of q) {
       if (m.type === 'assistant') {
+        if (watch.turn(gateCalls, m.message.content.some((b) => b.type === 'tool_use'))) {
+          wentBlind = true;
+          ledger.emit(agent.id, 'shift.blind', null, { turns, gateCalls, after: BLIND_TURNS });
+          stop.abort();
+          break;
+        }
         if (!handover) {
           const u = m.message.usage as unknown as Record<string, number | undefined>;
           contextTokens = (u['input_tokens'] ?? 0)
@@ -594,6 +665,9 @@ export const tick = async (
 
     try {
       await runLeg(prompt, left);
+      // Leaving the message loop is a normal return, so this never reaches
+      // the catch below on its own.
+      if (wentBlind) { failure = WENT_BLIND; break; }
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
 
@@ -623,6 +697,8 @@ export const tick = async (
       // hit the ceiling before it chose to stop. Recording that as a failure
       // made a busy company look broken and buried the errors that matter.
       if (OUT_OF_TURNS.test(error)) { truncated = true; break; }
+
+      if (wentBlind) { failure = WENT_BLIND; break; }
 
       failure = error;
       break;
@@ -689,9 +765,3 @@ export const tick = async (
 const firstLine = (s: string): string =>
   (s.split('\n').find((l) => l.trim()) ?? 'worked a shift').slice(0, 72);
 
-const abortFrom = (signal: AbortSignal): AbortController => {
-  const c = new AbortController();
-  if (signal.aborted) c.abort();
-  else signal.addEventListener('abort', () => c.abort(), { once: true });
-  return c;
-};
