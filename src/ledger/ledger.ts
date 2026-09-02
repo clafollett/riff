@@ -93,6 +93,81 @@ export class Ledger {
     return num(r['s']);
   }
 
+  // ------------------------------------------------------------- vitals
+  // Window-scoped readers. They aggregate in SQL rather than handing back
+  // rows because a busy fortnight is tens of thousands of events, and a
+  // report that has to load all of them to count them is a report nobody
+  // runs twice. The arithmetic lives in src/analytics/vitals.ts.
+  //
+  // Both ends are required. A reader that only took a start could not answer
+  // "and how did the week before that go", which is the question that turns
+  // every one of these counts from a number into a direction.
+
+  /**
+   * How many of each kind of thing happened, and who did it. Grouped by both
+   * so one query answers the company totals and the per-person table.
+   */
+  eventCounts(since: string, until: string): Array<{ kind: string; actor: AgentId; n: number }> {
+    return (this.#db.prepare(
+      `SELECT kind, actor, COUNT(*) AS n FROM events
+       WHERE at>=? AND at<? GROUP BY kind, actor`
+    ).all(since, until) as Row[]).map((r) => ({
+      kind: str(r['kind']), actor: str(r['actor']), n: num(r['n']),
+    }));
+  }
+
+  /**
+   * Whole events, for the few kinds whose `data_json` carries a number worth
+   * summing — `agent.slept` holds the turns and the dollars of a shift, and
+   * there is nowhere else they are written down.
+   */
+  eventsOfKinds(kinds: string[], since: string, until: string): Event[] {
+    if (kinds.length === 0) return [];
+    const holes = kinds.map(() => '?').join(',');
+    return (this.#db.prepare(
+      `SELECT * FROM events WHERE at>=? AND at<? AND kind IN (${holes}) ORDER BY seq`
+    ).all(since, until, ...(kinds as never[])) as Row[]).map((r) => this.#toEvent(r));
+  }
+
+  /**
+   * Which rules actually bite. The constitution claims Rule 6 is the
+   * load-bearing one; this is the query that can contradict it.
+   */
+  gateDecisions(since: string, until: string): Array<{ kind: string; rule: string; capability: string; n: number }> {
+    return (this.#db.prepare(
+      `SELECT kind,
+              json_extract(data_json,'$.rule')       AS rule,
+              json_extract(data_json,'$.capability') AS capability,
+              COUNT(*) AS n
+       FROM events WHERE at>=? AND at<? AND kind LIKE 'gate.%'
+       GROUP BY kind, rule, capability ORDER BY n DESC`
+    ).all(since, until) as Row[]).map((r) => ({
+      kind: str(r['kind']).slice('gate.'.length),
+      rule: r['rule'] == null ? 'unknown' : str(r['rule']),
+      capability: r['capability'] == null ? '' : str(r['capability']),
+      n: num(r['n']),
+    }));
+  }
+
+  /** Filed in the window or decided in it — a draft can be either, or both. */
+  approvalsBetween(since: string, until: string): Approval[] {
+    return (this.#db.prepare(
+      `SELECT * FROM approvals
+       WHERE (requested_at>=? AND requested_at<?) OR (decided_at>=? AND decided_at<?)
+       ORDER BY requested_at`
+    ).all(since, until, since, until) as Row[]).map((r) => this.#toApproval(r));
+  }
+
+  /** Real money, from the table that guards it — not from the event log. */
+  spendBetween(since: string, until: string): Array<{ agentId: AgentId; cents: number; n: number }> {
+    return (this.#db.prepare(
+      `SELECT agent_id, SUM(amount_cents) AS cents, COUNT(*) AS n
+       FROM spend WHERE at>=? AND at<? GROUP BY agent_id`
+    ).all(since, until) as Row[]).map((r) => ({
+      agentId: str(r['agent_id']), cents: num(r['cents']), n: num(r['n']),
+    }));
+  }
+
   #toEvent(r: Row): Event {
     return {
       id: str(r['id']), seq: num(r['seq']), at: str(r['at']), actor: str(r['actor']),

@@ -4,6 +4,7 @@ import {
   guessKeeperName, listCompanies, migrateLegacyLayout, resolveSlug,
 } from '../core/config.ts';
 import { Registry, type Company } from '../company/registry.ts';
+import { vitals } from '../analytics/vitals.ts';
 import { exportCompany, exportName, importCompany } from '../company/transfer.ts';
 import { isOperatorError, installRoot } from '../core/config.ts';
 import { takeInstallationLock, type Lock } from '../core/lock.ts';
@@ -481,6 +482,14 @@ const server = createServer(async (req, res) => {
           commits: world.git.since(since),
           contributions: world.git.contributionsSince(since),
         });
+      }
+
+      // Whether any of this is working, as numbers rather than as impressions.
+      if (p === '/api/vitals' && method === 'GET') {
+        return json(res, vitals(
+          { ledger, world, clock: systemClock, commonsCeiling: constitution.commonsCeiling },
+          url.searchParams.get('window') ?? '7.days',
+        ));
       }
 
       if (p === '/api/say' && method === 'POST') {

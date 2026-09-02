@@ -78,8 +78,19 @@ export default async function globalSetup(): Promise<void> {
     ledger.emit('fen', 'gate.allow', 'world.write', { summary: `check ${i}` });
   }
   ledger.emit('fen', 'agent.woke', null, {});
-  ledger.emit('fen', 'agent.slept', null, {});
   ledger.emit('fen', 'memory.consolidated', 'fen', {});
+  // The turns and the dollars of a shift are written down here and nowhere
+  // else, so a fixture that sleeps with an empty payload proves the Vitals
+  // view against a company that apparently costs nothing to run.
+  ledger.emit('fen', 'agent.slept', null, { turns: 9, costUsd: 0.42, ceiling: 30 });
+  // A shift that woke, spent and left nothing behind. Barren shifts are the
+  // expensive failure the report exists to name, and one has to exist.
+  ledger.emit(cfg.ceo.id, 'agent.woke', null, {});
+  ledger.emit(cfg.ceo.id, 'agent.slept', null, { turns: 2, costUsd: 0.18, ceiling: 30 });
+  // A rule that bit. Without one, the table of refusals renders empty and
+  // proves only that it can render nothing.
+  ledger.emit('fen', 'gate.deny', 'commons/overflow.md',
+    { rule: 'R6.commons_full', capability: 'world.write', reason: 'the commons is full' });
   // And one that is neither routine nor a message — the feed must keep it.
   ledger.emit('fen', 'commons.posted', 'commons/seams.md', { title: 'Where the seams are' });
 

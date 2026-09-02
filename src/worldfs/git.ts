@@ -103,19 +103,32 @@ export class WorldGit {
     return this.#git(['rev-parse', 'HEAD']);
   }
 
-  /** "What did they do while I was gone?" — e.g. since('3.days'). */
-  since(when: string): Array<{ sha: string; author: string; at: string; subject: string }> {
-    const out = this.#git(['log', `--since=${when}`, '--pretty=format:%h%x00%an%x00%aI%x00%s']);
+  /**
+   * "What did they do while I was gone?" — e.g. since('3.days').
+   *
+   * The author email carries the agent id (`<id>@riff.local`), which is the
+   * only reliable key: display names collide, and the email domain has already
+   * changed once under a company that kept working across the change.
+   *
+   * `until` closes the window at the far end, which only a report comparing
+   * one week against the one before it needs; a reader asking what happened
+   * lately wants everything up to now and leaves it off.
+   */
+  since(when: string, until?: string):
+      Array<{ sha: string; author: string; email: string; at: string; subject: string }> {
+    const out = this.#git(['log', `--since=${when}`, ...(until ? [`--until=${until}`] : []),
+      '--pretty=format:%h%x00%an%x00%ae%x00%aI%x00%s']);
     if (!out) return [];
     return out.split('\n').map((line) => {
-      const [sha = '', author = '', at = '', subject = ''] = line.split('\0');
-      return { sha, author, at, subject };
+      const [sha = '', author = '', email = '', at = '', subject = ''] = line.split('\0');
+      return { sha, author, email, at, subject };
     });
   }
 
   /** Per-author change counts — the honest version of "who did the work". */
-  contributionsSince(when: string): Array<{ author: string; commits: number }> {
-    const out = this.#git(['shortlog', '-sn', '--all', `--since=${when}`]);
+  contributionsSince(when: string, until?: string): Array<{ author: string; commits: number }> {
+    const out = this.#git(['shortlog', '-sn', '--all', `--since=${when}`,
+      ...(until ? [`--until=${until}`] : [])]);
     if (!out) return [];
     return out.split('\n').map((l) => {
       const m = /^\s*(\d+)\s+(.*)$/.exec(l);

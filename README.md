@@ -127,6 +127,7 @@ be reviewable.
 | **Commons** | the shelf, under the titles the authors chose |
 | **Inbox** | what the staff wrote to you, and a reply that reaches them — or every message anyone here sent, since most of a company's conversation never reaches the board |
 | **Work** | tasks in flight, dropped and finished; broken reporting lines |
+| **Vitals** | whether any of this is working — cost, output, and the rules that actually bit, against the window before |
 | **Feed** | live events over SSE, newest first |
 
 Every surface updates itself as the company works — a document posted while
@@ -294,13 +295,14 @@ in this project ever needs the value written down.
 | - | - |
 | `npm run desk` | serve the console |
 | `npm run desk:build` | build it first |
-| `npm test` | 126 unit tests |
-| `npm run test:ui` | 39 Playwright tests against a throwaway installation |
+| `npm test` | 224 unit tests |
+| `npm run test:ui` | 46 Playwright tests against a throwaway installation |
 | `npm run check` | typecheck all three projects (TypeScript 7, native) |
 | `node scripts/init.ts` | found a company |
 | `--company <slug>` | any script, when more than one company exists |
 | `node scripts/tick.ts <who> [turns]` | wake one person, once, and trace the shift |
 | `node scripts/status.ts` | headcount, tasks, commons, what is pending |
+| `node scripts/vitals.ts [window]` | what the window cost and what it produced; `--json` to pipe it |
 | `node scripts/review.ts [id]` | read what is waiting on the board, in full |
 | `node scripts/decide.ts <id> yes\|no "reason"` | answer it from a terminal |
 | `node scripts/board-note.ts <who> "..."` | leave word for someone |
@@ -308,6 +310,20 @@ in this project ever needs the value written down.
 
 `tick.ts` is how you prove a change before letting a company loose. It traces
 every tool call and every gate decision.
+
+`vitals.ts` is how you find out whether a week of them went well. Every figure
+is read back out of the event log, the ledger and the world's git history, so
+nothing is recorded for it and the window costs nothing to widen. It exists to
+be able to **contradict this README**: a commons that never removes anything,
+a payroll that only grows, shifts that wake and leave nothing behind, and a
+board that has become the bottleneck all show up as numbers rather than as
+impressions.
+
+```
+    barren              14   woke, spent, left nothing behind — 9% of shifts
+    biggest share      53%   ⚠ one person is most of the bill
+    removed              0   ⚠ accretion with no selection
+```
 
 ---
 

@@ -937,3 +937,40 @@ test.describe('many companies, one console', () => {
     await expect(page.locator('.card')).toContainText('Testwright Co');
   });
 });
+
+test('vitals reports what the week cost and what it produced', async ({ page }) => {
+  await go(page, 'Vitals');
+
+  // The headline figures, off the sleeping events — the only place a shift's
+  // turns and dollars are ever written down.
+  const tiles = page.locator('.tile');
+  await expect(tiles.filter({ hasText: 'shifts' }).locator('.tvalue')).toHaveText('2');
+  await expect(tiles.filter({ hasText: 'spent' }).locator('.tvalue')).toHaveText('$0.60');
+  await expect(tiles.filter({ hasText: 'barren' }).locator('.tvalue')).toHaveText('1');
+
+  // A finding is a sentence, not a figure. A wall of numbers is something to
+  // scroll past; this is the part somebody acts on.
+  await expect(page.locator('.finding').filter({ hasText: 'left nothing behind' }))
+    .toContainText('1 of 2 shifts');
+
+  // Rule 6 is the claim the whole report exists to be able to contradict.
+  const rule6 = page.locator('section').filter({ hasText: 'Commons — rule 6' });
+  await expect(rule6).toContainText('refused as full');
+  await expect(rule6).toContainText('revised');
+  await expect(page.locator('.grid').first()).toContainText('R6.commons_full');
+
+  // And who actually did it, rather than who talked about it.
+  await expect(page.locator('.grid').last()).toContainText('Fen');
+});
+
+test('the vitals window is a choice, and changing it re-reads the record', async ({ page }) => {
+  await go(page, 'Vitals');
+  await expect(page.locator('.foot')).toContainText('7.days');
+
+  await page.getByRole('button', { name: '24 hours' }).click();
+  await expect(page.locator('.win.on')).toHaveText('24 hours');
+  await expect(page.locator('.foot')).toContainText('24.hours');
+  // The fixture was built moments ago, so a narrower window holds the same
+  // work — what must change is the window the report says it read.
+  await expect(page.locator('.tile').filter({ hasText: 'shifts' }).locator('.tvalue')).toHaveText('2');
+});
