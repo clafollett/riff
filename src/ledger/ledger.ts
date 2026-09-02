@@ -88,6 +88,21 @@ export class Ledger {
     ]));
   }
 
+  /**
+   * When each commons document was last taken off the shelf.
+   *
+   * Pairs with `commonsHistory()`: a posting onto a path that was removed
+   * beforehand puts a document BACK on the shelf, and counting it as a
+   * revision under-reported the one act Rule 6 exists to encourage.
+   */
+  commonsRemovals(): Map<string, string> {
+    const rows = this.#db.prepare(
+      `SELECT subject, MAX(at) AS last FROM events
+       WHERE kind='commons.removed' AND subject IS NOT NULL GROUP BY subject`
+    ).all() as Row[];
+    return new Map(rows.map((r) => [str(r['subject']), str(r['last'])]));
+  }
+
   latestSeq(): number {
     const r = this.#db.prepare('SELECT COALESCE(MAX(seq),0) AS s FROM events').get() as Row;
     return num(r['s']);

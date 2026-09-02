@@ -211,11 +211,15 @@ const MS: Record<string, number> = {
  */
 export const parseWindow = (spec: string, endAt: number): Window => {
   const m = /^(\d+)[.\s_-]*(hour|day|week|month)s?$/i.exec(spec.trim());
-  const unit = m?.[2]?.toLowerCase() ?? 'day';
-  const n = m ? Number(m[1]) : 7;
-  const ms = (MS[unit] ?? MS['day']!) * (n > 0 ? n : 7);
+  const n = m ? Number(m[1]) : 0;
+  // A zero-length window is a typo, not a request. Fall back whole — echoing
+  // the spec the caller typed while reporting a week would label the report
+  // with a window it did not read.
+  const ok = m != null && n > 0;
+  const unit = ok ? m[2]!.toLowerCase() : 'day';
+  const ms = (MS[unit] ?? MS['day']!) * (ok ? n : 7);
   return {
-    spec: m ? spec.trim() : '7.days',
+    spec: ok ? spec.trim() : '7.days',
     since: new Date(endAt - ms).toISOString(),
     until: new Date(endAt).toISOString(),
     days: ms / MS['day']!,
@@ -332,7 +336,7 @@ export const vitals = (
   let truncated = 0;
   let barren = 0;
   let deliveries = 0;
-  const posted: string[] = [];
+  const posted: Array<{ path: string; at: string }> = [];
 
   for (const e of shiftLog) {
     if (e.kind === 'agent.woke') { open.add(e.actor); busy.delete(e.actor); continue; }
@@ -357,7 +361,7 @@ export const vitals = (
 
     // One broadcast is one row here and a message in twenty-two inboxes.
     if (e.kind === 'message.sent') deliveries += Math.max(1, numberOf(data(e), 'recipients'));
-    if (e.kind === 'commons.posted' && e.subject) posted.push(e.subject);
+    if (e.kind === 'commons.posted' && e.subject) posted.push({ path: e.subject, at: e.at });
     busy.add(e.actor);
   }
 
@@ -387,11 +391,19 @@ export const vitals = (
   const gateKind = (k: string): number =>
     gateRows.filter((r) => r.kind === k).reduce((s, r) => s + r.n, 0);
 
-  // When each document FIRST appeared, over all of history — a posting inside
-  // the window onto a page that predates it is a rewrite, not growth.
+  // A posting adds a document when the shelf was not already holding it:
+  // either it had never appeared at all, or it had been removed before this
+  // posting put it back. Everything else is a rewrite of a page that was
+  // already there, which is a company thinking rather than a company growing.
   const firstSeen = d.ledger.commonsHistory();
-  const added = new Set(
-    posted.filter((path) => (firstSeen.get(path)?.created ?? '') >= since)).size;
+  const lastRemoved = d.ledger.commonsRemovals();
+  const added = new Set(posted
+    .filter((p) => {
+      if ((firstSeen.get(p.path)?.created ?? '') >= since) return true;
+      const gone = lastRemoved.get(p.path);
+      return gone != null && gone < p.at;
+    })
+    .map((p) => p.path)).size;
 
   const removed = n('commons.removed');
   const commons: CommonsVitals = {
@@ -410,7 +422,11 @@ export const vitals = (
   const approvals = d.ledger.approvalsBetween(since, until);
   const filed = approvals.filter((a) => a.requestedAt >= since && a.requestedAt < until);
   const decided = approvals.filter((a) => a.decidedAt != null && a.decidedAt >= since && a.decidedAt < until);
-  const pending = approvals.filter((a) => a.state === 'pending');
+  // Still pending is a CURRENT state, not something that happened inside the
+  // window. Reading it out of the window dropped exactly the drafts that had
+  // waited longest — the ones this figure exists to surface — so the worse the
+  // board's backlog got, the healthier the report claimed it was.
+  const pending = d.ledger.listApprovals('pending');
   const envelope: EnvelopeVitals = {
     filed: filed.length,
     approved: decided.filter((a) => a.state === 'approved').length,

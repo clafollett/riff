@@ -81,6 +81,12 @@ describe('the window', () => {
     assert.equal(w.spec, '7.days');
   });
 
+  test('a zero-length window is a typo, and is labelled as the week it read', () => {
+    const w = parseWindow('0.days', Date.parse(NOW));
+    assert.equal(w.days, 7);
+    assert.equal(w.spec, '7.days');
+  });
+
   test('nothing outside the window is counted', () => {
     clock.set('2026-08-01T09:00:00.000Z');       // three weeks before NOW
     shift('rae', [['commons.posted', 'commons/a.md']]);
@@ -186,6 +192,34 @@ describe('rule 6 — what the commons claim can be checked against', () => {
     assert.equal(v.commons.added, 1);
     assert.equal(v.commons.revised, 2);
     assert.equal(v.commons.net, 1);
+    cleanup();
+  });
+
+  // Remove one to add one is the act Rule 6 exists to encourage. Reading the
+  // first appearance over all of history called the return a rewrite, so the
+  // one company doing the right thing scored as though it had done nothing.
+  test('a page taken off the shelf and put back is an addition, not a rewrite', () => {
+    clock.set('2026-08-01T09:00:00.000Z');
+    ledger.emit('rae', 'commons.posted', 'commons/doctrine.md', {});
+    clock.set('2026-08-05T09:00:00.000Z');
+    ledger.emit('rae', 'commons.removed', 'commons/doctrine.md', {});
+    clock.set(NOW);
+    ledger.emit('rae', 'commons.posted', 'commons/doctrine.md', {});
+    const v = report('7.days');
+    assert.equal(v.commons.added, 1);
+    assert.equal(v.commons.revised, 0);
+    cleanup();
+  });
+
+  test('a page removed AFTER its last posting stays a rewrite, not an addition', () => {
+    clock.set('2026-08-01T09:00:00.000Z');
+    ledger.emit('rae', 'commons.posted', 'commons/doctrine.md', {});
+    clock.set(NOW);
+    ledger.emit('rae', 'commons.posted', 'commons/doctrine.md', {});
+    ledger.emit('rae', 'commons.removed', 'commons/doctrine.md', {});
+    const v = report('7.days');
+    assert.equal(v.commons.added, 0);
+    assert.equal(v.commons.revised, 1);
     cleanup();
   });
 
@@ -339,6 +373,23 @@ describe('the envelope', () => {
     // Not exactly 24: the report is taken a tick after the draft was filed.
     assert.ok(Math.abs(v.envelope.oldestPendingHours! - 24) < 0.01);
     assert.equal(v.envelope.medianDecisionHours, null);
+    cleanup();
+  });
+
+  // A draft filed before the window and still undecided has neither a
+  // requested_at nor a decided_at inside it, so a window-scoped read cannot
+  // see it — and the longer the board leaves it, the more certain it is to
+  // vanish from the very figure that exists to report exactly that.
+  test('the oldest draft on the board is visible however long ago it was filed', () => {
+    clock.set('2026-08-01T12:00:00.000Z');        // three weeks before NOW
+    ledger.createApproval({
+      requestedBy: 'rae', capability: 'external.write', tier: 'board',
+      summary: 'the one nobody has answered', target: null,
+    });
+    clock.set(NOW);
+    const v = report('7.days');
+    assert.equal(v.envelope.pending, 1);
+    assert.ok((v.envelope.oldestPendingHours ?? 0) > 500);
     cleanup();
   });
 
