@@ -18,16 +18,16 @@ const readme = readFileSync(join(root, 'README.md'), 'utf8');
 const contributing = readFileSync(join(root, 'CONTRIBUTING.md'), 'utf8');
 
 describe('the README describes this repository, and not a previous one', () => {
-  // Four runtime dependencies is an argument the README makes, not a tally it
-  // reports, so it is worth being told the moment a fifth arrives rather than
-  // reading the sentence again a year later. Counts of things that grow every
-  // week are not claims worth writing down at all — they were in this README,
-  // went stale three times in one session, and are gone.
+  // The README argues that four runtime dependencies is the whole list, and
+  // CONTRIBUTING.md repeats it. This is not a gate on adding a fifth — it is
+  // how the two documents find out that one arrived, since neither can read
+  // package.json. Add the dependency, then make them true again.
   test('it names every runtime dependency, and there are no others', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as
       { dependencies: Record<string, string> };
     const real = Object.keys(pkg.dependencies);
-    assert.equal(real.length, 4, `runtime dependencies are now: ${real.join(', ')}`);
+    assert.equal(real.length, 4,
+      `runtime dependencies are now: ${real.join(', ')} — update README.md and CONTRIBUTING.md to match`);
     for (const [dep, called] of [
       ['@anthropic-ai/claude-agent-sdk', 'Agent SDK'],
       ['zod', '`zod`'],
