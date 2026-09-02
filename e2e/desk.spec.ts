@@ -965,10 +965,33 @@ test('vitals reports what the week cost and what it produced', async ({ page }) 
   const rule6 = page.locator('section').filter({ hasText: 'Commons — rule 6' });
   await expect(rule6).toContainText('refused as full');
   await expect(rule6).toContainText('revised');
-  await expect(page.locator('.grid').first()).toContainText('R6.commons_full');
 
-  // And who actually did it, rather than who talked about it.
-  await expect(page.locator('.grid').last()).toContainText('Fen');
+  // Scoped by heading, never by position. These two tables are the only ones
+  // on the page, so an empty refusals section would slide a positional
+  // .first() onto the people table and fail with the wrong explanation.
+  const refusals = page.locator('section').filter({ hasText: 'Where the rules bit' });
+  await expect(refusals.locator('.grid')).toContainText('R6.commons_full');
+  const who = page.locator('section').filter({ hasText: 'Who did the work' });
+  await expect(who.locator('.grid')).toContainText('Fen');
+});
+
+// The arrows were coloured by direction rather than by whether the news was
+// good, so a week that cost more than the last one rendered in the success
+// colour. Nothing caught it: an SFC never reaches the typechecker.
+test('a trend arrow says which way it moved, and whether that is good news', async ({ page }) => {
+  await go(page, 'Vitals');
+  const dirOf = (label: string) =>
+    page.locator('.tile').filter({ hasText: label }).locator('.tsub em');
+
+  // The fixture is the company's first window, so every figure is up on a
+  // previous window of nothing.
+  await expect(dirOf('shifts')).toHaveText(/▲/);
+  await expect(dirOf('shifts')).toHaveClass(/good/);
+
+  // Spending more than the window before is the same arrow and the opposite
+  // reading — this is the pair that was rendering identically.
+  await expect(dirOf('spent')).toHaveText(/▲/);
+  await expect(dirOf('spent')).toHaveClass(/bad/);
 });
 
 test('the vitals window is a choice, and changing it re-reads the record', async ({ page }) => {

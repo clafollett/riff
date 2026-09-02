@@ -112,15 +112,49 @@ const findings = computed<Array<{ severity: 'warn' | 'note'; text: string }>>(()
   return out;
 });
 
+/**
+ * Each tile names a figure in this window and the key holding the same figure
+ * in the window before it. They are declared together because nothing would
+ * catch them drifting apart: `Trend.posted` is the server's `commons.added`,
+ * so pairing it with `commons.posted` would read correctly and be wrong, and
+ * an SFC never reaches the typechecker.
+ */
+type Tile = {
+  label: string;
+  key: keyof Trend;
+  now: (d: Vitals) => number;
+  fmt: (n: number) => string;
+  sub: (d: Vitals) => string;
+  better: 'up' | 'down';
+};
+
+const TILES: Tile[] = [
+  { label: 'shifts', key: 'shifts', better: 'up',
+    now: (d) => d.shifts.slept, fmt: String,
+    sub: (d) => `${d.shifts.turnsPerShift.toFixed(1)} turns each` },
+  { label: 'spent', key: 'costUsd', better: 'down',
+    now: (d) => d.shifts.costUsd, fmt: usd,
+    sub: (d) => `${usd(d.shifts.costPerShift)} a shift` },
+  { label: 'landed', key: 'commits', better: 'up',
+    now: (d) => d.talk.byStaff, fmt: String,
+    sub: (d) => (d.talk.byStaff ? `${usd(d.talk.costPerCommit)} a commit` : 'nothing reached the world') },
+  { label: 'barren', key: 'barren', better: 'down',
+    now: (d) => d.shifts.barren, fmt: String,
+    sub: () => 'woke and left nothing' },
+];
+
 const tiles = computed(() => {
   const d = v.value;
   if (!d) return [];
-  return [
-    { label: 'shifts',  value: String(d.shifts.slept), sub: `${d.shifts.turnsPerShift.toFixed(1)} turns each`, dir: delta('shifts', d.shifts.slept, 'up') },
-    { label: 'spent',   value: usd(d.shifts.costUsd),  sub: `${usd(d.shifts.costPerShift)} a shift`, dir: delta('costUsd', d.shifts.costUsd, 'down', '$') },
-    { label: 'landed',  value: String(d.talk.byStaff), sub: d.talk.byStaff ? `${usd(d.talk.costPerCommit)} a commit` : 'nothing reached the world', dir: delta('commits', d.talk.byStaff, 'up') },
-    { label: 'barren',  value: String(d.shifts.barren), sub: 'woke and left nothing', dir: delta('barren', d.shifts.barren, 'down') },
-  ];
+  return TILES.map((t) => {
+    const now = t.now(d);
+    return {
+      label: t.label,
+      value: t.fmt(now),
+      sub: t.sub(d),
+      dir: delta(t.key, now, t.better, t.fmt === usd ? '$' : ''),
+    };
+  });
 });
 </script>
 
@@ -144,7 +178,7 @@ const tiles = computed(() => {
 
     <!-- A refresh that fails while you are reading is a banner, not a blank
          page: the figures on screen were true when they were read. -->
-    <p v-if="err" class="warn">{{ err }}</p>
+    <p v-if="err" class="failed">{{ err }}</p>
     <p v-if="!v && !err" class="muted empty">Reading the record…</p>
 
     <template v-if="v">
@@ -341,7 +375,9 @@ h2 { font-size: 13px; font-family: var(--sans); text-transform: uppercase;
 .finding { font-size: 14px; padding: 11px 15px; border-radius: 5px;
   border: 1px solid var(--line); background: var(--panel); margin: 0; }
 .finding.warn { border-color: #5c3a26; background: #241a11; }
-.warn { border: 1px solid #5c3a26; background: #241a11; border-radius: 5px;
+/* Its own name. Sharing `warn` with a finding meant the error box and the
+   findings below it disagreed about their own padding by a pixel. */
+.failed { border: 1px solid #5c3a26; background: #241a11; border-radius: 5px;
   padding: 12px 16px; font-size: 14px; }
 
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 34px; }
