@@ -1,3 +1,10 @@
+// The console's ONLY reach into the server, and it must stay type-only: this
+// erases at build time, while a value import of the same path compiles, builds
+// and ships a module that dies in the browser. Vite says so in a warning and
+// exits 0 anyway, so scripts/check-sfc-types.mjs enforces it instead.
+import type { Vitals, Trend } from '../../src/analytics/types.ts';
+export type { Vitals, Trend };
+
 /** Everything the Desk knows, it knows from these. */
 export type Agent = {
   id: string; name: string; tier: string; role: string;
@@ -58,9 +65,6 @@ export type Event = {
  *
  * Type-only, so it is erased before the bundle: no server code is shipped.
  */
-import type { Vitals, Trend } from '../../src/analytics/types.ts';
-export type { Vitals, Trend };
-
 export type CompanyPolicy = {
   maxTurns: number;
   concurrency: number;
