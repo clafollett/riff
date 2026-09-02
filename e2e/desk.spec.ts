@@ -975,6 +975,35 @@ test('vitals reports what the week cost and what it produced', async ({ page }) 
   await expect(who.locator('.grid')).toContainText('Fen');
 });
 
+/**
+ * The report reads ~90 fields off the server, every one of them inside the
+ * template — and a template never reaches a typechecker here. Renaming a field
+ * server-side passed `npm run check` AND all 47 tests while the tile it fed
+ * rendered nothing, so naming fields one by one is not the check that was
+ * missing. This asserts the shape of what arrives instead: no figure on the
+ * page may render empty, `undefined` or `NaN`.
+ */
+test('no figure in the report renders as a hole where a number should be', async ({ page }) => {
+  await go(page, 'Vitals');
+  await expect(page.locator('.tile').first()).toBeVisible();
+
+  const holes = /^(|undefined|null|NaN|\$NaN|NaN%|—%|\$undefined)$/;
+
+  const tiles = await page.locator('.tile .tvalue').allInnerTexts();
+  expect(tiles.length).toBe(4);
+  for (const t of tiles) expect(t.trim()).not.toMatch(holes);
+
+  // Every figure in the six definition lists, and the sub-line under each tile.
+  const figures = await page.locator('.cols dd, .tile .tsub').allInnerTexts();
+  expect(figures.length).toBeGreaterThan(25);
+  for (const f of figures) expect(f.trim()).not.toMatch(holes);
+
+  // And the tables, whose cells come off the same payload.
+  const cells = await page.locator('.grid td').allInnerTexts();
+  expect(cells.length).toBeGreaterThan(0);
+  for (const c of cells) expect(c.trim()).not.toMatch(/^(undefined|null|NaN)$/);
+});
+
 // The arrows were coloured by direction rather than by whether the news was
 // good, so a week that cost more than the last one rendered in the success
 // colour. Nothing caught it: an SFC never reaches the typechecker.

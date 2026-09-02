@@ -51,59 +51,15 @@ export type Event = {
   kind: string; subject: string | null; dataJson: string | null;
 };
 
-/** Mirrors src/analytics/vitals.ts. Everything here is derived on read — no
- *  table backs any of it, so the window costs nothing to widen. */
-export type Trend = {
-  shifts: number; costUsd: number; commits: number; messages: number;
-  posted: number; removed: number; filed: number; released: number;
-  done: number; dropped: number; blind: number; failed: number;
-  hired: number; retired: number; barren: number;
-};
-
-export type Vitals = {
-  window: { spec: string; since: string; until: string; days: number };
-  previous: Trend | null;
-  shifts: {
-    woke: number; slept: number; failed: number; blind: number;
-    truncated: number; rotated: number; rotateFailed: number; compacted: number;
-    turns: number; costUsd: number; costPerShift: number; turnsPerShift: number;
-    troubleRate: number; barren: number; costShareTop: number;
-  };
-  org: {
-    headcount: number; hired: number; retired: number; net: number;
-    orphans: number; depth: number; widest: number; shiftsPerHead: number;
-  };
-  throttle: { rateLimited: number; throttled: number; usagePaused: number };
-  commons: {
-    held: number; ceiling: number; posted: number; added: number;
-    revised: number; removed: number; net: number; refused: number;
-  };
-  envelope: {
-    filed: number; approved: number; rejected: number; withdrawn: number;
-    released: number; pending: number;
-    oldestPendingHours: number | null; medianDecisionHours: number | null;
-  };
-  work: {
-    opened: number; claimed: number; done: number; dropped: number;
-    blocked: number; openNow: number; completionRate: number;
-  };
-  talk: {
-    messages: number; deliveries: number; broadcastFanout: number;
-    notes: number; memoryConsolidated: number;
-    commits: number; byStaff: number; unattributed: number;
-    perCommit: number; costPerCommit: number;
-  };
-  money: { spends: number; cents: number; exceptions: number };
-  gate: {
-    allow: number; deny: number; escalate: number;
-    rules: Array<{ kind: string; rule: string; capability: string; n: number }>;
-  };
-  people: Array<{
-    id: string; name: string; tier: string; role: string;
-    shifts: number; turns: number; costUsd: number; commits: number;
-    messages: number; posted: number; filed: number; done: number; denied: number;
-  }>;
-};
+/**
+ * The report's shape comes from the server's own declaration rather than a
+ * copy of it. Ninety fields restated by hand typechecked on both sides after
+ * a rename and rendered `undefined` — see src/analytics/types.ts.
+ *
+ * Type-only, so it is erased before the bundle: no server code is shipped.
+ */
+import type { Vitals, Trend } from '../../src/analytics/types.ts';
+export type { Vitals, Trend };
 
 export type CompanyPolicy = {
   maxTurns: number;
