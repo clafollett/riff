@@ -9,7 +9,14 @@
  *
  * So the SFCs are checked against their own TypeScript. It is a second copy of
  * the compiler and it is only ever used here — the repo's own sources are
- * checked by tsgo, which stays the source of truth on a disagreement.
+ * checked by tsgo, which stays the source of truth on a disagreement. Both it
+ * and vue-tsc are pinned exactly: a sidecar exists to be stable rather than
+ * current, and a floating second opinion can only ever disagree by surprise.
+ *
+ * `desk/tsconfig.json` includes the components alongside the `.ts` files, so
+ * this walks every one on disk rather than only those something already
+ * imports; tsgo ignores them. Without that, a component nobody has wired up
+ * yet goes unchecked — which is exactly when it is most likely to be broken.
  */
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
