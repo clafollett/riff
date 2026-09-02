@@ -10,7 +10,7 @@ live in a file are read from that file:
 
 | what | where |
 | - | - |
-| commands, scripts, dependencies | `package.json` |
+| commands, scripts, dependencies | `package.json`, `docker/up.sh` |
 | compiler flags and what they forbid | `tsconfig.json`, `desk/tsconfig.json`, `e2e/tsconfig.json` |
 | directory layout of an installation | `src/core/config.ts`, `src/core/lock.ts` |
 | what the gate allows | `src/policy/gate.ts`, `src/runtime/permissions.ts` |
@@ -71,8 +71,9 @@ if adding a tool, a capability, or a path classification:
 A control that could be argued with in a prompt is not a control. It goes in
 the gate.
 
-Shell requires both `RIFF_CONTAINED=1` and a container marker, and fails
-closed. Do not relax either signal, and never weaken any of this to make a test
+Shell is decided by `shellIsContained()`, which requires both
+`RIFF_CONTAINED=1` and a container marker, and fails closed. Do not relax
+either signal, and never weaken any of this to make a test
 pass. Read `SECURITY.md` before touching `src/runtime/permissions.ts`,
 `src/policy/gate.ts`, `src/company/transfer.ts`, or anything under `docker/`.
 
@@ -100,9 +101,10 @@ explaining the problem rather than the patch. Match `git log`.
 A runtime dependency needs an issue first, per `CONTRIBUTING.md`;
 `test/claims.test.ts` fails when a fifth arrives.
 
-Claims in commits and docs must be checkable. `359 gate.allow out of 787` beats
-"most of the log is noise" — and a claim that cannot check itself will go
-stale, so prefer pointing at the thing over restating it.
+Claims in commits and docs must be checkable: measure it, and give the figure.
+A count beats a characterisation — the form is "359 gate.allow out of 787"
+rather than "most of the log is noise". A claim that cannot check itself will
+go stale, so prefer pointing at the thing over restating it.
 
 `str.replace` and `sed` fail silently on no match. After any scripted edit,
 grep for the new text and confirm it landed before reporting the change done.
