@@ -976,18 +976,25 @@ test('vitals reports what the week cost and what it produced', async ({ page }) 
 });
 
 /**
- * The report reads ~90 fields off the server, every one of them inside the
- * template — and a template never reaches a typechecker here. Renaming a field
- * server-side passed `npm run check` AND all 47 tests while the tile it fed
- * rendered nothing, so naming fields one by one is not the check that was
- * missing. This asserts the shape of what arrives instead: no figure on the
- * page may render empty, `undefined` or `NaN`.
+ * Types cover which fields exist. Nothing covers what is in them.
+ *
+ * A dropped field is caught twice over now — the server constructs a `Vitals`,
+ * and the console imports that same type rather than restating it. A dropped
+ * VALUE is caught by neither: `over()` is a discipline rather than a type, so a
+ * future plain `a / b` yields NaN on 0/0 and Infinity on x/0. Both are
+ * `number`, both typecheck, and `usd(NaN)` renders "$NaN" at a reader who has
+ * no way to know it is not a figure. Infinity is worse over the wire, where
+ * `JSON.stringify` turns it into null and the render throws instead.
+ *
+ * So this asserts the shape of what actually arrived: no figure on the page may
+ * be empty, undefined, NaN or infinite.
  */
 test('no figure in the report renders as a hole where a number should be', async ({ page }) => {
   await go(page, 'Vitals');
   await expect(page.locator('.tile').first()).toBeVisible();
 
-  const holes = /^(|undefined|null|NaN|\$NaN|NaN%|—%|\$undefined)$/;
+  // x/0 is the likelier slip of the two, so Infinity belongs here as much as NaN.
+  const holes = /^(|undefined|null|NaN|\$NaN|NaN%|—%|\$undefined|Infinity|\$Infinity|Infinity%|-Infinity)$/;
 
   const tiles = await page.locator('.tile .tvalue').allInnerTexts();
   expect(tiles.length).toBe(4);
@@ -998,15 +1005,21 @@ test('no figure in the report renders as a hole where a number should be', async
   expect(figures.length).toBeGreaterThan(25);
   for (const f of figures) expect(f.trim()).not.toMatch(holes);
 
-  // And the tables, whose cells come off the same payload.
-  const cells = await page.locator('.grid td').allInnerTexts();
-  expect(cells.length).toBeGreaterThan(0);
-  for (const c of cells) expect(c.trim()).not.toMatch(/^(undefined|null|NaN)$/);
+  // Both tables, scoped by heading rather than by position, and each held to
+  // its own floor — one row of either would satisfy a count across the pair.
+  for (const [heading, floor] of [['Where the rules bit', 4], ['Who did the work', 9]] as const) {
+    const cells = page.locator('section').filter({ hasText: heading }).locator('.grid td');
+    expect(await cells.count()).toBeGreaterThanOrEqual(floor);
+    for (const c of await cells.allInnerTexts()) {
+      expect(c.trim()).not.toMatch(/^(undefined|null|NaN|Infinity)$/);
+    }
+  }
 });
 
 // The arrows were coloured by direction rather than by whether the news was
 // good, so a week that cost more than the last one rendered in the success
-// colour. Nothing caught it: an SFC never reaches the typechecker.
+// colour. No typechecker catches that and none ever will: mapping a direction
+// to the wrong colour is well-typed and simply wrong.
 test('a trend arrow says which way it moved, and whether that is good news', async ({ page }) => {
   await go(page, 'Vitals');
   const dirOf = (label: string) =>

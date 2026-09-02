@@ -114,10 +114,10 @@ const findings = computed<Array<{ severity: 'warn' | 'note'; text: string }>>(()
 
 /**
  * Each tile names a figure in this window and the key holding the same figure
- * in the window before it. They are declared together because nothing would
- * catch them drifting apart: `Trend.posted` is the server's `commons.added`,
- * so pairing it with `commons.posted` would read correctly and be wrong, and
- * an SFC never reaches the typechecker.
+ * in the window before it. They are declared together because both halves are
+ * `number` and any pairing of them typechecks: `Trend.posted` is the server's
+ * `commons.added`, so reading it against `commons.posted` compiles, renders,
+ * and quietly compares two different things.
  */
 type Tile = {
   label: string;
