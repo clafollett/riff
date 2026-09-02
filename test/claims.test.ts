@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const readme = readFileSync(join(root, 'README.md'), 'utf8');
+const contributing = readFileSync(join(root, 'CONTRIBUTING.md'), 'utf8');
 
 describe('the README describes this repository, and not a previous one', () => {
   // Four runtime dependencies is an argument the README makes, not a tally it
@@ -36,5 +37,10 @@ describe('the README describes this repository, and not a previous one', () => {
       assert.ok(real.includes(dep), `${dep} is no longer a dependency`);
       assert.ok(readme.includes(called), `the README stopped naming ${dep}`);
     }
+    // CONTRIBUTING.md argues the same four, and is where the rule that gates a
+    // fifth actually lives. Three documents making one claim is three places
+    // for it to stop being true.
+    assert.ok(/There are four\b/.test(contributing),
+      'CONTRIBUTING.md no longer says how many runtime dependencies there are');
   });
 });

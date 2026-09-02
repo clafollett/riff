@@ -5,19 +5,15 @@ directory with its own world, ledger and scheduler.
 
 ## Read the repo, not this file, for anything the repo states
 
-This file went stale twice and was believed both times — once claiming SFCs
-could not be typechecked, which cost an afternoon before anyone ran the
-command. Facts that live in a file are read from that file:
+This file has asserted things the repo disproves in ninety seconds. Facts that
+live in a file are read from that file:
 
 | what | where |
 | - | - |
 | commands, scripts, dependencies | `package.json` |
-| compiler flags and what they forbid | `tsconfig.json`, `desk/tsconfig.json` |
-| directory layout of an installation | `src/core/config.ts` |
+| compiler flags and what they forbid | `tsconfig.json`, `desk/tsconfig.json`, `e2e/tsconfig.json` |
+| directory layout of an installation | `src/core/config.ts`, `src/core/lock.ts` |
 | what the gate allows | `src/policy/gate.ts`, `src/runtime/permissions.ts` |
-
-What follows is only what those files cannot tell you: why something is the way
-it is, and what will bite.
 
 ## Runtime
 
@@ -36,18 +32,12 @@ Run `npm run check` and `npm test` before claiming a change works. Run
 
 ## `.vue` is typechecked by a second compiler
 
-tsgo cannot parse SFCs and cannot be taught to: TypeScript 7's `tsc` is a
-launcher for a Go binary, so the JavaScript compiler internals vue-tsc patches
-do not exist. vue-tsc's peer range accepts 7 and the install succeeds, which
-makes this look like a version problem for as long as you let it. It is not.
+`scripts/check-sfc-types.mjs` explains why, and running it is faster than
+arguing with it. tsgo wins on any disagreement.
 
-`scripts/check-sfc-types.mjs` runs vue-tsc against its own pinned TypeScript.
-tsgo remains the source of truth for `src/`; where they disagree, tsgo wins.
-
-The console imports the server's types rather than restating them. Both halves
-are needed: without the shared type there is nothing to be wrong about, and
-without SFC checking nothing reads the template — a renamed field then renders
-`undefined` and passes every test.
+Desk types are imported from `src/`, never restated — one half of a pair with
+SFC checking, and dropping either lets a renamed field render `undefined` while
+passing every test.
 
 ## Data lives outside the repo
 
@@ -76,9 +66,10 @@ tool call crosses, built-ins included. It is **default-deny**.
 ```
 if adding a tool, a capability, or a path classification:
     it must be refused by default and allowed explicitly
-if a control could be argued with in a prompt:
-    it is not a control — put it in the gate
 ```
+
+A control that could be argued with in a prompt is not a control. It goes in
+the gate.
 
 Shell requires both `RIFF_CONTAINED=1` and a container marker, and fails
 closed. Do not relax either signal, and never weaken any of this to make a test
@@ -105,6 +96,9 @@ Test names describe behaviour and survive refactors:
 
 Commit messages: sentence-case subject, no prefix tags, present tense, body
 explaining the problem rather than the patch. Match `git log`.
+
+A runtime dependency needs an issue first, per `CONTRIBUTING.md`;
+`test/claims.test.ts` fails when a fifth arrives.
 
 Claims in commits and docs must be checkable. `359 gate.allow out of 787` beats
 "most of the log is noise" — and a claim that cannot check itself will go
