@@ -1,6 +1,6 @@
 # Code Review: vitals
 
-**Verdict:** ✅ APPROVED
+**Verdict:** ✅ APPROVED (round 2)
 
 | | |
 | - | - |
@@ -289,10 +289,116 @@ Pre-existing, not introduced here. Logged, not blocking.
 
 ---
 
+## Review Round 2
+
+🚫 **PRIOR ROUND INVALIDATED** — re-reviewing post-approval changes.
+
+**Verdict:** ✅ APPROVED
+
+| | |
+| - | - |
+| **Reviewer** | `pe-vue` (console), `pe-governance` (CLAUDE.md), primary (backend, tooling) |
+| **Reviewed SHA** | `76770d6d1e1883be97fce01ade1355226d053a25` |
+| **Scope** | `8697cbd..HEAD` — six commits made after round 1 approved |
+| **Date** | 2026-09-01 |
+
+### Summary
+
+Round 1 approved at `8697cbd`; six commits landed after it, so that round was
+void. This round covers them: shared types between server and console, `.vue`
+typechecking, the deletion of `check-sfc-imports.mjs`, the CLAUDE.md rewrite,
+and the removal of test counts from the README.
+
+Twenty findings, all remediated. Nothing structural — the code, types, build
+and tests were clean throughout. Every finding was a **claim that had stopped
+being true**, which is the same defect the branch was written to detect and
+which it kept committing while detecting it.
+
+### The pattern this round documents
+
+Three separate times, a confident claim outlived what it described. Twice the
+claim was written *in the commit that fixed the previous instance*.
+
+| claim | written | falsified by | found by |
+| - | - | - | - |
+| "vue-tsc needs TypeScript 5" | a prior session, in CLAUDE.md | `dc38baa` | the user, asking why not just enable it |
+| "vue-tsc strictly dominates the deleted script" | `dc38baa` | orphaned `.vue` files were checked by nobody | primary, testing its own claim |
+| "an SFC never reaches the typechecker" ×3 | `10d890c`, `8697cbd` | `dc38baa` | `pe-vue` |
+| CLAUDE.md restates its own script's header | `5ce7be5`, the commit removing restatements | itself | `pe-governance` |
+
+The third is the sharpest: one of those three comments was the stated
+justification for an e2e test, and the primary cited it back while asking
+`pe-vue` whether that test could be deleted. Had `pe-vue` agreed, a working
+guard would have been removed on the strength of a comment falsified two
+commits earlier.
+
+### Findings
+
+| ID | Severity | Location | Finding | Status |
+| - | - | - | - | - |
+| R2-M1 | 🟡 MEDIUM | `desk.spec.ts:980,1009`, `Vitals.vue:120` | Three comments assert SFCs are not typechecked; this branch made that false | ✅ `7f9c1e1` |
+| R2-M2 | 🟡 MEDIUM | `CLAUDE.md` | The dependency *prohibition* was deleted with the dependency *list*. `package.json` can state there are four; it cannot state that a fifth needs an issue | ✅ `e3b7af7` |
+| R2-M3 | 🟡 MEDIUM | `CLAUDE.md:39-42` | The vue-tsc rationale had become a near-verbatim copy of its own script's header — committed inside the change that removes copies | ✅ `e3b7af7` |
+| R2-M4 | 🟡 MEDIUM | `desk/tsconfig.json` | Deleting `check-sfc-imports.mjs` left orphaned `.vue` files checked by nobody; vue-tsc only saw the import graph | ✅ `67c7d66` |
+| R2-M5 | 🟡 MEDIUM | `CLAUDE.md:19-20,8-10,79-80` | Prose summary after a table; a "why" anecdote written for a human; a definition wearing a pseudocode costume | ✅ `e3b7af7` |
+| R2-M6 | 🟡 MEDIUM | `CLAUDE.md:47-50` | "This works because" paragraph where the model needs a directive | ✅ `e3b7af7` |
+| R2-I1 | 🟢 LOW | `desk/src/api.ts:61` | The console's only reach into `src/` is held open by the word `type`, and buried 60 lines down | ✅ `76770d6` |
+| R2-I2 | 🟢 LOW | `desk.spec.ts:989` | The holes regex caught NaN but not Infinity — x/0 is the likelier slip | ✅ `7f9c1e1` |
+| R2-I3 | 🟢 LOW | `desk.spec.ts:1004` | `.grid td` count guard was satisfied by one row of either table | ✅ `7f9c1e1` |
+| R2-I4 | 🟢 LOW | `package.json` | Sidecar compiler pinned by range; it exists to be stable, not current | ✅ `67c7d66` |
+| R2-I5 | 🟢 LOW | `CLAUDE.md` | `shellIsContained()` lost from the security section — it was the grep anchor into the deciding function | ✅ `7a5902b` |
+| R2-I6 | 🟢 LOW | `CLAUDE.md`, `CONTRIBUTING.md` | Pointer rows omitted `e2e/tsconfig.json`, `src/core/lock.ts`, `docker/up.sh`; the "four dependencies" claim existed in a third document unchecked | ✅ `e3b7af7`, `7a5902b` |
+| R2-I7 | ℹ️ INFO | `CLAUDE.md:109` | The sentence demanding checkable claims illustrated itself with an unverifiable measurement | ✅ `7a5902b` |
+
+### Reversed on review
+
+The primary asked `pe-vue` whether the e2e shape guard was now redundant, and
+proposed deleting it. `pe-vue` said keep it, and was right for a reason the
+primary had not reached:
+
+> Types cover the field-**name** class, now twice over. They cover none of the
+> **value** class — `over()` is a discipline, not a type. A raw `a / b` gives
+> NaN on 0/0 and Infinity on x/0; both are `number`, both typecheck.
+
+Verified by injecting `costUsd / 0`: `JSON.stringify(Infinity)` is `null`, the
+formatter throws on it, and **the whole console renders blank** — not a bad
+number on the page, no page. Two nets for two failures, not two for one.
+
+`pe-governance` likewise refused two trims the primary was open to, judging the
+test-isolation env block correct as a schema (the failure mode is writing into
+the operator's real companies, so indirection is the worse trade) and the
+"Note on this file" section load-bearing.
+
+### Verified clean
+
+- **Bundle purity.** `desk/dist` grepped for eight server symbols: 0 hits. The
+  `api.ts → analytics/types.ts → core/types.ts` chain is type-only at every
+  link and erases entirely.
+- **SFC typechecking is real, not a no-op.** Probe component with an unimported
+  `ref()`, a type error and a template typo: 3 errors, exit 2. Repeated as a
+  true orphan with no importer: still caught.
+- **The deleted script is subsumed and exceeded** — one class caught before,
+  four now, with file coverage restored by the include glob.
+- **Round-1 fixes intact.** The M1 polarity union still matches its CSS
+  classes, asserted by `desk.spec.ts:1010`; the I3 TILES table still declares
+  key and accessor together.
+
+### Standing
+
+Unchanged from round 1 and worth restating: no human has read this code. The
+console had genuine outside review from two agents that pulled their own diffs
+and ran their own commands, and between them they found sixteen of the twenty.
+The backend and tooling had none — the same model wrote it, reviewed it, and
+agreed with itself, and the two findings it did produce there came from running
+probes against its own claims rather than from reading.
+
+---
+
 ## Merge Eligibility
 
-**Locked to SHA:** `8697cbd97f54e8d3454da660220942137ade3ebe`
-**Status:** ✅ Mergeable IF `git rev-parse HEAD == 8697cbd97f54e8d3454da660220942137ade3ebe`. Any commit after this SHA invalidates this round and requires re-review.
+**Locked to SHA:** `76770d6d1e1883be97fce01ade1355226d053a25`
+**Status:** ✅ Mergeable IF `git rev-parse HEAD == 76770d6d1e1883be97fce01ade1355226d053a25`. Any commit after this
+SHA invalidates this round and requires re-review.
 
 ---
 
