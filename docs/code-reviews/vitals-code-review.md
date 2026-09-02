@@ -6,14 +6,36 @@
 | - | - |
 | **Branch** | `vitals` |
 | **PR** | — (local branch review) |
-| **Author** | @Cali LaFollett |
-| **Reviewer** | @Cali LaFollett |
+| **Author** | Claude Opus 5 — every line of this branch |
+| **Reviewer** | Claude Opus 5 (backend), `pe-vue` subagent (console) |
+| **Human review** | None. See *Standing of this review*. |
 | **Review Round** | 1 |
 | **Reviewed SHA** | `8697cbd97f54e8d3454da660220942137ade3ebe` |
 | **Title** | Vitals — read the company back as numbers |
 | **Files Changed** | 12 |
 | **Lines Changed** | +1919 / -13 |
 | **Date** | 2026-09-01 |
+
+---
+
+## Standing of this review
+
+The code was written by a model and reviewed by models. No human has read it.
+Commit authorship says `Cali LaFollett` because that is the configured git
+identity, not because a person wrote or read these lines.
+
+That matters for how much this document is worth. `pe-vue` was genuine outside
+review of the console — a separate agent that pulled its own diff, ran its own
+commands, and found four things the author missed, including one the author had
+called clean. The backend had no such check: the same model wrote it, reviewed
+it, agreed with itself, and recorded the result here.
+
+Two of the twelve findings were caught only because the report was run against
+a real ledger and the numbers disagreed with the code's intent. None of the
+twelve came from a person.
+
+Treat the verdict as "no model found anything further", which is a weaker claim
+than approval.
 
 ---
 
