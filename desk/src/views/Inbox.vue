@@ -335,7 +335,7 @@ const when = (iso: string) => {
           <input ref="toField" v-model="query" type="text" class="typeahead"
                  role="combobox" aria-autocomplete="list" aria-controls="to-options"
                  :aria-expanded="menuOpen"
-                 :aria-activedescendant="menuOpen && options.length ? `to-opt-${highlight}` : null"
+                 :aria-activedescendant="menuOpen && options.length ? `to-opt-${highlight}` : undefined"
                  :placeholder="tags.length ? '' : 'Type a name, or Everyone'"
                  aria-label="Recipients"
                  @focus="menuOpen = true" @blur="menuOpen = false" @keydown="onKey" />

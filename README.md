@@ -297,7 +297,7 @@ in this project ever needs the value written down.
 | `npm run desk:build` | build it first |
 | `npm test` | 224 unit tests |
 | `npm run test:ui` | 46 Playwright tests against a throwaway installation |
-| `npm run check` | typecheck all three projects (TypeScript 7, native) |
+| `npm run check` | typecheck all three projects, `.vue` files included |
 | `node scripts/init.ts` | found a company |
 | `--company <slug>` | any script, when more than one company exists |
 | `node scripts/tick.ts <who> [turns]` | wake one person, once, and trace the shift |

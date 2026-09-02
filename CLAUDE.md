@@ -36,16 +36,24 @@ emit. Consequences that change what you may write:
 Run `npm run check` and `npm test` before claiming a change works. Run
 `npm run test:ui` when anything under `desk/` or `src/gateway/` changed.
 
-## `.vue` files are NOT typechecked
+## `.vue` files are typechecked, by a second compiler
 
-`vue-tsc` needs TypeScript 5; this repo is on 7. tsgo does not parse SFCs.
+tsgo does not parse SFCs, and cannot be made to: TypeScript 7's `tsc` is a
+launcher that hands off to a Go binary, so the JavaScript compiler internals
+vue-tsc patches to teach it `.vue` are not there at all. vue-tsc's peer range
+is `typescript >= 5.0.0` and 7 satisfies it, which makes this look workable
+right up until `typescript/lib/tsc` fails to resolve. It is not a version
+problem, so do not spend an afternoon on the version.
 
-The failure this permits: a component calling `computed()`/`ref()`/`watch()`
-without importing it throws at setup and renders **nothing**, while every type
-check passes and the build succeeds. `scripts/check-sfc-imports.mjs` catches
-exactly that and runs inside `npm run check`.
+`scripts/check-sfc-types.mjs` runs vue-tsc against its own TypeScript, pinned
+as `ts5` and used nowhere else. It costs about a second and runs inside
+`npm run check`. **tsgo stays the source of truth for everything under `src/`;
+where the two disagree, tsgo wins.**
 
-After editing a `.vue` file, verify it renders — do not rely on the typechecker.
+The console imports the server's own types rather than restating them — see
+`src/analytics/types.ts`. That pairing is what makes a renamed server field a
+build failure instead of a tile rendering `undefined`; either half alone lets
+it through silently.
 
 ## Data lives outside the repo
 
