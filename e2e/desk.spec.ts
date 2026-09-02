@@ -780,10 +780,18 @@ test('the splitter is a real control, not just a draggable pixel', async ({ page
 
 test('the console holds together on a narrow window', async ({ page }) => {
   await page.setViewportSize({ width: 900, height: 700 });
-  await go(page, 'Staff');
-  const overflow = await page.evaluate(() =>
+  const overflow = () => page.evaluate(() =>
     document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+
+  await go(page, 'Staff');
+  expect(await overflow()).toBeLessThanOrEqual(0);
+
+  // Vitals is nine columns of figures, and a table that widens the document
+  // scrolls the whole page rather than itself. It has to scroll inside its own
+  // container, which is what the rest of the console already does.
+  await go(page, 'Vitals');
+  await expect(page.locator('.tile').first()).toBeVisible();
+  expect(await overflow()).toBeLessThanOrEqual(0);
 });
 
 test.describe('many companies, one console', () => {
@@ -967,8 +975,12 @@ test('the vitals window is a choice, and changing it re-reads the record', async
   await go(page, 'Vitals');
   await expect(page.locator('.foot')).toContainText('7.days');
 
+  // The selected window must be readable as selected without seeing colour.
+  await expect(page.getByRole('button', { name: '7 days', pressed: true })).toBeVisible();
+
   await page.getByRole('button', { name: '24 hours' }).click();
   await expect(page.locator('.win.on')).toHaveText('24 hours');
+  await expect(page.getByRole('button', { name: '24 hours', pressed: true })).toBeVisible();
   await expect(page.locator('.foot')).toContainText('24.hours');
   // The fixture was built moments ago, so a narrower window holds the same
   // work — what must change is the window the report says it read.

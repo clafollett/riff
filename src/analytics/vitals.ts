@@ -149,6 +149,8 @@ export type TalkVitals = {
 
 export type MoneyVitals = { spends: number; cents: number; exceptions: number };
 
+/** A rule that refused something. Allows are counted in the totals but never
+ *  listed: there are thousands of them and none is news. */
 export type RuleBite = { kind: string; rule: string; capability: string; n: number };
 
 export type PersonVitals = {
@@ -559,7 +561,11 @@ export const vitals = (
       allow: gateKind('allow'),
       deny: gateKind('deny'),
       escalate: gateKind('escalate'),
-      rules: gateRows.slice(0, 20),
+      // Refusals only, and cut server-side. Allows outnumber them by orders
+      // of magnitude and sort to the head, so taking the top twenty overall
+      // and dropping allows afterwards would have left the one section that
+      // exists to show refusals with nothing in it.
+      rules: gateRows.filter((r) => r.kind !== 'allow').slice(0, 20),
     },
     people,
   };

@@ -11,8 +11,17 @@ const v = ref<Vitals | null>(null);
 const err = ref('');
 
 const load = async () => {
-  try { v.value = await api.vitals(spec.value); err.value = ''; }
-  catch (e) { err.value = e instanceof Error ? e.message : String(e); }
+  // Which window this request is for. A slow answer to a window the reader has
+  // already moved off must not overwrite the one they are looking at now.
+  const want = spec.value;
+  try {
+    const next = await api.vitals(want);
+    if (want !== spec.value) return;
+    v.value = next;
+    err.value = '';
+  } catch (e) {
+    err.value = e instanceof Error ? e.message : String(e);
+  }
 };
 onMounted(load);
 watch(spec, load);
@@ -30,14 +39,25 @@ const hrs = (n: number | null): string => (n == null ? '—' : `${n.toFixed(1)}h
  * that landed twelve commits is doing well or badly depending entirely on
  * what it did the week before, and the level alone cannot say which.
  */
-type Dir = { text: string; way: 'up' | 'down' | 'flat' } | null;
-const delta = (key: keyof Trend, now: number, unit = ''): Dir => {
+type Dir = { text: string; way: 'good' | 'bad' | 'flat' } | null;
+
+/**
+ * The arrow says which way the figure moved; the colour says whether that is
+ * good news. They are not the same question, and colouring by direction alone
+ * painted a week that cost forty dollars more than the last one in the success
+ * colour — as it did a week with more barren shifts.
+ */
+const delta = (key: keyof Trend, now: number, better: 'up' | 'down', unit = ''): Dir => {
   const was = v.value?.previous?.[key];
   if (was == null) return null;
   const d = now - was;
   if (Math.abs(d) < 0.005) return { text: 'level', way: 'flat' };
   const size = unit === '$' ? `$${Math.abs(d).toFixed(2)}` : String(Math.round(Math.abs(d)));
-  return { text: `${d > 0 ? '▲' : '▼'} ${size}`, way: d > 0 ? 'up' : 'down' };
+  const rose = d > 0;
+  return {
+    text: `${rose ? '▲' : '▼'} ${size}`,
+    way: rose === (better === 'up') ? 'good' : 'bad',
+  };
 };
 
 /**
@@ -96,10 +116,10 @@ const tiles = computed(() => {
   const d = v.value;
   if (!d) return [];
   return [
-    { label: 'shifts',  value: String(d.shifts.slept), sub: `${d.shifts.turnsPerShift.toFixed(1)} turns each`, dir: delta('shifts', d.shifts.slept) },
-    { label: 'spent',   value: usd(d.shifts.costUsd),  sub: `${usd(d.shifts.costPerShift)} a shift`, dir: delta('costUsd', d.shifts.costUsd, '$') },
-    { label: 'landed',  value: String(d.talk.byStaff), sub: d.talk.byStaff ? `${usd(d.talk.costPerCommit)} a commit` : 'nothing reached the world', dir: delta('commits', d.talk.byStaff) },
-    { label: 'barren',  value: String(d.shifts.barren), sub: 'woke and left nothing', dir: delta('barren', d.shifts.barren) },
+    { label: 'shifts',  value: String(d.shifts.slept), sub: `${d.shifts.turnsPerShift.toFixed(1)} turns each`, dir: delta('shifts', d.shifts.slept, 'up') },
+    { label: 'spent',   value: usd(d.shifts.costUsd),  sub: `${usd(d.shifts.costPerShift)} a shift`, dir: delta('costUsd', d.shifts.costUsd, 'down', '$') },
+    { label: 'landed',  value: String(d.talk.byStaff), sub: d.talk.byStaff ? `${usd(d.talk.costPerCommit)} a commit` : 'nothing reached the world', dir: delta('commits', d.talk.byStaff, 'up') },
+    { label: 'barren',  value: String(d.shifts.barren), sub: 'woke and left nothing', dir: delta('barren', d.shifts.barren, 'down') },
   ];
 });
 </script>
@@ -117,14 +137,17 @@ const tiles = computed(() => {
       </div>
       <div class="windows">
         <button v-for="w in WINDOWS" :key="w" class="win" :class="{ on: spec === w }"
+                :aria-pressed="spec === w"
                 @click="spec = w">{{ w.replace('.', ' ') }}</button>
       </div>
     </header>
 
+    <!-- A refresh that fails while you are reading is a banner, not a blank
+         page: the figures on screen were true when they were read. -->
     <p v-if="err" class="warn">{{ err }}</p>
-    <p v-else-if="!v" class="muted empty">Reading the record…</p>
+    <p v-if="!v && !err" class="muted empty">Reading the record…</p>
 
-    <template v-else>
+    <template v-if="v">
       <div class="tiles">
         <div v-for="t in tiles" :key="t.label" class="tile">
           <span class="tlabel">{{ t.label }}</span>
@@ -226,12 +249,17 @@ const tiles = computed(() => {
 
       <!-- Which rules actually bite. The constitution claims Rule 6 is the
            load-bearing one; this is the table that can contradict it. -->
-      <section v-if="v.gate.rules.filter((r) => r.kind !== 'allow').length">
+      <section v-if="v.gate.rules.length">
         <h2>Where the rules bit</h2>
+        <!-- Nine columns of figures do not fit a narrow window, and a table
+             that widens the document scrolls the whole page sideways. -->
+        <div class="tablewrap">
         <table class="grid">
-          <thead><tr><th>times</th><th>decision</th><th>rule</th><th>capability</th></tr></thead>
+          <caption class="offscreen">Rules that refused something, most often first</caption>
+          <thead><tr><th scope="col">times</th><th scope="col">decision</th>
+            <th scope="col">rule</th><th scope="col">capability</th></tr></thead>
           <tbody>
-            <tr v-for="r in v.gate.rules.filter((x) => x.kind !== 'allow').slice(0, 8)"
+            <tr v-for="r in v.gate.rules.slice(0, 8)"
                 :key="r.kind + r.rule + r.capability">
               <td class="n">{{ r.n }}</td>
               <td>{{ r.kind }}</td>
@@ -240,16 +268,21 @@ const tiles = computed(() => {
             </tr>
           </tbody>
         </table>
+        </div>
       </section>
 
       <section v-if="v.people.length">
         <h2>Who did the work</h2>
+        <div class="tablewrap">
         <table class="grid">
+          <caption class="offscreen">What each member of staff did in this window</caption>
           <thead>
             <tr>
-              <th>who</th><th class="n">shifts</th><th class="n">commits</th>
-              <th class="n">posts</th><th class="n">mail</th><th class="n">drafts</th>
-              <th class="n">done</th><th class="n">denied</th><th class="n">cost</th>
+              <th scope="col">who</th><th scope="col" class="n">shifts</th>
+              <th scope="col" class="n">commits</th><th scope="col" class="n">posts</th>
+              <th scope="col" class="n">mail</th><th scope="col" class="n">drafts</th>
+              <th scope="col" class="n">done</th><th scope="col" class="n">denied</th>
+              <th scope="col" class="n">cost</th>
             </tr>
           </thead>
           <tbody>
@@ -266,10 +299,11 @@ const tiles = computed(() => {
             </tr>
           </tbody>
         </table>
+        </div>
       </section>
 
       <p class="muted foot">
-        {{ v.window.spec }}, from {{ v.window.since.slice(0, 16).replace('T', ' ') }}.
+        {{ v.window.spec }}, from {{ new Date(v.window.since).toLocaleString() }}.
         <span v-if="v.previous">Arrows compare against the {{ v.window.spec }} before it.</span>
       </p>
     </template>
@@ -299,8 +333,8 @@ h2 { font-size: 13px; font-family: var(--sans); text-transform: uppercase;
 .tvalue { font-family: var(--mono); font-size: 27px; color: var(--gold); line-height: 1.1; }
 .tsub { font-size: 12px; color: var(--muted); }
 .tsub em { font-style: normal; font-family: var(--mono); font-size: 11px; margin-left: 7px; }
-.tsub em.up { color: var(--ok); }
-.tsub em.down { color: var(--accent); }
+.tsub em.good { color: var(--ok); }
+.tsub em.bad { color: var(--accent); }
 .tsub em.flat { color: var(--faint); }
 
 .findings { margin: 22px 0 4px; display: flex; flex-direction: column; gap: 6px; }
@@ -322,6 +356,9 @@ dd.hot { color: var(--alert); }
   letter-spacing: .09em; text-transform: uppercase; color: var(--faint);
   font-weight: normal; padding: 0 10px 7px 0; }
 .grid td { padding: 6px 10px 6px 0; border-top: 1px solid var(--line); }
+.tablewrap { overflow-x: auto; }
+.offscreen { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; }
 .grid .n { text-align: right; font-family: var(--mono); }
 .grid td.hot { color: var(--alert); }
 .faint { color: var(--faint); font-size: 11px; }

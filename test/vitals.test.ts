@@ -248,6 +248,28 @@ describe('rule 6 — what the commons claim can be checked against', () => {
   });
 });
 
+describe('the gate', () => {
+  // Allows outnumber refusals by orders of magnitude and sort to the head of
+  // the same list. Taking the top twenty overall and dropping allows in the
+  // console would have left the one section that exists to show refusals
+  // showing nothing at all, on exactly the busy company that needed it.
+  test('the listed rules are refusals, however many allows are ahead of them', () => {
+    for (let i = 0; i < 40; i++) {
+      for (let j = 0; j <= i; j++) {
+        ledger.emit('rae', 'gate.allow', null, { rule: `R2.autonomy`, capability: `cap${i}` });
+      }
+    }
+    ledger.emit('rae', 'gate.deny', null, { rule: 'R4.not_treasurer', capability: 'spend' });
+    const v = report();
+
+    assert.equal(v.gate.allow, 820);
+    assert.equal(v.gate.deny, 1);
+    assert.equal(v.gate.rules.every((r) => r.kind !== 'allow'), true);
+    assert.equal(v.gate.rules.some((r) => r.rule === 'R4.not_treasurer'), true);
+    cleanup();
+  });
+});
+
 describe('the org chart — the same claim, asked of the payroll', () => {
   test('hires and retirements net out, and the board is not headcount', () => {
     shift('ceo', [['role.filled'], ['role.filled'], ['role.retired']]);
