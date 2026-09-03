@@ -99,11 +99,10 @@ describe('the interval paces the company, not one person at a time', () => {
       if (inFlight.size) workingMinutes++;
       if (!roundIsDue(now, lastRound, opts.interval)) continue;
 
-      const due = selectDue(TEN.slice(0, 4), {
-        now, nextDue, inFlight, slots: opts.slots - inFlight.size,
-      });
+      const slots = opts.slots - inFlight.size;
+      const due = selectDue(TEN.slice(0, 4), { now, nextDue, inFlight, slots });
+      if (due.length || slots <= 0) lastRound = now;
       if (!due.length) continue;
-      lastRound = now;
       for (const a of due) {
         started++;
         busyUntil.set(a.id, now + opts.shift);
@@ -130,6 +129,16 @@ describe('the interval paces the company, not one person at a time', () => {
     // Rounds are gated the same either way — more hands, not more often.
     assert.ok(two.started <= one.started * 2 + 1,
       `two slots must not start more than twice the rounds: ${one.started} vs ${two.started}`);
+  });
+
+  test('shifts longer than the interval do not turn into continuous work', () => {
+    // The hole in the first version of this gate. Every round found both slots
+    // busy, so the clock never advanced, so each finishing shift was replaced
+    // the instant it ended — the same 100% duty cycle, reached from the other
+    // side. A busy round has to count as a round.
+    const { started, workingMinutes } = run({ minutes: 60, interval: 15, slots: 2, shift: 25 });
+    assert.ok(workingMinutes < 55, `the company still never rested: ${workingMinutes} of 60 minutes`);
+    assert.ok(started <= 6, `long shifts must not multiply rounds, got ${started}`);
   });
 
   test('a throttled company starts its rounds further apart', () => {

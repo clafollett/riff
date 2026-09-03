@@ -379,15 +379,24 @@ export class Scheduler {
         continue;
       }
 
+      const slots = this.#opts.concurrency - this.#inFlight.size;
       const due = selectDue(this.#d.ledger.listAgents(), {
-        now, nextDue: this.#nextDue, inFlight: this.#inFlight,
-        slots: this.#opts.concurrency - this.#inFlight.size,
+        now, nextDue: this.#nextDue, inFlight: this.#inFlight, slots,
       });
 
-      // Only a round that actually woke somebody starts the clock. An empty
-      // one means nobody was due yet, and holding the gate open lets the next
-      // agent start the moment they are.
-      if (due.length) this.#lastRound = now;
+      // A round that woke somebody starts the clock, and so does one that could
+      // not because every slot was busy — the company was working, which is
+      // what the clock measures.
+      //
+      // Only the third case holds the gate open: slots free and nobody due yet.
+      // Then the company is idle and waiting, and the next agent should start
+      // the moment they come due rather than sit out the rest of the interval.
+      //
+      // Conflating the two was a hole. With shifts longer than the interval,
+      // every round found no free slot, the clock never advanced, and each
+      // finishing shift was replaced immediately — the same continuous
+      // operation this gate exists to stop, arrived at from the other side.
+      if (due.length || slots <= 0) this.#lastRound = now;
       for (const a of due) this.#track(this.#wake(a));
 
       // Approved work is applied by the company, never by the requester — so a
