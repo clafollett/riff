@@ -90,3 +90,23 @@ export const windowsFromUsage = (u: UsageReading | null | undefined): Array<[str
  */
 export const limitsReadable = (u: UsageReading | null | undefined): boolean =>
   u != null && u.rate_limits_available !== false;
+
+/**
+ * Fold a new reading of one window into what was already known about it.
+ *
+ * Two sources describe the same window and neither is complete: the usage
+ * reading carries utilisation and no reset time, the `rate_limit_event`
+ * carries a reset time and frequently no utilisation. Setting one over the
+ * other drops whichever field the newcomer lacks — the first shift to record
+ * windows by name logged a five-hour reset stamp and no five-hour figure,
+ * which is the one number an operator on a subscription is asking for.
+ */
+export const mergeWindow = (
+  had: SDKRateLimitInfo | undefined, next: SDKRateLimitInfo,
+): SDKRateLimitInfo => ({
+  ...next,
+  ...(next.utilization == null && had?.utilization != null ? { utilization: had.utilization } : {}),
+  ...(next.resetsAt == null && had?.resetsAt != null ? { resetsAt: had.resetsAt } : {}),
+  ...(next.rateLimitType == null && had?.rateLimitType != null
+    ? { rateLimitType: had.rateLimitType } : {}),
+});

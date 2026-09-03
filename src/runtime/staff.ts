@@ -8,7 +8,7 @@ import type { Clock } from '../core/clock.ts';
 import { createTools, TOOL_NAMESPACE } from './tools.ts';
 import { makeCanUseTool, shellIsContained } from './permissions.ts';
 import { DEFAULT_POLICY } from '../core/config.ts';
-import { worstWindow, isWeekly, windowsFromUsage, limitsReadable } from './limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage, limitsReadable, mergeWindow } from './limits.ts';
 import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
@@ -762,8 +762,9 @@ export const tick = async (
       const reading = await fn.call(q) as never;
       planVisible = limitsReadable(reading);
       for (const [kind, w] of windowsFromUsage(reading)) {
-        windows.set(kind, w);
-        rateLimit = w;
+        const merged = mergeWindow(windows.get(kind), w);
+        windows.set(kind, merged);
+        rateLimit = merged;
       }
     } catch { /* a reading we could not take is not a shift that failed */ }
   };
@@ -893,8 +894,10 @@ export const tick = async (
         void readUsage(q);
       }
       if (m.type === 'rate_limit_event') {
-        rateLimit = m.rate_limit_info;
-        windows.set(m.rate_limit_info.rateLimitType ?? 'unknown', m.rate_limit_info);
+        const kind = m.rate_limit_info.rateLimitType ?? 'unknown';
+        const merged = mergeWindow(windows.get(kind), m.rate_limit_info);
+        rateLimit = merged;
+        windows.set(kind, merged);
       }
       // Compaction is the backstop, not the mechanism. If it fires, our own
       // threshold was too high — and without this it happens silently and the

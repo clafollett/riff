@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
-import { worstWindow, isWeekly, windowsFromUsage, limitsReadable } from '../src/runtime/limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage, limitsReadable, mergeWindow } from '../src/runtime/limits.ts';
 
 const at = (utilization: number, rateLimitType?: string): SDKRateLimitInfo => ({
   status: 'allowed',
@@ -73,7 +73,7 @@ describe('which subscription window the company is paced against', () => {
 
   test('a window reporting no utilization at all does not outrank a real reading', () => {
     const windows = new Map([
-      ['five_hour', { status: 'allowed', rateLimitType: 'five_hour' } as SDKRateLimitInfo],
+      ['five_hour', { status: 'allowed', rateLimitType: 'five_hour' } as SDKRateLimitInfo as SDKRateLimitInfo],
       ['seven_day', at(0.6, 'seven_day')],
     ]);
     assert.equal(worstWindow(windows)?.rateLimitType, 'seven_day');
@@ -169,5 +169,37 @@ describe('a plan the runtime cannot see is not a plan with room', () => {
   test('no reading at all is not a claim either way about the plan', () => {
     assert.equal(limitsReadable(null), false);
     assert.equal(limitsReadable(undefined), false);
+  });
+});
+
+describe('two half-readings of one window make one whole one', () => {
+  test('a stream event with no utilisation keeps the figure the usage reading gave', () => {
+    // The first shift to record windows by name logged resets_five_hour and no
+    // used_five_hour: the event arrived after the reading and replaced it,
+    // taking the only number an operator on a subscription can act on.
+    const fromUsage: SDKRateLimitInfo = { status: 'allowed', utilization: 0.12, rateLimitType: 'five_hour' } as SDKRateLimitInfo;
+    const fromEvent: SDKRateLimitInfo = { status: 'allowed', rateLimitType: 'five_hour', resetsAt: 1_788_469_800 } as SDKRateLimitInfo;
+    const w = mergeWindow(fromUsage, fromEvent);
+    assert.equal(w.utilization, 0.12);
+    assert.equal(w.resetsAt, 1_788_469_800);
+  });
+
+  test('a fresh utilisation wins over the one already held', () => {
+    const older: SDKRateLimitInfo = { status: 'allowed', utilization: 0.12, rateLimitType: 'five_hour' } as SDKRateLimitInfo;
+    const newer: SDKRateLimitInfo = { status: 'allowed', utilization: 0.34, rateLimitType: 'five_hour' } as SDKRateLimitInfo;
+    assert.equal(mergeWindow(older, newer).utilization, 0.34);
+  });
+
+  test('a usage reading with no reset time keeps the one the event gave', () => {
+    const fromEvent: SDKRateLimitInfo = { status: 'allowed', rateLimitType: 'seven_day', resetsAt: 1_788_469_800 } as SDKRateLimitInfo;
+    const fromUsage: SDKRateLimitInfo = { status: 'allowed', utilization: 0.1, rateLimitType: 'seven_day' } as SDKRateLimitInfo;
+    const w = mergeWindow(fromEvent, fromUsage);
+    assert.equal(w.resetsAt, 1_788_469_800);
+    assert.equal(w.utilization, 0.1);
+  });
+
+  test('nothing held yet is just the new reading', () => {
+    const only: SDKRateLimitInfo = { status: 'allowed', utilization: 0.5, rateLimitType: 'five_hour' } as SDKRateLimitInfo;
+    assert.deepEqual(mergeWindow(undefined, only), only);
   });
 });
