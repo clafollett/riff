@@ -380,20 +380,64 @@ const MAX_ROTATIONS = 2;
 const BLIND_TURNS = 3;
 
 /**
+ * Tools the runtime auto-approves, which therefore never reach the gate.
+ *
+ * Measured against this SDK, not assumed: a probe denying everything found
+ * that Write and a Read reaching outside the working directory are both asked
+ * about and both refused, while Glob, Grep, Read inside it and ToolSearch run
+ * without the handler being consulted at all. Everything that changes state
+ * still crosses the gate; these only look at what is already there.
+ *
+ * They are listed here for ONE reason: so a turn spent on them is not
+ * mistaken for evidence that the permission channel has died. This is not a
+ * permission list and nothing may be added to it to make a tool allowed.
+ */
+const UNGATED_TOOLS = new Set([
+  'Read', 'Glob', 'Grep', 'NotebookRead', 'ToolSearch', 'TodoWrite',
+]);
+
+/** An MCP tool the company declared read-only is auto-approved the same way. */
+const READ_ONLY_COMPANY_TOOLS = new Set(['commons_index', 'portfolio', 'who_is_here', 'my_drafts']);
+
+const reachesGate = (name: string): boolean => {
+  if (UNGATED_TOOLS.has(name)) return false;
+  const bare = name.startsWith(`mcp__${TOOL_NAMESPACE}__`)
+    ? name.slice(`mcp__${TOOL_NAMESPACE}__`.length) : name;
+  return !READ_ONLY_COMPANY_TOOLS.has(bare);
+};
+
+/**
  * Watches whether the gate is still there.
  *
  * Fed one call per assistant message. It compares each message against the
  * PREVIOUS one, never against itself: a message's tool_use blocks are counted
  * the moment the message arrives and the gate is asked microseconds later, so
  * measuring within a turn would report every parallel tool call as a miss.
+ *
+ * It watches for a channel that NEVER worked, and stops the moment one
+ * answers. Whether a call reaches the gate turns out to depend on state as
+ * well as on the tool: the runtime auto-approves an Edit to a file it has
+ * already approved a Write to, so a stretch of ordinary iterative coding is
+ * indistinguishable from a dead channel. Two shifts died that way, the second
+ * after nine turns and $1.22 of real work, with four gate.allow events
+ * already on the record behind it.
+ *
+ * So: one answer proves the channel is alive, and a channel that is alive is
+ * not going to be caught by guessing at silence. A first CEO with nothing to
+ * write yet — opening on Glob, Read, portfolio, every one auto-approved and
+ * invisible here — is exactly the moment this must not fire, and exactly the
+ * moment it did.
  */
 export const blindWatch = (limit = BLIND_TURNS) => {
   let blind = 0;
   let gateWas = 0;
   let lastWantedTools = false;
+  let everAnswered = false;
   return {
-    /** True once the gate has been silent through `limit` tool-using turns. */
+    /** True once the gate has been silent through `limit` gated-tool turns. */
     turn(gateCalls: number, wantsTools: boolean): boolean {
+      if (gateCalls > 0) everAnswered = true;
+      if (everAnswered) return false;
       blind = lastWantedTools && gateCalls === gateWas ? blind + 1 : 0;
       gateWas = gateCalls;
       lastWantedTools = wantsTools;
@@ -718,7 +762,9 @@ export const tick = async (
 
     for await (const m of q) {
       if (m.type === 'assistant') {
-        if (watch.turn(gateCalls, m.message.content.some((b) => b.type === 'tool_use'))) {
+        const wantsGated = m.message.content.some(
+          (b) => b.type === 'tool_use' && reachesGate(b.name));
+        if (watch.turn(gateCalls, wantsGated)) {
           wentBlind = true;
           ledger.emit(agent.id, 'shift.blind', null, { turns, gateCalls, after: BLIND_TURNS });
           stop.abort();
