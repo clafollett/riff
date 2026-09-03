@@ -920,9 +920,7 @@ export const tick = async (
   // Their own account of the shift, in their own hand, in the world's git log.
   const account = summary || said;
   if (account) {
-    world.appendJournal(agent.id, truncated
-      ? `${account.slice(0, 600)}\n\n_Cut at the turn ceiling (${turns}). Resumes next shift._`
-      : account.slice(0, 600));
+    world.appendJournal(agent.id, journalEntry(account, turns, truncated));
   }
   world.git.commitAs({ id: agent.id, name: agent.name }, `${agent.id}: ${firstLine(account)}`);
 
@@ -945,3 +943,26 @@ export const tick = async (
 const firstLine = (s: string): string =>
   (s.split('\n').find((l) => l.trim()) ?? 'worked a shift').slice(0, 72);
 
+
+/**
+ * The journal is the handoff: the next shift reads it instead of re-deriving.
+ * A hard `slice` cut both of Fathom's first two entries mid-word — one ended
+ * "`projects/sunset", the other "a command " — with nothing saying so, which
+ * is the exact failure the company was founded to fix. Cut on a boundary, and
+ * always admit the cut.
+ */
+export const JOURNAL_CHARS = 1200;
+
+export const journalEntry = (account: string, turns: number, truncated: boolean): string => {
+  const ceiling = truncated ? `\n\n_Cut at the turn ceiling (${turns}). Resumes next shift._` : '';
+  if (account.length <= JOURNAL_CHARS) return account + ceiling;
+
+  const head = account.slice(0, JOURNAL_CHARS);
+  // Prefer a paragraph break, then a sentence, then a word — whichever is
+  // nearest the limit without throwing away more than a quarter of the budget.
+  const floor = JOURNAL_CHARS * 0.75;
+  const at = [head.lastIndexOf('\n\n'), head.lastIndexOf('. '), head.lastIndexOf(' ')]
+    .find((i) => i >= floor) ?? JOURNAL_CHARS;
+  return `${account.slice(0, at).trimEnd()}\n\n_Cut at ${JOURNAL_CHARS} characters; `
+    + `${account.length - at} more in the shift itself._${ceiling}`;
+};
