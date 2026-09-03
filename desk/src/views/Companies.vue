@@ -6,7 +6,8 @@ import { tagline } from '../text.ts';
 const props = defineProps<{ list: CompanyRef[]; active: string }>();
 const emit = defineEmits<{ switch: [slug: string]; changed: [] }>();
 
-type Mode = null | { kind: 'found' } | { kind: 'rename'; c: CompanyRef } | { kind: 'archive'; c: CompanyRef };
+type Mode = null | { kind: 'found' } | { kind: 'rename'; c: CompanyRef }
+  | { kind: 'archive'; c: CompanyRef } | { kind: 'bounded'; c: CompanyRef };
 const mode = ref<Mode>(null);
 const busy = ref(false);
 const err = ref('');
@@ -18,7 +19,8 @@ const err = ref('');
 const draft = ref({ name: '', business: '', ceo: '', chair: '', board: '',
                     release: 'none' as 'none' | 'bundle',
                     concurrency: 3, baseIntervalMinutes: 10, paused: false });
-const rename = ref({ name: '', business: '', slug: '' });
+const rename = ref({ name: '', business: '', slug: '', release: 'none' as 'none' | 'bundle' });
+const bounds = ref({ hours: 8, maxTicks: 40 });
 const confirmName = ref('');
 
 const openFound = () => {
@@ -28,7 +30,7 @@ const openFound = () => {
   mode.value = { kind: 'found' };
 };
 const openRename = (c: CompanyRef) => {
-  rename.value = { name: c.name, business: c.business, slug: c.slug };
+  rename.value = { name: c.name, business: c.business, slug: c.slug, release: c.release };
   err.value = '';
   mode.value = { kind: 'rename', c };
 };
@@ -75,6 +77,19 @@ const found = () => run(async () => {
     running: !paused,
     ...(board.length ? { board } : {}),
   })).slug;
+});
+
+const openBounded = (c: CompanyRef) => {
+  err.value = '';
+  bounds.value = { hours: 8, maxTicks: 40 };
+  mode.value = { kind: 'bounded', c };
+};
+
+/** Start with hard stops, for a run nobody will be watching. */
+const startBounded = (c: CompanyRef) => run(async () => {
+  await api.setCompanyRunning(c.slug, true,
+    { hours: Number(bounds.value.hours), maxTicks: Number(bounds.value.maxTicks) });
+  return null;
 });
 
 /** Start or pause without switching to it — several can run at once. */
@@ -179,6 +194,10 @@ const receive = async (e: Event) => {
         <button class="ghost" :disabled="busy" @click="setRunning(c, !c.running)">
           {{ c.running ? 'Pause' : 'Start' }}
         </button>
+        <button v-if="!c.running" class="ghost" :disabled="busy" @click="openBounded(c)"
+                title="Start with a deadline and a wake-up budget, for a run nobody is watching.">
+          Run for…
+        </button>
         <button class="ghost" @click="openRename(c)">Rename</button>
         <button class="ghost" :disabled="busy" @click="exportCompany(c)"
                 title="Download the whole company — ledger, world and git history — as one file.">
@@ -261,9 +280,39 @@ const receive = async (e: Event) => {
           <label>Company name<input v-model="rename.name" /></label>
           <label>Line of business<textarea v-model="rename.business" rows="5" /></label>
           <label>Folder<input v-model="rename.slug" class="mono" /></label>
+          <label>
+            How work leaves
+            <select v-model="rename.release">
+              <option value="none">Nowhere — nothing is published</option>
+              <option value="bundle">A bundle the board collects by hand</option>
+            </select>
+          </label>
           <p v-if="err" class="err">{{ err }}</p>
           <div class="row">
             <button class="go" :disabled="busy" @click="save(mode.c)">Save</button>
+            <button class="ghost" @click="close">Cancel</button>
+          </div>
+        </template>
+
+        <template v-else-if="mode.kind === 'bounded'">
+          <h2>Run {{ mode.c.name }} for a while</h2>
+          <p class="muted note">
+            Both are ceilings, and whichever comes first stops the company. They
+            belong to this run only — starting it again later with Start puts no
+            limit on it.
+          </p>
+          <div class="pair">
+            <label>Hours<input v-model.number="bounds.hours" type="number" min="0.5" max="72" step="0.5" /></label>
+            <label>Wake-ups<input v-model.number="bounds.maxTicks" type="number" min="1" max="1000" step="1" /></label>
+          </div>
+          <span class="hint faint standalone">
+            A wake-up is one shift by one member of staff. It is the budget that
+            actually binds, because the subscription window is spent by shifts,
+            not by hours on the clock.
+          </span>
+          <p v-if="err" class="err">{{ err }}</p>
+          <div class="row">
+            <button class="go" :disabled="busy" @click="startBounded(mode.c)">Start it</button>
             <button class="ghost" @click="close">Cancel</button>
           </div>
         </template>

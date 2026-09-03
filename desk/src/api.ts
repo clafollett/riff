@@ -3,6 +3,7 @@
 // and ships a module that dies in the browser. Vite says so in a warning and
 // exits 0 anyway, so scripts/check-sfc-types.mjs enforces it instead.
 import type { Vitals, Trend } from '../../src/analytics/types.ts';
+import type { CompanyRef as ConfigCompanyRef } from '../../src/core/config.ts';
 export type { Vitals, Trend };
 
 /** Everything the Desk knows, it knows from these. */
@@ -104,11 +105,15 @@ export type State = {
                   readAt: number }>;
 };
 
-export type CompanyRef = {
-  slug: string; name: string; business: string;
-  home: string; ceo: string; founded: boolean;
-  running: boolean; awake: string[];
-};
+/**
+ * A company in the listing: what config records, plus what only a live
+ * registry knows.
+ *
+ * Restating the first half here is what let the console fall behind the server
+ * — `release` was added to the config side and this copy never heard about it,
+ * so the field existed on the wire and not in the type.
+ */
+export type CompanyRef = ConfigCompanyRef & { running: boolean; awake: string[] };
 
 /**
  * Which company the console is looking at.
@@ -158,8 +163,13 @@ export const api = {
                          release?: 'none' | 'bundle';
                          running?: boolean }) =>
     send<{ slug: string }>('/api/companies', 'POST', input),
-  setCompanyRunning: (slug: string, running: boolean) =>
-    send<{ running: boolean }>(`/api/companies/${encodeURIComponent(slug)}/running`, 'POST', { running }),
+  setCompanyRunning: (slug: string, running: boolean,
+                      bounds?: { hours?: number; maxTicks?: number }) =>
+    send<{ running: boolean; until?: string; maxTicks?: number }>(
+      `/api/companies/${encodeURIComponent(slug)}/running`, 'POST', { running, ...bounds }),
+  renameAgent: (company: string, who: string, name: string) =>
+    send<{ from: string; to: string; name: string }>('/api/agents/rename', 'POST',
+      { company, who, name }),
   renameCompany: (slug: string,
                   patch: { name?: string; business?: string; slug?: string;
                            policy?: Partial<CompanyPolicy>; release?: 'none' | 'bundle' }) =>

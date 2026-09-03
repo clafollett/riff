@@ -993,6 +993,63 @@ test.describe('many companies, one console', () => {
   });
 });
 
+test('an agent can be given a name from the console, id and all', async ({ page }) => {
+  // 92 lines of foreign-key SQL used to live in a script, so a seat called
+  // `ceo` could be shown by the console and renamed only from a terminal.
+  await page.goto('/');
+  await go(page, 'Staff');
+  await page.locator('.card', { hasText: 'Fen' }).first().click();
+  await page.getByRole('button', { name: 'Rename…' }).click();
+  await page.getByLabel('New name').fill('Fenwick Ash');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  // The id moved with the name, not just the label.
+  await expect(page.locator('.card', { hasText: 'Fenwick Ash' })).toBeVisible();
+  const state = await (await page.request.get('/api/state?c=testwright-co')).json();
+  const ids = state.agents.map((a: { id: string }) => a.id);
+  expect(ids).toContain('fenwick-ash');
+  expect(ids).not.toContain('fen');
+
+  // And back, so the rest of the suite still finds Fen where it left her.
+  await page.request.post('/api/agents/rename', {
+    data: { company: 'testwright-co', who: 'fenwick-ash', name: 'Fen' },
+  });
+  await page.goto('/');
+});
+
+test('a run can be given a deadline from the console', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.switcher').click();
+  await page.getByRole('button', { name: 'Manage companies…' }).click();
+
+  const card = page.locator('.card', { hasText: 'Testwright' });
+  await card.getByRole('button', { name: 'Run for…' }).click();
+  await page.getByLabel('Hours').fill('2');
+  await page.getByLabel('Wake-ups').fill('5');
+  await page.getByRole('button', { name: 'Start it' }).click();
+
+  await expect(card.locator('.state')).not.toContainText('paused');
+  // Stop it again: a fixture left running spends a real subscription window.
+  await card.getByRole('button', { name: 'Pause' }).click();
+  await expect(card.locator('.state')).toContainText('paused');
+});
+
+test('the release route is changeable after founding, not only at it', async ({ page }) => {
+  // It was settable at founding and by PATCH, and reachable from no screen —
+  // an operator could turn a company's releases on and never see that it took.
+  await page.goto('/');
+  await page.locator('.switcher').click();
+  await page.getByRole('button', { name: 'Manage companies…' }).click();
+
+  await page.locator('.card', { hasText: 'Testwright' }).getByRole('button', { name: 'Rename' }).click();
+  await page.getByLabel('How work leaves').selectOption('bundle');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  const listing = await (await page.request.get('/api/companies')).json();
+  expect(listing.companies.find((c: { slug: string }) => c.slug === 'testwright-co').release)
+    .toBe('bundle');
+});
+
 test('the report gives both windows, not whichever one was tightest', async ({ page }) => {
   // The five-hour reading used to be recorded only when it was the binding
   // window, so it disappeared from the record exactly as the week filled up —

@@ -5,6 +5,7 @@ import { render } from '../markdown';
 import { onEvents } from '../live';
 
 const props = defineProps<{ state: State; events: Event[] }>();
+const emit = defineEmits<{ changed: [] }>();
 const open = ref<string | null>(null);
 const persona = ref('');
 const draft = ref('');
@@ -39,6 +40,35 @@ onEvents(() => props.events, /^(agent\.slept|remember)/, async () => {
   const a = props.state.agents.find((x) => x.id === id);
   if (a) { try { persona.value = (await api.doc(`staff/${id}/persona.md`)).body; } catch { /* keep */ } }
 });
+
+// Renaming moves an id that is a foreign key in six tables and a folder name
+// in the world, so it is one call to the server and never an edit here.
+const renaming = ref<string | null>(null);
+const newName = ref('');
+const renameErr = ref('');
+
+const openRename = (a: Agent) => {
+  renaming.value = renaming.value === a.id ? null : a.id;
+  newName.value = a.name;
+  renameErr.value = '';
+};
+
+const renamed = ref('');
+
+const doRename = async (a: Agent) => {
+  const name = newName.value.trim();
+  if (!name || name === a.name) { renaming.value = null; return; }
+  renameErr.value = '';
+  try {
+    // The server decides the id, so it is reported back rather than guessed
+    // here — the rule reducing a name to an id lives in one place.
+    const r = await api.renameAgent(props.state.slug, a.id, name);
+    renamed.value = `${r.from} → ${r.to}`;
+    renaming.value = null;
+    open.value = null;
+    emit('changed');
+  } catch (e) { renameErr.value = e instanceof Error ? e.message : String(e); }
+};
 
 const send = async (a: Agent) => {
   if (!draft.value.trim()) return;
@@ -77,6 +107,21 @@ const send = async (a: Agent) => {
           <textarea v-model="draft" rows="2" placeholder="Leave word. They read it when they next wake." />
           <button class="go" :disabled="sending" @click="send(a)">Send</button>
         </div>
+        <div class="renaming">
+          <template v-if="renaming === a.id">
+            <input v-model="newName" class="rn" aria-label="New name"
+                   @keyup.enter="doRename(a)" @keyup.esc="renaming = null" />
+            <button class="ghost" @click="doRename(a)">Save</button>
+            <button class="ghost" @click="renaming = null">Cancel</button>
+            <span class="faint hint">
+              Their id changes with the name, and their folder, their notes and
+              every line of the record move with it.
+            </span>
+          </template>
+          <button v-else class="ghost" @click="openRename(a)">Rename…</button>
+          <span v-if="renameErr" class="err">{{ renameErr }}</span>
+          <span v-else-if="renamed" class="faint mono hint">{{ renamed }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -84,6 +129,11 @@ const send = async (a: Agent) => {
 
 <style scoped>
 .wrap { padding: 34px 44px; max-width: 1000px; }
+.renaming { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.rn { font: inherit; font-size: 14px; background: #15100d; color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 5px; padding: 6px 9px; }
+.renaming .hint { font-size: 11.5px; }
+.renaming .err { color: var(--alert); font-size: 12px; }
 h1 { font-size: 30px; }
 .lede { margin: 6px 0 26px; font-size: 14px; max-width: 64ch; }
 .row { margin-bottom: 6px; }

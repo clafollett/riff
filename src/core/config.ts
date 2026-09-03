@@ -273,6 +273,9 @@ export type CompanyRef = {
   founded: boolean;
   /** What the operator last asked for, which a restart must honour. */
   wanted: boolean;
+  /** The route work leaves by. In the listing so the console can offer to
+   *  change it without opening the company first. */
+  release: 'none' | 'bundle';
 };
 
 const readRef = (slug: string): CompanyRef | null => {
@@ -287,6 +290,7 @@ const readRef = (slug: string): CompanyRef | null => {
     ceo: cfg.ceo?.name ?? 'CEO',
     founded: existsSync(join(home, 'ledger.db')),
     wanted: cfg.running === true,
+    release: cfg.release === 'bundle' ? 'bundle' : 'none',
   };
 };
 
