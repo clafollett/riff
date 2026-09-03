@@ -157,15 +157,30 @@ describe('what the factory can reach', () => {
       'the factory must not be attached to the outside network');
   });
 
-  test('the allowlist is anchored, so a lookalike host cannot pass', () => {
-    // "github.com" unanchored also matches "github.com.evil.example".
-    const compile = readFileSync('docker/proxy/compile-allowlist.sh', 'utf8');
+  test('every refused host is anchored, so no bystander is refused with it', () => {
+    // Anchoring guarded a bypass under the allowlist. Under a denylist it
+    // guards a surprise: unanchored, "paste.ee" also refuses "notpaste.ee.com".
+    const compile = readFileSync('docker/proxy/compile-denylist.sh', 'utf8');
     assert.match(compile, /\^%s\$/);
   });
 
-  test('nothing is denied by default being off', () => {
+  test('the proxy passes what it is not told to refuse', () => {
+    // Flipped 2026-09-03. A researcher made 195 allowed external.read calls
+    // and fetched one host; a curated list cannot anticipate which vendor a
+    // company needs to price next.
     const conf = readFileSync('docker/proxy/tinyproxy.conf', 'utf8');
-    assert.match(conf, /FilterDefaultDeny\s+Yes/);
+    assert.match(conf, /FilterDefaultDeny\s+No/);
+  });
+
+  test('every request is logged, because that is what replaced the wall', () => {
+    // The audit trail is the compensating control for opening egress, and it
+    // was not working: LogLevel Notice logged no requests, and `LogFile
+    // /dev/stdout` never opened at all — tinyproxy stats a path then opens it
+    // and refuses when they disagree, which a symlink into /proc always does.
+    const conf = readFileSync('docker/proxy/tinyproxy.conf', 'utf8');
+    assert.match(conf, /LogLevel\s+Connect/, 'Connect is the level that logs a line per request');
+    assert.ok(!/^\s*LogFile/m.test(conf),
+      'LogFile pointing into /proc silently disables logging; no LogFile means stdout');
   });
 
   test('the proxy writes nothing at start, so it can run read-only', () => {
@@ -176,9 +191,7 @@ describe('what the factory can reach', () => {
     assert.ok(!/>\s*\/etc|>>\s*\/etc|:\s*>\s*\/etc/.test(entry),
       'the proxy entrypoint must not write into /etc at run time');
     // The filter is baked in instead.
-    assert.match(readFileSync('docker/proxy/Dockerfile', 'utf8'), /RUN[\s\S]*compile-allowlist\.sh/);
-    const conf = readFileSync('docker/proxy/tinyproxy.conf', 'utf8');
-    assert.match(conf, /LogFile\s+"\/dev\/stdout"/, 'logging to a file needs a writable disk');
+    assert.match(readFileSync('docker/proxy/Dockerfile', 'utf8'), /RUN[\s\S]*compile-denylist\.sh/);
   });
 
   test('the filesystem is read-only apart from the volume and scratch', () => {
@@ -428,17 +441,17 @@ describe('the example env file describes this container, not an imagined one', (
   });
 });
 
-describe('the egress wall lets research through without letting anything out', () => {
+describe('the egress proxy refuses the data drops and logs the rest', () => {
   const dir = new URL('../docker/proxy/', import.meta.url).pathname;
   const compile = (extra?: string): string[] => {
     const box = mkdtempSync(join(tmpdir(), 'riff-wall-'));
     const etc = join(box, 'etc', 'tinyproxy');
     mkdirSync(etc, { recursive: true });
-    copyFileSync(join(dir, 'allowlist.conf'), join(etc, 'allowlist.conf'));
+    copyFileSync(join(dir, 'denylist.conf'), join(etc, 'denylist.conf'));
     // Deliberately no trailing newline: `while read` drops that line without
     // the `|| [ -n "$line" ]` guard, and the last host vanishes silently.
-    if (extra !== undefined) writeFileSync(join(etc, 'allowlist.local.conf'), extra);
-    const script = readFileSync(join(dir, 'compile-allowlist.sh'), 'utf8')
+    if (extra !== undefined) writeFileSync(join(etc, 'denylist.local.conf'), extra);
+    const script = readFileSync(join(dir, 'compile-denylist.sh'), 'utf8')
       .replaceAll('/etc/tinyproxy', etc);
     writeFileSync(join(box, 'c.sh'), script);
     execFileSync('sh', [join(box, 'c.sh')]);
@@ -447,29 +460,59 @@ describe('the egress wall lets research through without letting anything out', (
     return out;
   };
 
-  test('every host is anchored, so no lookalike domain gets through', () => {
+  test('every host is anchored, so no bystander is refused', () => {
     const rules = compile();
-    // "github.com" unanchored also matches "github.com.evil.example".
+    // Unanchored, "paste.ee" would also refuse "notpaste.ee.com".
     for (const r of rules) {
       assert.match(r, /^\^.+\$$/, `${r} is not anchored`);
       assert.ok(!/(?<!\\)\./.test(r.slice(1, -1)), `${r} has an unescaped dot`);
     }
   });
 
-  test('staff can reach documentation, because training data has a cutoff', () => {
+  // A compiled rule is the escaped, anchored form. Comparing against the bare
+  // hostname passes whatever the list says, in both directions — which is how
+  // "must not be refused" would have gone green on a host that was refused.
+  const rule = (host: string): string => `^${host.replaceAll('.', '\\.')}$`;
+
+  test('research hosts are not on it, whoever the company turns out to need', () => {
+    // The reason for the flip: a company asked for real prices could reach
+    // none of these, and a curated list cannot know the next vendor.
     const rules = compile();
-    for (const host of ['docs.anthropic.com', 'pkg.go.dev', 'docs.aws.amazon.com', 'docs.rs']) {
-      assert.ok(rules.includes(`^${host.replaceAll('.', '\\.')}$`), `${host} is walled off`);
+    for (const host of ['docs.anthropic.com', 'capterra.com', 'g2.com', 'www.gov.uk',
+                        'stripe.com', 'en.wikipedia.org']) {
+      assert.ok(!rules.includes(rule(host)), `${host} must not be refused`);
     }
   });
 
-  test('the token still has nowhere to go', () => {
-    // The wall is the whole anti-exfiltration argument: widening it for
-    // research must not have opened a general-purpose destination.
-    const rules = compile().join('\n');
-    for (const bad of ['pastebin.com', 'transfer.sh', 'discord.com', 'requestbin.com']) {
-      assert.ok(!rules.includes(bad), `${bad} should not be reachable`);
+  test('the hosts that exist to receive a payload are refused', () => {
+    // Not a wall, and the file says so. It stops drift and accident: nothing
+    // a company here does needs to POST to a stranger's bucket.
+    const rules = compile();
+    for (const bad of ['pastebin.com', 'transfer.sh', 'webhook.site', 'requestcatcher.com',
+                       'ngrok.io', 'file.io']) {
+      assert.ok(rules.includes(rule(bad)), `${bad} should be refused`);
     }
+  });
+
+  test('every category of anonymous receiver is covered, not just paste sites', () => {
+    // One host per shape. A payload leaves as easily through a form endpoint
+    // or a tunnel as through a paste bin, and covering only the obvious one
+    // reads as a control while being a gap.
+    const rules = compile();
+    for (const bad of ['justpaste.it', 'catbox.moe', 'postb.in', 'formspree.io', 'loca.lt']) {
+      assert.ok(rules.includes(rule(bad)), `${bad} should be refused`);
+    }
+  });
+
+  test('the denylist does not claim to be a containment boundary', () => {
+    // It said the proxy was what kept a readable token from being sent
+    // anywhere. That was retired with the flip, and SECURITY.md has to say so
+    // rather than leave the old argument standing over a new mechanism.
+    const conf = readFileSync(new URL('../docker/proxy/denylist.conf', import.meta.url), 'utf8');
+    assert.match(conf, /HYGIENE, not containment/);
+    const sec = readFileSync(new URL('../SECURITY.md', import.meta.url), 'utf8');
+    assert.match(sec, /neither is the proxy/,
+      'SECURITY.md must not still promise the token cannot be sent anywhere');
   });
 
   test("an operator's own hosts are added without editing the repo", () => {

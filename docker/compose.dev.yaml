@@ -3,7 +3,7 @@
 #   docker compose -f docker/compose.yaml -f docker/compose.dev.yaml up
 #
 # Everything from compose.yaml still applies — the walled network, the egress
-# allowlist, the shared ~/.riff. This only changes how the code gets in and
+# denylist, the shared ~/.riff. This only changes how the code gets in and
 # how fast it comes back:
 #
 #   the working tree is MOUNTED, not copied, so edits land immediately

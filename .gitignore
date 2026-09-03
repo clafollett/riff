@@ -27,4 +27,4 @@ docker/.env
 
 # Operator-specific egress hosts. Never committed: one installation is not
 # another, and a host you opened is not a host anyone else agreed to.
-docker/proxy/allowlist.local.conf
+docker/proxy/denylist.local.conf

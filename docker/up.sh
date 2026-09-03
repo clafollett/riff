@@ -58,7 +58,7 @@
 # token is in its environment, and the staff have a shell. Anything in that box
 # can read it, and so can `docker inspect` on the host. Secrecy is not the
 # control. The control is that the factory sits on a network with no route to
-# the internet except an allowlisted proxy. See SECURITY.md.
+# the internet except a logging proxy. See SECURITY.md.
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

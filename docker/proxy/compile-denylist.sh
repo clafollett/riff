@@ -1,14 +1,16 @@
 #!/bin/sh
-# Compile the human-readable allowlist into anchored regexes.
-# Anchoring matters: an unanchored "github.com" would also match
-# "github.com.evil.example", which is the classic allowlist bypass.
+# Compile the human-readable denylist into anchored regexes.
+#
+# Anchoring still matters, in the other direction now: an unanchored
+# "pastebin.com" would also match "notpastebin.com.example", refusing a host
+# nobody meant to refuse. It no longer guards a bypass — it guards a surprise.
 set -eu
 
 : > /etc/tinyproxy/filter.re
 
-# allowlist.local.conf is the operator's own additions. It is gitignored, and
+# denylist.local.conf is the operator's own additions. It is gitignored, and
 # optional — an installation that never writes one behaves exactly as before.
-for src in /etc/tinyproxy/allowlist.conf /etc/tinyproxy/allowlist.local.conf; do
+for src in /etc/tinyproxy/denylist.conf /etc/tinyproxy/denylist.local.conf; do
   [ -f "$src" ] || continue
   # `|| [ -n "$line" ]` keeps a final line that has no trailing newline. Without
   # it the last host is silently dropped, which reads as "the proxy is broken"

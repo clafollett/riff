@@ -4,7 +4,7 @@
 # filesystem, which is what lets the container run read-only.
 set -eu
 
-echo "egress allowlist ($(wc -l < /etc/tinyproxy/filter.re | tr -d ' ') hosts):"
+echo "egress denylist ($(wc -l < /etc/tinyproxy/filter.re | tr -d ' ') hosts refused, everything else allowed):"
 sed 's/^/  /' /etc/tinyproxy/filter.re
 
 exec tinyproxy -d -c /etc/tinyproxy/tinyproxy.conf

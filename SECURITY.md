@@ -66,18 +66,31 @@ commons, in a colleague's files, or outside the company. Outside is refused.
 
 `docker/compose.yaml` puts the factory on an `internal: true` network, which
 blocks traffic in **both** directions. Outbound requests go through a tinyproxy
-sidecar with an allowlist. Two more services exist only because of that: an
-`ingress` sidecar to publish the console on loopback (an internal network cannot
-publish ports), and the egress proxy itself, which runs as `user: tinyproxy`
-with its filter compiled at build time so the image can stay read-only.
+sidecar. Two more services exist only because of that: an `ingress` sidecar to
+publish the console on loopback (an internal network cannot publish ports), and
+the egress proxy itself, which runs as `user: tinyproxy` with its filter
+compiled at build time so the image can stay read-only.
+
+**The proxy was an allowlist until 2026-09-03. It is now a denylist, and this
+changes what it is for.** A researcher spent a shift and four sub-agents on 195
+`external.read` calls — every one allowed by the gate — and fetched exactly one
+host. Asked for real prices from real pricing pages, the company could not read
+one, and reported a ninefold spread on a figure it could not check. A curated
+list cannot anticipate which vendor a company needs to price next.
+
+So the proxy no longer claims to be a containment boundary. It refuses the
+hosts whose whole purpose is to accept a payload from a stranger — paste sites,
+webhook catchers, tunnelling services — which stops drift and accident, and is
+not claimed to stop intent. Everything it passes, it now logs, one line per
+request: `LogLevel Connect`, and `docker/up.sh logs egress` is the record.
 
 Verified against a live stack, and worth re-running if you change anything:
 
 | Check | Result |
 | - | - |
-| Allowed host through the proxy | request arrived |
-| Denied host through the proxy | refused |
-| `github.com.evil.example` (suffix attack on the allowlist) | refused |
+| Ordinary host through the proxy | request arrived |
+| Denylisted host through the proxy | refused |
+| `pastebin.com.evil.example` (suffix attack on the denylist) | passed, and logged |
 | Any host, ignoring the proxy | no route |
 | Shell inside the container | works |
 | Same shell reaching the host | shut |
@@ -102,12 +115,25 @@ sync or a tarball of the repo will pick it up. It is never passed as an
 argument, so it does not appear in `ps`; never typed, so not in shell history;
 and never written, so not on disk.
 
-Be clear about the limit. Once the factory is running, the token is in its
-environment and the staff have a shell — anything in that box can read it, and
-it is visible on the host through `docker inspect` to anyone who can reach the
-Docker socket. **Secrecy is not the control.** The control is that the factory
-has no route to the internet except an allowlisted proxy, so a token that can
-be read still cannot be sent anywhere.
+Be clear about the limit, and it is a real one. Once the factory is running,
+the token is in its environment and the staff have a shell — anything in that
+box can read it, and it is visible on the host through `docker inspect` to
+anyone who can reach the Docker socket. **Secrecy is not the control, and since
+2026-09-03 neither is the proxy.**
+
+This used to say that a readable token still could not be sent anywhere. That
+was the allowlist's claim, it is retired, and it was always softer than it
+read: every allowlisted host accepted a GET with a query string, so wikipedia
+and arxiv were exfiltration channels of exactly the same shape. Egress is now
+open, so a process inside the factory that wants to send the token somewhere
+can.
+
+What remains, honestly: the container holds a credential for the model and for
+nothing else, so there is no second account to reach; the gate mediates every
+tool call and R3 sends anything outbound to the board as a draft; and the proxy
+logs every request, so what was fetched is answerable after the fact. Those are
+a workflow control, a scope control and an audit trail. None of them is a wall.
+Run this on hardware you are willing to have a determined process act from.
 
 ### One writer per installation
 
@@ -162,8 +188,9 @@ Say these out loud before you run it unattended.
   running all night inside the cap still spends up to the cap. Set it low first.
 - **Anything you mount in.** The containment boundary is `/data`. Mount your
   home directory in and you have removed it.
-- **The allowlist you write.** The egress proxy enforces the list; it cannot
-  tell you the list was a good idea.
+- **Egress, now.** The proxy passes everything not on the denylist. It refuses
+  the obvious data drops and logs the rest; it is hygiene and a record, not a
+  boundary.
 - **Outbound content.** Anything reaching beyond the company lands as a draft
   for the board. That is a workflow control, not a technical one — approve a
   draft and it goes.

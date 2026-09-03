@@ -2,7 +2,7 @@
 #
 # `factory` has a shell, a compiler, and a long-lived Claude token. It sits on
 # a network with NO route off the machine. The only way out is `egress`, which
-# forwards to an anchored allowlist and logs what it refused.
+# forwards to an anchored denylist and logs every request it passed.
 #
 # That is the whole security model, and it is structural: an agent that talks
 # its way past every tool check still has nowhere to send anything.
