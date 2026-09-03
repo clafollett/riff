@@ -614,7 +614,17 @@ export const tick = async (
   const meter = (): Record<string, number | string> => {
     const binding = worstWindow(windows);
     const weekly = worstWindow(windows, isWeekly);
+    // Every window by name, not just whichever one is tightest. The five-hour
+    // reading used to vanish from the record whenever the week was the
+    // binding one, so the only figure an operator on a subscription can act
+    // on — am I about to lose my afternoon — was missing from most shifts.
+    const byWindow: Record<string, number> = {};
+    for (const [kind, w] of windows) {
+      if (w.utilization != null) byWindow[`used_${kind}`] = w.utilization;
+      if (w.resetsAt != null) byWindow[`resets_${kind}`] = w.resetsAt;
+    }
     return {
+      ...byWindow,
       ...(spentAny()
         ? {
             tokens: tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite,

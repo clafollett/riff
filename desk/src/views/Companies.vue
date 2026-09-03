@@ -11,12 +11,12 @@ const mode = ref<Mode>(null);
 const busy = ref(false);
 const err = ref('');
 
-const draft = ref({ name: '', business: '', ceo: '', chair: '' });
+const draft = ref({ name: '', business: '', ceo: '', chair: '', board: '', release: 'none' as 'none' | 'bundle' });
 const rename = ref({ name: '', business: '', slug: '' });
 const confirmName = ref('');
 
 const openFound = () => {
-  draft.value = { name: '', business: '', ceo: '', chair: props.list[0]?.slug ? '' : '' };
+  draft.value = { name: '', business: '', ceo: '', chair: '', board: '', release: 'none' };
   err.value = '';
   mode.value = { kind: 'found' };
 };
@@ -50,7 +50,21 @@ const run = async (fn: () => Promise<string | null>) => {
   } finally { busy.value = false; }
 };
 
-const found = () => run(async () => (await api.foundCompany(draft.value)).slug);
+const found = () => run(async () => {
+  // One seat per line, "Name, Role" or just a name. A board is a short list of
+  // people, so a list of lines is the whole editor it needs.
+  const board = draft.value.board.split('\n')
+    .map((l) => l.trim()).filter(Boolean)
+    .map((l) => {
+      const [name, ...rest] = l.split(',');
+      const role = rest.join(',').trim();
+      return role ? { name: (name ?? '').trim(), role } : { name: (name ?? '').trim() };
+    })
+    .filter((m) => m.name);
+  const { name, business, ceo, chair, release } = draft.value;
+  return (await api.foundCompany({ name, business, ceo, chair, release,
+                                   ...(board.length ? { board } : {}) })).slug;
+});
 
 /** Start or pause without switching to it — several can run at once. */
 const setRunning = async (c: CompanyRef, running: boolean) => {
@@ -173,9 +187,9 @@ const receive = async (e: Event) => {
         <template v-if="mode.kind === 'found'">
           <h2>Found a company</h2>
           <p class="muted note">
-            You name the company, the line of business, and the CEO. Nothing else
-            is decided here — no roster, no plan, no product. The CEO builds all
-            of that, and you approve what leaves.
+            You name the company, what it is for, who runs it and who it answers to.
+            No roster beyond the board, no plan, no product — the CEO builds all of
+            that, and you approve what leaves.
           </p>
           <label>Company name<input v-model="draft.name" placeholder="Tidewater Instruments" /></label>
           <label>
@@ -189,6 +203,21 @@ const receive = async (e: Event) => {
           </label>
           <label>CEO's name<input v-model="draft.ceo" placeholder="Rook" /></label>
           <label>Chairman<input v-model="draft.chair" placeholder="you" /></label>
+          <label>
+            Other board seats
+            <textarea v-model="draft.board" rows="2" placeholder="Marvin, Board" />
+            <span class="hint faint">
+              One per line, name first. Seats are seeded when the company is founded —
+              a name added later carries board authority the roster never granted.
+            </span>
+          </label>
+          <label>
+            How work leaves
+            <select v-model="draft.release">
+              <option value="none">Nowhere — nothing is published</option>
+              <option value="bundle">A bundle the board collects by hand</option>
+            </select>
+          </label>
           <p v-if="err" class="err">{{ err }}</p>
           <div class="row">
             <button class="go" :disabled="busy || !draft.name.trim()" @click="found">Found it</button>

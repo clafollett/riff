@@ -175,6 +175,10 @@ export const vitals = (
   let weekLatest = 0;
   let weekPeak = 0;
   let weekSeen = 0;
+  let fiveLatest = 0;
+  let fivePeak = 0;
+  let fiveSeen = 0;
+  const resets: Record<string, number> = {};
 
   /**
    * Read the meter off a shift that ended, however it ended.
@@ -206,6 +210,18 @@ export const vitals = (
       weekSeen++;
       weekLatest = w;
       weekPeak = Math.max(weekPeak, w);
+    }
+    // Written by name since the shift that records every window it was told
+    // about, rather than only the tightest one. Older shifts carry neither key
+    // and contribute nothing, which is the same as any other unread meter.
+    const five = numberOf(dj, 'used_five_hour');
+    if (five > 0) {
+      fiveSeen++;
+      fiveLatest = five;
+      fivePeak = Math.max(fivePeak, five);
+    }
+    for (const [k, val] of Object.entries(dj)) {
+      if (k.startsWith('resets_') && typeof val === 'number') resets[k.slice('resets_'.length)] = val;
     }
   };
   const busy = new Set<AgentId>();      // has produced since waking
@@ -366,6 +382,8 @@ export const vitals = (
     type: limitType,
     seen: limitSeen,
     week: weekSeen ? { latest: weekLatest, peak: weekPeak } : null,
+    fiveHour: fiveSeen ? { latest: fiveLatest, peak: fivePeak } : null,
+    resets,
   };
 
   const gateRows = d.ledger.gateDecisions(since, until);

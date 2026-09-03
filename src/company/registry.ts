@@ -225,7 +225,8 @@ export class Registry {
    */
   async update(
     slug: string,
-    patch: { name?: string; business?: string; slug?: string; policy?: Partial<CompanyPolicy> },
+    patch: { name?: string; business?: string; slug?: string; policy?: Partial<CompanyPolicy>;
+             release?: 'none' | 'bundle' },
   ): Promise<{ ok: true; slug: string } | { ok: false; reason: string }> {
     if (!this.has(slug)) return { ok: false, reason: `no company '${slug}'` };
 
@@ -254,6 +255,12 @@ export class Registry {
         business: patch.business?.trim() ?? cfg.company.business,
       },
       policy: readPolicy({ ...readPolicy(cfg.policy), ...(patch.policy ?? {}) }),
+      // The route work leaves by. Settable here because it was settable
+      // nowhere: founding took it, nothing else did, and turning a company's
+      // releases on afterwards meant hand-editing config.json on a running
+      // installation — which is how a live company got its directory moved
+      // out from under an open ledger.
+      ...(patch.release ? { release: patch.release } : {}),
     };
     // Where it lives is the directory's job to say, not the file's.
     writeFileSync(path, JSON.stringify(persisted(next), null, 2) + '\n', 'utf8');

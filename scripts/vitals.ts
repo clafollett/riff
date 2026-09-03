@@ -86,6 +86,43 @@ console.log(`\n  ${cfg.company.name}${business ? ` — ${business.slice(0, 72)}`
 console.log(`  ${v.window.spec}, since ${v.window.since.slice(0, 16).replace('T', ' ')}` +
   ` — worked ${v.run.hours.toFixed(1)}h of it (${pct(v.run.dutyCycle)})`);
 
+/**
+ * What the plan has left, before anything else.
+ *
+ * Everything priced in dollars below is the SDK's imputed list price on an
+ * account billed a flat subscription — thousands of imputed dollars and the
+ * bill is the same. These two percentages are the resource that actually runs
+ * out, and running one out is what stops the operator working.
+ */
+const lim = v.limits;
+head('what the plan has left');
+if (!lim.seen && !lim.fiveHour) {
+  line('five-hour', '—', 'no shift in this window could read the plan');
+  line('seven-day', '—', 'a credential that carries no subscription reads none');
+} else {
+  const back = (kind: string): string => {
+    const at = lim.resets[kind];
+    if (at == null) return '';
+    const mins = Math.round((at * 1000 - Date.now()) / 60_000);
+    return mins <= 0 ? 'back now' : mins < 90 ? `back in ${mins}m` : `back in ${(mins / 60).toFixed(1)}h`;
+  };
+  const five = lim.fiveHour;
+  line('five-hour', five ? pct(five.latest) : '—',
+    five ? [`peak ${pct(five.peak)}`, back('five_hour')].filter(Boolean).join(' · ')
+         : 'not reported by any shift in this window');
+  if (lim.week) {
+    line('seven-day', pct(lim.week.latest),
+      [`peak ${pct(lim.week.peak)}`, back('seven_day')].filter(Boolean).join(' · '));
+  }
+  // The threshold is the operator's, not the company's: the company pauses
+  // itself at pauseAboveUtilization, but a week at three quarters is already
+  // a week where the person who owns the account has to think about it.
+  const worst = Math.max(five?.latest ?? 0, lim.week?.latest ?? 0);
+  if (worst >= 0.75) {
+    console.log(`    ⚠ ${pct(1 - worst)} left on the tightest window — this run can block your own work`);
+  }
+}
+
 const s = v.shifts;
 head('shifts');
 line('woken', s.woke);
@@ -137,21 +174,12 @@ if (!tk.measured) {
       ? `⚠ only ${pct(tk.cacheHitRate)} of input came from cache — rotating too eagerly?`
       : `${pct(tk.cacheHitRate)} of input came from cache`);
 }
-const lm = v.limits;
-if (!lm.seen) {
-  line('weekly usage', '—', 'no rate-limit reading in this window');
-} else {
-  const window = lm.type ? lm.type.replace(/_/g, ' ') : 'window';
-  // The weekly first: it is the figure a week is planned around. A five-hour
-  // window spent by lunch is back by dinner; a week spent on Tuesday is gone.
-  if (lm.week) {
-    line('weekly usage', pct(lm.week.latest), `peak ${pct(lm.week.peak)} this window`);
-    if (lm.week.latest >= 0.75) {
-      console.log(`    ⚠ ${pct(1 - lm.week.latest)} of the week is left — the company paces off this`);
-    }
-  }
-  line('tightest window', pct(lm.latest),
-    `${window} · peak ${pct(lm.peak)} over ${lm.seen} shift${lm.seen === 1 ? '' : 's'}`);
+// Both windows are reported at the top. What belongs here is the one the
+// company's own throttle paces off, which is whichever is tightest.
+if (v.limits.seen) {
+  line('paced off', pct(v.limits.latest),
+    `${v.limits.type ? v.limits.type.replace(/_/g, ' ') : 'window'} · peak ${pct(v.limits.peak)}`
+    + ` over ${v.limits.seen} shift${v.limits.seen === 1 ? '' : 's'}`);
 }
 
 // Whether the company can still do something it has not done. Every figure

@@ -250,6 +250,15 @@ export type LimitVitals = {
    * window reported a weekly reading.
    */
   week: { latest: number; peak: number } | null;
+  /**
+   * The five-hour window. Separate from `latest` because that one is whichever
+   * window happened to be tightest, so the five-hour reading disappeared from
+   * the report exactly when the week was fuller — and the five-hour is the one
+   * that decides whether the operator can work this afternoon.
+   */
+  fiveHour: { latest: number; peak: number } | null;
+  /** Unix seconds each window comes back, when the reading carried one. */
+  resets: Record<string, number>;
 };
 
 /** A rule that refused something. Allows are counted in the totals but never

@@ -560,6 +560,50 @@ describe('what the company consumed', () => {
     cleanup();
   });
 
+  test('the five-hour window is reported even when the week is the tighter one', () => {
+    // It used to be visible only when it was the binding window, so the
+    // reading that says whether the operator can work this afternoon vanished
+    // from the record exactly as the week filled up.
+    shift('rae', [['message.sent']], 4, 0.1, {
+      ...meter(100, 100),
+      utilization: 0.8, limitType: 'seven_day', weekUtilization: 0.8,
+      used_five_hour: 0.12, used_seven_day: 0.8,
+    });
+    const v = report();
+    assert.deepEqual(v.limits.fiveHour, { latest: 0.12, peak: 0.12 });
+    assert.deepEqual(v.limits.week, { latest: 0.8, peak: 0.8 });
+    cleanup();
+  });
+
+  test('the five-hour window keeps its own peak, not the tightest window\'s', () => {
+    shift('rae', [['message.sent']], 4, 0.1,
+      { ...meter(100, 100), used_five_hour: 0.9, weekUtilization: 0.3, utilization: 0.9 });
+    shift('rae', [['message.sent']], 4, 0.1,
+      { ...meter(100, 100), used_five_hour: 0.2, weekUtilization: 0.31, utilization: 0.31 });
+    const v = report();
+    assert.deepEqual(v.limits.fiveHour, { latest: 0.2, peak: 0.9 });
+    cleanup();
+  });
+
+  test('a reset stamp is carried through so the report can say when it comes back', () => {
+    shift('rae', [['message.sent']], 4, 0.1, {
+      ...meter(100, 100), used_five_hour: 0.4, resets_five_hour: 1_800_000_000,
+    });
+    const v = report();
+    assert.equal(v.limits.resets['five_hour'], 1_800_000_000);
+    cleanup();
+  });
+
+  test('shifts from before the per-window record contribute no five-hour reading', () => {
+    // 0% would read as a window with everything still to spend.
+    shift('rae', [['message.sent']], 4, 0.1,
+      { ...meter(100, 100), utilization: 0.5, limitType: 'five_hour' });
+    const v = report();
+    assert.equal(v.limits.fiveHour, null);
+    assert.deepEqual(v.limits.resets, {});
+    cleanup();
+  });
+
   test('a company that never heard a weekly reading says so rather than zero', () => {
     shift('rae', [['message.sent']], 4, 0.1,
       { ...meter(100, 100), utilization: 0.5, limitType: 'five_hour' });

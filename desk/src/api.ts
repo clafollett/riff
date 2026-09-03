@@ -157,7 +157,7 @@ export const api = {
     send<{ running: boolean }>(`/api/companies/${encodeURIComponent(slug)}/running`, 'POST', { running }),
   renameCompany: (slug: string,
                   patch: { name?: string; business?: string; slug?: string;
-                           policy?: Partial<CompanyPolicy> }) =>
+                           policy?: Partial<CompanyPolicy>; release?: 'none' | 'bundle' }) =>
     send<{ slug: string }>(`/api/companies/${encodeURIComponent(slug)}`, 'PATCH', patch),
   archiveCompany: (slug: string) =>
     send<{ archived: string; at: string }>(`/api/companies/${encodeURIComponent(slug)}`, 'DELETE'),

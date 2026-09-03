@@ -281,7 +281,12 @@ const tiles = computed(() => {
             <dd>{{ tok(v.run.tokensPerHour) }}<span class="faint"> · {{ usd(v.run.costPerHour) }}</span></dd>
             <dt>from cache</dt>
             <dd :class="{ hot: v.tokens.cacheHitRate < 0.5 }">{{ pct(v.tokens.cacheHitRate) }}</dd>
-            <dt>weekly usage</dt>
+            <dt>five-hour usage</dt>
+            <dd v-if="v.limits.fiveHour" :class="{ hot: v.limits.fiveHour.latest >= 0.75 }">
+              {{ pct(v.limits.fiveHour.latest) }}<span class="faint"> · peak {{ pct(v.limits.fiveHour.peak) }}</span>
+            </dd>
+            <dd v-else class="muted">not reported</dd>
+            <dt>seven-day usage</dt>
             <dd v-if="v.limits.week" :class="{ hot: v.limits.week.latest >= 0.75 }">
               {{ pct(v.limits.week.latest) }}<span class="faint"> · peak {{ pct(v.limits.week.peak) }}</span>
             </dd>

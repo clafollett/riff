@@ -314,6 +314,7 @@ const server = createServer(async (req, res) => {
         // thousand concurrent agents or a turn ceiling of zero.
         ...(b['policy'] && typeof b['policy'] === 'object'
           ? { policy: b['policy'] as Record<string, number> } : {}),
+        ...(b['release'] === 'bundle' || b['release'] === 'none' ? { release: b['release'] } : {}),
       });
       if (!r.ok) return json(res, { error: r.reason }, 409);
       if (r.slug !== target) { watchers.delete(target); lastSeq.delete(target); }
