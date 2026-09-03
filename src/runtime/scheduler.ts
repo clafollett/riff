@@ -356,6 +356,9 @@ const due = selectDue(this.#d.ledger.listAgents(), {
         signal: this.#abort.signal,
       });
       this.#spentToday += r.costUsd;
+      // Every window the shift saw, so the fullest one is chosen from all of
+      // them rather than from whichever arrived last.
+      for (const [, w] of r.windows ?? []) this.#applyRateLimit(w);
       if (r.rateLimit) this.#applyRateLimit(r.rateLimit);
       this.#d.onTick?.(r);
     } finally {

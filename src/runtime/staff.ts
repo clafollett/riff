@@ -63,6 +63,15 @@ export type TickResult = {
   /** Subscription rate-limit state, when the run reported any. On a Claude
    *  subscription this — not dollars — is what actually governs the company. */
   rateLimit?: SDKRateLimitInfo;
+  /**
+   * Every window the shift heard about, by kind.
+   *
+   * The scheduler paces off the fullest window it knows, but it only ever
+   * learned the one window this result carried — so a five-hour window at 90%
+   * was invisible for as long as the seven-day happened to be the one that
+   * arrived last. All of them, or the pacing is guessing.
+   */
+  windows?: Array<[string, SDKRateLimitInfo]>;
   error?: string;
   /** The shift ended at the turn ceiling rather than because the agent
    *  chose to stop. Work happened; there was simply more of it. */
@@ -1025,6 +1034,7 @@ export const tick = async (
       agentId: agent.id, ok: false, summary: '', costUsd, turns, error: failure,
       ...(spentAny() ? { tokens } : {}),
       ...(rateLimit ? { rateLimit } : {}),
+      ...(windows.size ? { windows: [...windows] } : {}),
     };
   }
 
@@ -1048,6 +1058,7 @@ export const tick = async (
     ...(truncated ? { truncated: true } : {}),
     ...(rotations ? { rotations } : {}),
     ...(rateLimit ? { rateLimit } : {}),
+    ...(windows.size ? { windows: [...windows] } : {}),
   };
 };
 
