@@ -164,9 +164,14 @@ line('carrying', nv.ceiling ? `${nv.carrying}/${nv.ceiling}` : String(nv.carryin
   nv.ceiling && nv.carrying >= nv.ceiling ? 'full — starting another means retiring one' : '');
 line('started · retired', `${nv.started} · ${nv.retired}`,
   !nv.started && !nv.retired && nv.carrying ? '⚠ nothing began and nothing ended' : '');
-line('newest is', nv.newestAgeDays == null ? '—' : `${nv.newestAgeDays}d old`,
-  nv.newestAgeDays != null && nv.newestAgeDays > 14
-    ? '⚠ the company has not had a new idea in a fortnight' : '');
+line('newest is', nv.newestAgeHours == null ? '—' : `${nv.newestAgeHours}h old`,
+  'measured in hours worked, not days elapsed');
+// Never "no new idea in a fortnight". A company runs when the operator runs
+// it, so calendar age charges the staff for every week nobody switched them
+// on. The question is whether working time produced anything new.
+if (!nv.started && !nv.retired && nv.carrying && v.run.hours > 20) {
+  console.log(`    ⚠ ${v.run.hours.toFixed(1)} hours worked, nothing begun and nothing retired`);
+}
 line('worked on', nv.touched, nv.carrying ? `of ${nv.carrying} carried` : '');
 line('biggest share', pct(nv.concentration),
   nv.concentration > 0.9 && nv.carrying > 1

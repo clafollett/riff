@@ -285,17 +285,20 @@ export const vitals = (
    * that had been running for a week reads as one that started when the
    * window opened — and if it never paused, `until` closes the last stretch.
    */
-  const marks = d.ledger.eventsOfKinds(['work.started', 'work.paused'], since, until);
-  const before = d.ledger.lastEvent(['work.started', 'work.paused'], since);
-  let openedAt: number | null = before?.kind === 'work.started' ? Date.parse(since) : null;
-  let runningMs = 0;
-  for (const e of marks) {
-    if (e.kind === 'work.started') { openedAt ??= Date.parse(e.at); continue; }
-    if (openedAt != null) { runningMs += Date.parse(e.at) - openedAt; openedAt = null; }
-  }
-  if (openedAt != null) runningMs += Date.parse(until) - openedAt;
+  const runningHours = (from: string, to: string): number => {
+    const marks = d.ledger.eventsOfKinds(['work.started', 'work.paused'], from, to);
+    const before = d.ledger.lastEvent(['work.started', 'work.paused'], from);
+    let openedAt: number | null = before?.kind === 'work.started' ? Date.parse(from) : null;
+    let ms = 0;
+    for (const e of marks) {
+      if (e.kind === 'work.started') { openedAt ??= Date.parse(e.at); continue; }
+      if (openedAt != null) { ms += Date.parse(e.at) - openedAt; openedAt = null; }
+    }
+    if (openedAt != null) ms += Date.parse(to) - openedAt;
+    return ms / 3_600_000;
+  };
 
-  const runHours = runningMs / 3_600_000;
+  const runHours = runningHours(since, until);
   const windowHours = window.days * 24;
 
   const totalTokens = tok.input + tok.output + tok.cacheRead + tok.cacheWrite;
@@ -334,17 +337,24 @@ export const vitals = (
     first: d.world.git.firstCommitAt(`projects/${name}`),
   }));
   const projectCommits = perProject.reduce((s, p) => s + p.commits, 0);
-  const newestFirst = perProject
-    .map((p) => (p.first ? Date.parse(p.first) : 0))
-    .reduce((a, b) => Math.max(a, b), 0);
+  const newest = perProject
+    .filter((p) => p.first)
+    .sort((a, b) => Date.parse(b.first!) - Date.parse(a.first!))[0];
   const novelty: NoveltyVitals = {
     carrying: projects.length,
     ceiling: d.portfolioCeiling ?? 0,
     // A project whose first commit lands inside the window was started in it.
     started: perProject.filter((p) => p.first && p.first >= since && p.first < until).length,
     retired: n('project.retired'),
-    newestAgeDays: newestFirst
-      ? Math.round(((endAt - newestFirst) / 86_400_000) * 10) / 10
+    // In the company's own hours, never in calendar days.
+    //
+    // A company runs when the operator runs it: this one worked 21.4 hours
+    // across a 30-day window. Ageing a project by the calendar charges it for
+    // every week nobody switched the company on, so a team that was simply
+    // paused would be told it had stopped having ideas. Running hours is the
+    // only clock the staff are actually present for.
+    newestAgeHours: newest?.first
+      ? Math.round(runningHours(newest.first, until) * 10) / 10
       : null,
     concentration: over(Math.max(0, ...perProject.map((p) => p.commits)), projectCommits),
     touched: perProject.filter((p) => p.commits > 0).length,

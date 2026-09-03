@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { realpathSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { systemClock, type Clock } from '../core/clock.ts';
 
 /**
  * The world's own git repo.
@@ -15,10 +16,24 @@ import { join } from 'node:path';
  */
 export class WorldGit {
   #dir: string;
+  #clock: Clock;
 
-  constructor(dir: string) { this.#dir = dir; }
+  /**
+   * The company's clock, not the machine's.
+   *
+   * Everything else in Riff takes one so time is controllable; git did not,
+   * and stamped every commit from the system clock. Under a frozen clock that
+   * put the world's history minutes ahead of the ledger's — a report window
+   * closing before the commits inside it, failing about one run in four, and
+   * a test wanting to age a project could not place a commit in the past at
+   * all. Identical in production, where this IS the system clock.
+   */
+  constructor(dir: string, clock: Clock = systemClock) {
+    this.#dir = dir;
+    this.#clock = clock;
+  }
 
-  #git(args: string[]): string {
+  #git(args: string[], env?: Record<string, string>): string {
     // `safe.directory` on every call, not in a config file.
     //
     // The world lives on a bind mount, and the uid the host presents it under
@@ -41,6 +56,7 @@ export class WorldGit {
       // Inheriting would print `fatal: not a git repository` on every first
       // run and make a healthy bootstrap look broken.
       stdio: ['ignore', 'pipe', 'pipe'],
+      ...(env ? { env: { ...process.env, ...env } } : {}),
     }).trim();
   }
 
@@ -95,11 +111,12 @@ export class WorldGit {
     const staged = this.#git(['diff', '--cached', '--name-only']);
     if (!staged) return null;
 
+    const at = this.#clock.now().toISOString();
     this.#git([
       '-c', `user.name=${actor.name}`,
       '-c', `user.email=${actor.id}@riff.local`,
       'commit', '-q', '-m', message,
-    ]);
+    ], { GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at });
     return this.#git(['rev-parse', 'HEAD']);
   }
 

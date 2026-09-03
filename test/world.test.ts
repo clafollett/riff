@@ -141,7 +141,9 @@ describe('git — attribution is the audit trail', () => {
     const sha = world.git.commitAs({ id: 'greg', name: 'Greg' }, 'note: dennis carried the listings');
     assert.ok(sha, 'expected a commit');
 
-    const log = world.git.since('1.hour');
+    // Absolute, from the clock that stamped it — see the note below on why
+    // a git relative date cannot see a world running on a frozen clock.
+    const log = world.git.since(new Date(clock.now().getTime() - 3_600_000).toISOString());
     assert.ok(sha.startsWith(log[0]!.sha), 'the newest commit should be the one just made');
     assert.equal(log[0]!.author, 'Greg', 'commit must be attributed to the staff member');
   });
@@ -159,7 +161,12 @@ describe('git — attribution is the audit trail', () => {
     world.writeNote('dennis', null, 'c', 'z');
     world.git.commitAs({ id: 'dennis', name: 'Dennis' }, 'dennis works more');
 
-    const c = world.git.contributionsSince('1.hour');
+    // Asked against the clock the commits were stamped with, not the
+    // machine's. Git relative dates like '1.hour' resolve against real now,
+    // and this world runs on a clock frozen in August — under which every
+    // commit here is correctly dated and none of them is in the last hour.
+    const c = world.git.contributionsSince(
+      new Date(clock.now().getTime() - 3_600_000).toISOString());
     assert.equal(c[0]!.author, 'Dennis');
     assert.equal(c[0]!.commits, 2);
   });

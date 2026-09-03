@@ -180,8 +180,16 @@ export type NoveltyVitals = {
   /** Started and retired inside the window. Retiring is the rare one. */
   started: number;
   retired: number;
-  /** Days since the newest project's first commit. Null if there are none. */
-  newestAgeDays: number | null;
+  /**
+   * How many hours the company has actually WORKED since its newest project
+   * began — not how long ago that was.
+   *
+   * A company only exists while its scheduler is up, and one measured here
+   * ran 21.4 hours across 30 calendar days. Ageing anything by the calendar
+   * charges the staff for every week the operator did not switch them on.
+   * Null when there are no projects.
+   */
+  newestAgeHours: number | null;
   /**
    * Share of staff commits landing in the single busiest project. 1 means
    * every hand on one thing, which is focus or a rut and the age says which.

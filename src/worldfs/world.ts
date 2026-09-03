@@ -40,7 +40,7 @@ export class World {
   constructor(root: string, clock: Clock = systemClock) {
     this.#root = resolve(root);
     this.#clock = clock;
-    this.git = new WorldGit(this.#root);
+    this.git = new WorldGit(this.#root, clock);
   }
 
   get root(): string { return this.#root; }

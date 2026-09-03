@@ -60,7 +60,11 @@ for (const t of tasks.filter((t) => t.status !== 'done')) {
 }
 
 console.log(`\n  RECORD  ${ledger.countNotes()} notes · ${ledger.latestSeq()} events`);
-for (const cnt of world.git.contributionsSince('7.days')) {
+// An absolute time from the company's own clock, which is what stamps its
+// commits. A git relative date resolves against the machine instead, and the
+// two are the same only for as long as they are the same.
+const weekAgo = new Date(systemClock.now().getTime() - 7 * 86_400_000).toISOString();
+for (const cnt of world.git.contributionsSince(weekAgo)) {
   console.log(`    ${String(cnt.commits).padStart(3)}  ${cnt.author}`);
 }
 console.log();

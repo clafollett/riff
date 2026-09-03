@@ -116,10 +116,15 @@ const findings = computed<Array<{ severity: 'warn' | 'note'; text: string }>>(()
   // shipping the sixteenth point release of its first idea outscores one that
   // launched something. Rule 7 exists to make that expensive; this is what
   // says whether it worked.
-  if ((d.novelty.newestAgeDays ?? 0) > 14 && d.novelty.carrying > 0) {
+  // Counted in hours the company actually worked, never in days elapsed. It
+  // runs when the operator runs it — one company here worked 21.4 hours
+  // across 30 calendar days — so a calendar measure would tell a team that
+  // was simply switched off that it had stopped having ideas.
+  if (d.novelty.carrying > 0 && d.run.hours > 20 && !d.novelty.started && !d.novelty.retired) {
     out.push({ severity: 'warn', text:
-      `Nothing new in ${d.novelty.newestAgeDays} days — the newest project is the ` +
-      `oldest thing here. ${d.novelty.retired ? '' : 'Nothing has been retired either.'}` });
+      `${d.run.hours.toFixed(1)} hours of work in this window, and nothing was ` +
+      `begun or retired. The newest project has been carried for ` +
+      `${d.novelty.newestAgeHours ?? 0} worked hours.` });
   }
   if (d.novelty.carrying > 1 && d.novelty.concentration > 0.9) {
     out.push({ severity: 'note', text:
@@ -309,8 +314,8 @@ const tiles = computed(() => {
             <dt>started · retired</dt>
             <dd>{{ v.novelty.started }} · {{ v.novelty.retired }}</dd>
             <dt>newest is</dt>
-            <dd :class="{ hot: (v.novelty.newestAgeDays ?? 0) > 14 }">
-              {{ v.novelty.newestAgeDays == null ? '—' : v.novelty.newestAgeDays + 'd old' }}
+            <dd>
+              {{ v.novelty.newestAgeHours == null ? '—' : v.novelty.newestAgeHours + 'h worked' }}
             </dd>
             <dt>worked on</dt><dd>{{ v.novelty.touched }}</dd>
             <dt>biggest share</dt>

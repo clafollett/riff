@@ -678,3 +678,62 @@ describe('how much of the window the company actually worked', () => {
   });
 });
 
+
+/**
+ * A company runs only when the operator runs it.
+ *
+ * One measured here worked 21.4 hours across a 30-day window. Any figure that
+ * ages the staff's work by the calendar charges them for every week nobody
+ * switched them on — so a team that was simply paused would be told it had
+ * stopped having ideas.
+ */
+describe('the staff are never scored by time they were switched off', () => {
+  /** A project, committed to the world's git at the clock's current time. */
+  const project = (name: string): void => {
+    world.writeDoc(`projects/${name}/README.md`, { data: {}, body: name });
+    world.git.commitAs({ id: 'rae', name: 'Rae' }, `start ${name}`);
+  };
+
+  test('a project is aged by hours worked, not days elapsed', () => {
+    ledger.emit('company', 'work.started', null, {});
+    project('alpha');
+    clock.advance(2 * 3_600_000);
+    ledger.emit('company', 'work.paused', null, {});
+    // Twelve days pass with the company switched off. None of it is the
+    // staff's, and none of it may age their work.
+    clock.advance(12 * 86_400_000);
+    const v = report('30.days');
+    assert.equal(v.novelty.newestAgeHours, 2);
+    cleanup();
+  });
+
+  test('a company that never ran has no age to charge anybody for', () => {
+    project('alpha');
+    clock.advance(9 * 86_400_000);
+    const v = report('30.days');
+    assert.equal(v.novelty.newestAgeHours, 0);
+    cleanup();
+  });
+
+  test('with no projects at all the age is a gap, not a zero', () => {
+    const v = report('30.days');
+    assert.equal(v.novelty.newestAgeHours, null);
+    assert.equal(v.novelty.carrying, 0);
+    cleanup();
+  });
+
+  test('the newest project sets the age, not the first one', () => {
+    ledger.emit('company', 'work.started', null, {});
+    project('alpha');
+    clock.advance(5 * 3_600_000);
+    project('beta');
+    clock.advance(1 * 3_600_000);
+    ledger.emit('company', 'work.paused', null, {});
+    const v = report('30.days');
+    assert.equal(v.novelty.carrying, 2);
+    // beta is one worked hour old; alpha is six. The question the figure
+    // answers is "how long since anything was new", so beta wins.
+    assert.equal(v.novelty.newestAgeHours, 1);
+    cleanup();
+  });
+});
