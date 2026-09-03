@@ -68,6 +68,22 @@ export const found = (cfg: RiffConfig, clock: Clock): {
   });
   }
 
+  // A board member added to config after founding never reached the roster,
+  // because the block above runs once. The two then disagreed about who is on
+  // the board — and since the gate reads standing from config, the missing
+  // name was hireable while still carrying board authority. Insert what is
+  // absent; never touch a row that exists, which is what the comment above is
+  // about.
+  for (const member of cfg.board) {
+    if (ledger.getAgent(member.id)) continue;
+    ledger.upsertAgent({
+      id: member.id, name: member.name, tier: 'board', role: member.role,
+      department: 'board', reportsTo: null, status: 'active',
+      activity: '', mandate: 'Terminal authority. Approves what leaves the company.',
+      hiredAt: clock.iso(), hiredBy: null, model: 'human',
+    });
+  }
+
   // Directories are not employment records; making one that already exists
   // costs nothing and repairs a world someone copied without it.
   for (const member of cfg.board) world.ensureStaff(member.id);

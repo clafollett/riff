@@ -29,11 +29,19 @@ export type SeatResult =
  */
 export const fillSeat = (
   ledger: Ledger, world: World, clock: Clock, spec: SeatSpec,
+  board: readonly string[] = [],
 ): SeatResult => {
   if (!spec.name || !spec.role) return { ok: false, reason: 'a seat needs a name and a role' };
 
   const id = slug(spec.name);
   if (ledger.getAgent(id)) return { ok: false, reason: `${id} already works here` };
+  // A board member the roster has never seen is still a board member: the gate
+  // reads standing from the constitution, not from this table. A company whose
+  // board gained a name after founding had that name hired as a lead, and the
+  // seat then carried board standing on every approval it touched.
+  if (board.includes(id)) {
+    return { ok: false, reason: `${id} is on the board — pick a name no board member answers to` };
+  }
 
   // The board governs; it does not manage. Only the CEO reports to it, and the
   // independence a board reporting line appears to buy is already structural:

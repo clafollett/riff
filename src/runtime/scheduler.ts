@@ -333,7 +333,8 @@ const due = selectDue(this.#d.ledger.listAgents(), {
       // Approved work is applied by the company, never by the requester — so a
       // staff member cannot enact its own escalation.
       applyApproved(this.#d.ledger, this.#d.world, this.#d.clock,
-        Object.keys(this.#d.connectors ?? {}), this.#d.release ?? 'none');
+        Object.keys(this.#d.connectors ?? {}), this.#d.release ?? 'none',
+        this.#d.gate.constitution.board);
 
       await sleep(2_000, this.#abort.signal);
     }

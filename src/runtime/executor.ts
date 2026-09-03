@@ -17,6 +17,7 @@ import type { Clock } from '../core/clock.ts';
 export const applyApproved = (
   ledger: Ledger, world: World, clock: Clock, connectors: string[] = [],
   release: 'none' | 'bundle' = 'none',
+  board: readonly string[] = [],
 ): number => {
   const approved = ledger.listApprovals('approved');
   let applied = 0;
@@ -40,7 +41,7 @@ export const applyApproved = (
             tier: (p['tier'] ?? 'member') as 'executive' | 'lead' | 'member',
             department: p['department'] ?? '', mandate: p['mandate'] ?? '',
             reportsTo: p['reportsTo'] ?? ap.requestedBy, proposedBy: ap.requestedBy,
-          });
+          }, board);
           if (r.ok) applied++;
           else ledger.emit('company', 'approval.apply_failed', ap.id, { reason: r.reason });
           break;

@@ -101,7 +101,8 @@ export const createTools = (ctx: Ctx) => {
     async (p) => say(gated(ctx, 'hire', `${p.role}: ${p.name}`, slug(p.name), () => {
       // Reached only when the gate ALLOWS outright (the CEO's own hire).
       // Everyone else escalates and the executor calls the same function.
-      const r = fillSeat(ledger, world, clock, { ...p, proposedBy: actor });
+      const r = fillSeat(ledger, world, clock, { ...p, proposedBy: actor },
+        ctx.gate.constitution.board);
       if (!r.ok) return `Could not fill that seat: ${r.reason}`;
       return `${p.name} has joined as ${p.role}.` +
         (r.redirected ? ` Reporting line set to you — the board governs, it does not manage.` : '');

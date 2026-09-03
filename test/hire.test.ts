@@ -99,3 +99,40 @@ describe('the board governs rather than manages', () => {
     assert.equal(ledger.getAgent('ida')!.reportsTo, 'wren');
   });
 });
+
+/**
+ * A board member added to config after founding never reached the roster,
+ * because genesis seeds the board once. The CEO then hired a person of that
+ * name — the roster had no conflict to find — and the new lead's id was inside
+ * the constitution's board list, which is where `Gate.decide` reads standing
+ * from. Two records disagreed about who governs.
+ */
+describe('a name the board answers to is not a seat anyone can fill', () => {
+  test('hiring an id that is on the board is refused', () => {
+    const r = fillSeat(ledger, world, clock,
+      { name: 'Marvin', role: 'Head of Field Research', tier: 'lead', proposedBy: 'vale' },
+      ['cali', 'marvin']);
+    assert.equal(r.ok, false);
+    assert.match((r as { ok: false; reason: string }).reason, /on the board/);
+    assert.ok(!ledger.getAgent('marvin'), 'no seat was created');
+  });
+
+  test('the refusal does not depend on the board being in the roster', () => {
+    assert.ok(!ledger.getAgent('marvin'), 'precondition: never seeded');
+    assert.equal(fillSeat(ledger, world, clock,
+      { name: 'Marvin', role: 'Lead', tier: 'lead', proposedBy: 'vale' }, ['marvin']).ok, false);
+  });
+
+  test('a name no board member answers to is still hireable', () => {
+    const r = fillSeat(ledger, world, clock,
+      { name: 'Ines', role: 'Principal Maker', tier: 'lead', proposedBy: 'vale' },
+      ['cali', 'marvin']);
+    assert.equal(r.ok, true);
+    assert.equal(ledger.getAgent('ines')?.role, 'Principal Maker');
+  });
+
+  test('with no board given, hiring behaves as it always did', () => {
+    assert.equal(fillSeat(ledger, world, clock,
+      { name: 'Marvin', role: 'Lead', tier: 'lead', proposedBy: 'vale' }).ok, true);
+  });
+});
