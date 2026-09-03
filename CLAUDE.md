@@ -98,6 +98,9 @@ Test names describe behaviour and survive refactors:
 Commit messages: sentence-case subject, no prefix tags, present tense, body
 explaining the problem rather than the patch. Match `git log`.
 
+Branches are named from the issue they close: `feat/<id>-short-slug`,
+`fix/<id>-short-slug`. Open the issue first if there isn't one.
+
 Claims in commits and docs must be checkable: measure it, and give the figure.
 A count beats a characterisation — the form is "359 gate.allow out of 787"
 rather than "most of the log is noise". A claim that cannot check itself will

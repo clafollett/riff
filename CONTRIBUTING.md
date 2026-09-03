@@ -70,6 +70,20 @@ against what the code actually reads, not against what the documentation says
 it reads. `container.test.ts` exists specifically so the compose file and the
 source cannot drift apart quietly.
 
+## Branches
+
+Work starts from an issue, and the branch carries its number:
+
+```
+feat/<issue>-short-slug     fix/<issue>-short-slug
+docs/<issue>-short-slug     chore/<issue>-short-slug
+```
+
+`feat/1-vitals-and-analytics`, not `vitals`. The number is the part that
+survives — it is what lets a branch, a PR and a commit find the argument that
+produced them a year later. If there is no issue yet, open one first: it is
+where the *why* goes, and the diff cannot hold that.
+
 ## Commit messages
 
 Sentence-case subject line, no prefix tags, present tense, and a body that

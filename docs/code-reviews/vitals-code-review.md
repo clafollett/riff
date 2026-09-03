@@ -298,7 +298,7 @@ Pre-existing, not introduced here. Logged, not blocking.
 | | |
 | - | - |
 | **Reviewer** | `pe-vue` (console), `pe-governance` (CLAUDE.md), primary (backend, tooling) |
-| **Reviewed SHA** | `76770d6d1e1883be97fce01ade1355226d053a25` |
+| **Reviewed SHA** | `0c7bbaa` |
 | **Scope** | `8697cbd..HEAD` — six commits made after round 1 approved |
 | **Date** | 2026-09-01 |
 
@@ -321,10 +321,10 @@ claim was written *in the commit that fixed the previous instance*.
 
 | claim | written | falsified by | found by |
 | - | - | - | - |
-| "vue-tsc needs TypeScript 5" | a prior session, in CLAUDE.md | `dc38baa` | the user, asking why not just enable it |
-| "vue-tsc strictly dominates the deleted script" | `dc38baa` | orphaned `.vue` files were checked by nobody | primary, testing its own claim |
-| "an SFC never reaches the typechecker" ×3 | `10d890c`, `8697cbd` | `dc38baa` | `pe-vue` |
-| CLAUDE.md restates its own script's header | `5ce7be5`, the commit removing restatements | itself | `pe-governance` |
+| "vue-tsc needs TypeScript 5" | a prior session, in CLAUDE.md | `5e122c7` | the user, asking why not just enable it |
+| "vue-tsc strictly dominates the deleted script" | `5e122c7` | orphaned `.vue` files were checked by nobody | primary, testing its own claim |
+| "an SFC never reaches the typechecker" ×3 | `ecb6afc`, `8697cbd` | `5e122c7` | `pe-vue` |
+| CLAUDE.md restates its own script's header | `1390d61`, the commit removing restatements | itself | `pe-governance` |
 
 The third is the sharpest: one of those three comments was the stated
 justification for an e2e test, and the primary cited it back while asking
@@ -336,19 +336,19 @@ commits earlier.
 
 | ID | Severity | Location | Finding | Status |
 | - | - | - | - | - |
-| R2-M1 | 🟡 MEDIUM | `desk.spec.ts:980,1009`, `Vitals.vue:120` | Three comments assert SFCs are not typechecked; this branch made that false | ✅ `7f9c1e1` |
-| R2-M2 | 🟡 MEDIUM | `CLAUDE.md` | The dependency *prohibition* was deleted with the dependency *list*. `package.json` can state there are four; it cannot state that a fifth needs an issue | ✅ `e3b7af7` |
-| R2-M3 | 🟡 MEDIUM | `CLAUDE.md:39-42` | The vue-tsc rationale had become a near-verbatim copy of its own script's header — committed inside the change that removes copies | ✅ `e3b7af7` |
-| R2-M4 | 🟡 MEDIUM | `desk/tsconfig.json` | Deleting `check-sfc-imports.mjs` left orphaned `.vue` files checked by nobody; vue-tsc only saw the import graph | ✅ `67c7d66` |
-| R2-M5 | 🟡 MEDIUM | `CLAUDE.md:19-20,8-10,79-80` | Prose summary after a table; a "why" anecdote written for a human; a definition wearing a pseudocode costume | ✅ `e3b7af7` |
-| R2-M6 | 🟡 MEDIUM | `CLAUDE.md:47-50` | "This works because" paragraph where the model needs a directive | ✅ `e3b7af7` |
-| R2-I1 | 🟢 LOW | `desk/src/api.ts:61` | The console's only reach into `src/` is held open by the word `type`, and buried 60 lines down | ✅ `76770d6` |
-| R2-I2 | 🟢 LOW | `desk.spec.ts:989` | The holes regex caught NaN but not Infinity — x/0 is the likelier slip | ✅ `7f9c1e1` |
-| R2-I3 | 🟢 LOW | `desk.spec.ts:1004` | `.grid td` count guard was satisfied by one row of either table | ✅ `7f9c1e1` |
-| R2-I4 | 🟢 LOW | `package.json` | Sidecar compiler pinned by range; it exists to be stable, not current | ✅ `67c7d66` |
-| R2-I5 | 🟢 LOW | `CLAUDE.md` | `shellIsContained()` lost from the security section — it was the grep anchor into the deciding function | ✅ `7a5902b` |
-| R2-I6 | 🟢 LOW | `CLAUDE.md`, `CONTRIBUTING.md` | Pointer rows omitted `e2e/tsconfig.json`, `src/core/lock.ts`, `docker/up.sh`; the "four dependencies" claim existed in a third document unchecked | ✅ `e3b7af7`, `7a5902b` |
-| R2-I7 | ℹ️ INFO | `CLAUDE.md:109` | The sentence demanding checkable claims illustrated itself with an unverifiable measurement | ✅ `7a5902b` |
+| R2-M1 | 🟡 MEDIUM | `desk.spec.ts:980,1009`, `Vitals.vue:120` | Three comments assert SFCs are not typechecked; this branch made that false | ✅ `cc1206a` |
+| R2-M2 | 🟡 MEDIUM | `CLAUDE.md` | The dependency *prohibition* was deleted with the dependency *list*. `package.json` can state there are four; it cannot state that a fifth needs an issue | ✅ `59f0d60` |
+| R2-M3 | 🟡 MEDIUM | `CLAUDE.md:39-42` | The vue-tsc rationale had become a near-verbatim copy of its own script's header — committed inside the change that removes copies | ✅ `59f0d60` |
+| R2-M4 | 🟡 MEDIUM | `desk/tsconfig.json` | Deleting `check-sfc-imports.mjs` left orphaned `.vue` files checked by nobody; vue-tsc only saw the import graph | ✅ `da09e65` |
+| R2-M5 | 🟡 MEDIUM | `CLAUDE.md:19-20,8-10,79-80` | Prose summary after a table; a "why" anecdote written for a human; a definition wearing a pseudocode costume | ✅ `59f0d60` |
+| R2-M6 | 🟡 MEDIUM | `CLAUDE.md:47-50` | "This works because" paragraph where the model needs a directive | ✅ `59f0d60` |
+| R2-I1 | 🟢 LOW | `desk/src/api.ts:61` | The console's only reach into `src/` is held open by the word `type`, and buried 60 lines down | ✅ `0c7bbaa` |
+| R2-I2 | 🟢 LOW | `desk.spec.ts:989` | The holes regex caught NaN but not Infinity — x/0 is the likelier slip | ✅ `cc1206a` |
+| R2-I3 | 🟢 LOW | `desk.spec.ts:1004` | `.grid td` count guard was satisfied by one row of either table | ✅ `cc1206a` |
+| R2-I4 | 🟢 LOW | `package.json` | Sidecar compiler pinned by range; it exists to be stable, not current | ✅ `da09e65` |
+| R2-I5 | 🟢 LOW | `CLAUDE.md` | `shellIsContained()` lost from the security section — it was the grep anchor into the deciding function | ✅ `8629725` |
+| R2-I6 | 🟢 LOW | `CLAUDE.md`, `CONTRIBUTING.md` | Pointer rows omitted `e2e/tsconfig.json`, `src/core/lock.ts`, `docker/up.sh`; the "four dependencies" claim existed in a third document unchecked | ✅ `59f0d60`, `8629725` |
+| R2-I7 | ℹ️ INFO | `CLAUDE.md:109` | The sentence demanding checkable claims illustrated itself with an unverifiable measurement | ✅ `8629725` |
 
 ### Reversed on review
 
@@ -396,9 +396,15 @@ probes against its own claims rather than from reading.
 
 ## Merge Eligibility
 
-**Locked to SHA:** `76770d6d1e1883be97fce01ade1355226d053a25`
-**Status:** ✅ Mergeable IF `git rev-parse HEAD == 76770d6d1e1883be97fce01ade1355226d053a25`. Any commit after this
+**Locked to SHA:** `0c7bbaa`
+**Status:** ✅ Mergeable IF `git rev-parse HEAD == 0c7bbaa`. Any commit after this
 SHA invalidates this round and requires re-review.
+
+**SHAs rewritten 2026-09-02.** The branch was renamed from `vitals` to
+`feat/1-vitals-and-analytics` and two commit subjects carrying `docs:` prefixes
+were rewritten to house style, which changed every SHA from `974253a` onward.
+Every SHA above was remapped to the commit holding the same tree; the trees
+themselves are byte-identical to the reviewed ones.
 
 ---
 
