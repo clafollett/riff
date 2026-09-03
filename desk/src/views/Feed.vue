@@ -140,10 +140,6 @@ h1 { font-size: 30px; }
 input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   border-radius: 5px; padding: 7px 10px; font: inherit; font-size: 13px; width: 180px; }
 
-.bar { display: flex; align-items: center; gap: 6px; padding-bottom: 12px;
-  border-bottom: 1px solid var(--line); margin-bottom: 10px; }
-.count { font-size: 11px; }
-.grow { flex: 1; }
 .scope { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
   border: 1px solid transparent; border-radius: 4px; padding: 3px 7px; }
 .scope.on { color: var(--gold); border-color: var(--line-2); }

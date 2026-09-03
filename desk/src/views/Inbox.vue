@@ -492,9 +492,6 @@ h1 { font-size: 30px; }
 input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
   border-radius: 5px; padding: 7px 10px; font: inherit; font-size: 13px; width: 180px; }
 
-.bar { display: flex; align-items: center; gap: 8px; padding-bottom: 14px;
-  border-bottom: 1px solid var(--line); margin-bottom: 12px; }
-.count { font-size: 11px; }
 .grow { flex: 1; }
 
 .msg { border: 1px solid var(--line); border-left: 3px solid var(--line);

@@ -10,6 +10,13 @@
  * Sorting emits like filtering does, and callers reset the page on both —
  * staying on page three of a list that has just been re-ordered shows you
  * items you were never looking at.
+ *
+ * The root is `.toolbar`, not `.bar`, because a scoped style still reaches a
+ * child component's root element. Three views had kept a `.bar` rule from
+ * before this component existed, and every one of them was landing on it:
+ * the Commons gauge's `height: 5px; overflow: hidden` clipped the whole
+ * toolbar to a sliver, and the Feed and the Inbox each quietly re-spaced it.
+ * A name a view has no reason to reach for is the fix; keep it that way.
  */
 export type SortOption = { key: string; label: string };
 </script>
@@ -37,7 +44,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="bar">
+  <div class="toolbar">
     <span v-if="count" class="faint mono count">{{ count }}</span>
 
     <div v-if="sorts?.length" class="sorts">
@@ -67,7 +74,7 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+.toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .count { font-size: 11px; white-space: nowrap; }
 .grow { flex: 1; }

@@ -302,7 +302,7 @@ test('mail addressed to the board is readable, and says so before you look', asy
   await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('19');
 
   await go(page, 'Inbox');
-  await expect(page.locator('.bar')).toContainText('19 messages');
+  await expect(page.locator('.toolbar')).toContainText('19 messages');
   // Opened, the body renders as prose rather than raw markdown.
   await page.getByLabel('Filter messages').fill('noise floor');
   await page.locator('.msg').first().locator('.row').click();
@@ -315,12 +315,12 @@ test('every paged list sorts, and sorting sends you back to page one', async ({ 
   // re-ordered shows you items you were never looking at.
   for (const view of ['Inbox', 'Feed']) {
     await go(page, view);
-    await expect(page.locator('.bar .chip').first()).toBeVisible();
+    await expect(page.locator('.toolbar .chip').first()).toBeVisible();
 
     // Order is a real control, not decoration.
-    const chips = await page.locator('.bar .chip').allInnerTexts();
+    const chips = await page.locator('.toolbar .chip').allInnerTexts();
     expect(chips.length).toBeGreaterThan(1);
-    await expect(page.locator('.bar .chip[aria-pressed="true"]')).toHaveCount(1);
+    await expect(page.locator('.toolbar .chip[aria-pressed="true"]')).toHaveCount(1);
 
     // Shrink the page until there is more than one — every paged list can be
     // made to page, which is what makes this assertable at all.
@@ -330,21 +330,21 @@ test('every paged list sorts, and sorting sends you back to page one', async ({ 
 
     // Shrink the page until there is more than one — every paged list can be
     // made to page, which is what makes this assertable at all.
-    await page.locator('.bar select').selectOption({ index: 0 });
+    await page.locator('.toolbar select').selectOption({ index: 0 });
     await expect(page.locator('.pager')).toContainText('page 1 of');
 
     await page.getByRole('button', { name: 'Older' }).click();
     await expect(page.locator('.pager')).toContainText('page 2 of');
 
     // Re-order from page two: it must land back on page one.
-    await page.locator('.bar .chip', { hasText: 'Oldest' }).click();
+    await page.locator('.toolbar .chip', { hasText: 'Oldest' }).click();
     await expect(page.locator('.pager')).toContainText('page 1 of');
-    await expect(page.locator('.bar .chip[aria-pressed="true"]')).toHaveText('Oldest');
+    await expect(page.locator('.toolbar .chip[aria-pressed="true"]')).toHaveText('Oldest');
 
     // And changing the page size does too.
     await page.getByRole('button', { name: 'Older' }).click();
     await expect(page.locator('.pager')).toContainText('page 2 of');
-    await page.locator('.bar select').selectOption({ index: 1 });
+    await page.locator('.toolbar select').selectOption({ index: 1 });
     await expect(page.locator('.pager')).toContainText('page 1 of');
   }
 });
@@ -353,10 +353,10 @@ test('the whole company can be read, not only what reached you', async ({ page }
   // Staff write to each other far more than they write to the board, and none
   // of that was visible from here.
   await go(page, 'Inbox');
-  const mine = await page.locator('.bar .count').innerText();
+  const mine = await page.locator('.toolbar .count').innerText();
 
   await page.getByRole('button', { name: "Everyone's" }).click();
-  await expect(page.locator('.bar .count')).not.toHaveText(mine);
+  await expect(page.locator('.toolbar .count')).not.toHaveText(mine);
 
   // Mail between two colleagues appears, named for its real recipient.
   await expect(page.locator('.msg .addressed.other').first()).toBeVisible();
@@ -366,7 +366,7 @@ test('the whole company can be read, not only what reached you', async ({ page }
   // widening the view used to hide it.
   const yours = page.locator('.msg.unread');
   await expect(yours.first()).toBeVisible();
-  await expect(page.locator('.bar .count')).toContainText('unread to you');
+  await expect(page.locator('.toolbar .count')).toContainText('unread to you');
   // Every orange row is one addressed to you, not simply every row.
   const orange = await yours.count();
   expect(orange).toBeGreaterThan(0);
@@ -378,7 +378,7 @@ test('the whole company can be read, not only what reached you', async ({ page }
   await expect(overheard.getByRole('button', { name: /Mark (read|unread)/ })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'To you' }).click();
-  await expect(page.locator('.bar .count')).toHaveText(mine);
+  await expect(page.locator('.toolbar .count')).toHaveText(mine);
   await expect(page.locator('.msg.unread').first()).toBeVisible();
 });
 
@@ -388,7 +388,7 @@ test('the inbox can put what needs you at the top', async ({ page }) => {
   await page.locator('.msg').first().getByRole('button', { name: 'Mark read' }).click();
   await expect(page.locator('.msg.unread')).not.toHaveCount(await page.locator('.msg').count());
 
-  await page.locator('.bar .chip', { hasText: 'Unread first' }).click();
+  await page.locator('.toolbar .chip', { hasText: 'Unread first' }).click();
   // Everything read must sink below everything unread.
   const flags = await page.locator('.msg').evaluateAll(
     (els) => els.map((e) => e.classList.contains('unread')));
@@ -398,7 +398,7 @@ test('the inbox can put what needs you at the top', async ({ page }) => {
   }
 
   // Put it back: the tests after this one expect the fixture's read state.
-  await page.locator('.bar .chip', { hasText: 'Newest' }).click();
+  await page.locator('.toolbar .chip', { hasText: 'Newest' }).click();
   const read = page.locator('.msg:not(.unread)').first();
   await read.locator('.row').click();
   await read.getByRole('button', { name: 'Mark unread' }).click();
