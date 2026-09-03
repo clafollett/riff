@@ -98,8 +98,9 @@ Test names describe behaviour and survive refactors:
 Commit messages: sentence-case subject, no prefix tags, present tense, body
 explaining the problem rather than the patch. Match `git log`.
 
-Branches are named from the issue they close: `feat/<id>-short-slug`,
-`fix/<id>-short-slug`. Open the issue first if there isn't one.
+Work lands on `main`. There is no branch or PR process and adding one would
+be ceremony for a repo this size — if a change is big enough to want reviewing,
+review it before it lands, not after it has a branch.
 
 Claims in commits and docs must be checkable: measure it, and give the figure.
 A count beats a characterisation — the form is "359 gate.allow out of 787"
