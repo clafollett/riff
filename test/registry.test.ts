@@ -597,6 +597,96 @@ describe('the API can found a company without anyone editing config.json', () =>
   });
 });
 
+describe('what a script used to do, the API does', () => {
+  test('an agent is renamed id and all, through one call', async () => {
+    // The id is a foreign key in six tables and a folder name in the world, so
+    // renaming by hand left an id nobody answers to scattered through both.
+    const { port, kill } = await serve();
+    try {
+      await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Renaming Co', ceo: 'Ceo', chair: 'Cali', running: false }),
+      });
+      const r = await fetch(`http://localhost:${port}/api/agents/rename`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ company: 'renaming-co', who: 'ceo', name: 'Marlowe' }),
+      });
+      const body = await r.json() as { from?: string; to?: string; error?: string };
+      assert.equal(r.status, 200, JSON.stringify(body));
+      assert.deepEqual([body.from, body.to], ['ceo', 'marlowe']);
+
+      const state = await (await fetch(`http://localhost:${port}/api/state?c=renaming-co`)).json() as
+        { agents: Array<{ id: string; name: string }> };
+      assert.ok(state.agents.some((a) => a.id === 'marlowe' && a.name === 'Marlowe'));
+      assert.ok(!state.agents.some((a) => a.id === 'ceo'), 'the old id must be gone, not left beside it');
+      assert.ok(existsSync(join(home, '.riff/companies/renaming-co/world/staff/marlowe')),
+        'the world folder moves with the id');
+    } finally { kill(); }
+  });
+
+  test('renaming onto a name someone already answers to is refused', async () => {
+    const { port, kill } = await serve();
+    try {
+      await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Clash Co', ceo: 'Ceo', chair: 'Cali',
+                               board: [{ name: 'Marlowe' }], running: false }),
+      });
+      const r = await fetch(`http://localhost:${port}/api/agents/rename`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ company: 'clash-co', who: 'ceo', name: 'Marlowe' }),
+      });
+      assert.equal(r.status, 409);
+      assert.match((await r.json() as { error: string }).error, /already exists/);
+    } finally { kill(); }
+  });
+
+  test('a run can be given a deadline and a wake-up budget', async () => {
+    // An unattended run on somebody else's machine gets hard stops, because a
+    // subscription window is shared with the person who owns it.
+    const { port, kill } = await serve();
+    try {
+      await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Bounded Co', ceo: 'Ceo', chair: 'Cali', running: false }),
+      });
+      const r = await fetch(`http://localhost:${port}/api/companies/bounded-co/running`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ running: true, hours: 8, maxTicks: 40 }),
+      });
+      const body = await r.json() as { running: boolean; until?: string; maxTicks?: number };
+      assert.equal(body.running, true);
+      assert.equal(body.maxTicks, 40);
+      assert.ok(body.until, 'a deadline was asked for and has to come back');
+      assert.ok(Date.parse(body.until) > Date.now(), 'and it has to be in the future');
+      await fetch(`http://localhost:${port}/api/companies/bounded-co/running`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ running: false }),
+      });
+    } finally { kill(); }
+  });
+
+  test('a run started without bounds is not held to the last run\'s', () => {
+    // The bounds belong to the run. A deadline that outlived the run it was
+    // set for would stop the next one before it began.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'Unbounded Co', business: 'b', ceo: 'Ceo', chair: 'Cali' });
+      if (!c.ok) throw new Error(c.reason);
+      await r.setRunning('unbounded-co', true, { until: Date.now() - 1000, maxTicks: 1 });
+      await r.setRunning('unbounded-co', false);
+      await r.setRunning('unbounded-co', true);
+      const last = c.company.ledger.lastEvent(['work.started']);
+      const o = JSON.parse(last.dataJson).options;
+      console.log(JSON.stringify({ until: o.until, maxTicks: o.maxTicks }));
+      await r.setRunning('unbounded-co', false);
+    `);
+    assert.deepEqual(JSON.parse(out), { until: null, maxTicks: null });
+  });
+});
+
 describe('a fresh installation starts empty', () => {
   test('the server founds nothing, and still serves', async () => {
     // It used to found "Untitled Company" so a new checkout was never blank.

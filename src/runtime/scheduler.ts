@@ -278,9 +278,20 @@ export class Scheduler {
     }
   }
 
-  start(): void {
+  /**
+   * Begin working, optionally with hard stops.
+   *
+   * A run left going on somebody else's machine gets a deadline and a wake-up
+   * budget, because a subscription window is shared with the person who owns
+   * it. Bounds belong to the run rather than to the company's policy: the same
+   * company is started unattended one night and watched the next.
+   */
+  start(bounds?: { until?: number | null; maxTicks?: number | null }): void {
     if (this.#running) return;
     this.#running = true;
+    this.#ticks = 0;
+    this.#opts.until = bounds?.until ?? null;
+    this.#opts.maxTicks = bounds?.maxTicks ?? null;
     this.#abort = new AbortController();
     this.#d.ledger.emit('company', 'work.started', null, { options: this.#opts });
     void this.#loop();

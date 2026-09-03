@@ -58,6 +58,22 @@ env: { ...process.env, HOME: tmp, RIFF_ROOT: join(tmp, '.riff'),
 
 `HOME` alone is not enough. See `test/registry.test.ts`.
 
+## The API is the only way in
+
+Every operator action is an HTTP endpoint in `src/gateway/server.ts`, and the
+console is a client of it like anything else. `scripts/` holds build and dev
+utilities only — `check-sfc-types.mjs` and whatever a git hook needs.
+
+```
+if a thing an operator does has no endpoint:
+    add the endpoint          # not a script that reaches past it
+```
+
+Nine scripts once did founding, waking, deciding, reviewing, renaming, status
+and vitals against the ledger directly. Each was a second implementation that
+drifted from the API's, and one of them founded a company by editing
+`config.json` under a running server and corrupted its ledger.
+
 ## Never touch a running company's ledger from the host
 
 The ledger is SQLite in WAL mode, and the container reaches it through a bind

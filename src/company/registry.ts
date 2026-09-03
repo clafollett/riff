@@ -61,10 +61,13 @@ export class Registry {
   has(slug: string): boolean { return existsSync(companyHome(slug)); }
 
   /** Start or pause one company by slug, opening it if needed. */
-  async setRunning(slug: string, run: boolean): Promise<boolean> {
+  async setRunning(
+    slug: string, run: boolean,
+    bounds?: { until?: number | null; maxTicks?: number | null },
+  ): Promise<boolean> {
     const c = this.get(slug);
     if (!c) return false;
-    if (run) c.scheduler.start(); else await c.scheduler.stop();
+    if (run) c.scheduler.start(bounds); else await c.scheduler.stop();
     setRunningFlag(c.cfg.home, run);
     return true;
   }
@@ -221,7 +224,8 @@ export class Registry {
    *
    * Who the CEO and the chair ARE is not editable here. Their ids are on every
    * approval, note and commit already made, and changing one mid-life orphans
-   * all of it — scripts/rename-agent.ts exists to do that job properly.
+   * all of it — renameAgent in ./rename.ts does that job properly, and
+   * POST /api/agents/rename is how anyone reaches it.
    */
   async update(
     slug: string,

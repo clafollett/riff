@@ -32,7 +32,7 @@ export type TickDeps = {
   /** How approved work leaves when no connector is wired. See RiffConfig.release. */
   release?: 'none' | 'bundle';
   /** Observe the shift: every tool the staff member reaches for, and why it
-   *  was allowed or refused. Used by scripts/tick.ts to diagnose a shift. */
+   *  was allowed or refused, for diagnosing a shift. */
   trace?: (line: string) => void;
   signal?: AbortSignal;
 };

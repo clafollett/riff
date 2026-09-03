@@ -4,6 +4,7 @@ import {
   guessKeeperName, listCompanies, migrateLegacyLayout, resolveSlug,
 } from '../core/config.ts';
 import { Registry, type Company } from '../company/registry.ts';
+import { renameAgent } from '../company/rename.ts';
 import { vitals } from '../analytics/vitals.ts';
 import { exportCompany, exportName, importCompany } from '../company/transfer.ts';
 import { isOperatorError, installRoot } from '../core/config.ts';
@@ -283,9 +284,36 @@ const server = createServer(async (req, res) => {
     if (p.startsWith('/api/companies/') && p.endsWith('/running') && method === 'POST') {
       const target = p.slice('/api/companies/'.length, -'/running'.length);
       const b = await readBody(req);
-      const ok = await registry.setRunning(target, b['running'] === true);
-      return ok ? json(res, { slug: target, running: b['running'] === true })
-                : json(res, { error: `no company '${target}'` }, 404);
+      // Hard stops for a run nobody is watching. They belong to the run, not
+      // to the company's policy — the same company is left going overnight one
+      // day and watched the next, and a deadline that outlived the run it was
+      // set for would stop the next one early.
+      const hours = Number(b['hours']);
+      const ticks = Number(b['maxTicks']);
+      const bounds = {
+        until: Number.isFinite(hours) && hours > 0 ? Date.now() + hours * 3_600_000 : null,
+        maxTicks: Number.isFinite(ticks) && ticks > 0 ? Math.round(ticks) : null,
+      };
+      const run = b['running'] === true;
+      const ok = await registry.setRunning(target, run, bounds);
+      return ok ? json(res, {
+        slug: target, running: run,
+        ...(run && bounds.until ? { until: new Date(bounds.until).toISOString() } : {}),
+        ...(run && bounds.maxTicks ? { maxTicks: bounds.maxTicks } : {}),
+      }) : json(res, { error: `no company '${target}'` }, 404);
+    }
+
+    // Renaming an agent moves an id that is a foreign key in six tables and a
+    // folder name in the world. It lived in a script, which meant the console
+    // could show a seat called `ceo` and offer no way to give it a name.
+    if (p === '/api/agents/rename' && method === 'POST') {
+      const b = await readBody(req);
+      const slug = String(b['company'] ?? '') || (resolveSlug() ?? '');
+      const co = slug ? registry.get(slug) : null;
+      if (!co) return json(res, { error: `no company '${slug}'` }, 404);
+      const r = renameAgent(co.ledger, co.world, co.cfg.company.name,
+                            String(b['who'] ?? ''), String(b['name'] ?? ''));
+      return r.ok ? json(res, r) : json(res, { error: r.reason }, 409);
     }
 
     if (p.startsWith('/api/companies/') && (method === 'PATCH' || method === 'DELETE')) {
