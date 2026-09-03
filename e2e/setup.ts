@@ -82,7 +82,17 @@ export default async function globalSetup(): Promise<void> {
   // The turns and the dollars of a shift are written down here and nowhere
   // else, so a fixture that sleeps with an empty payload proves the Vitals
   // view against a company that apparently costs nothing to run.
-  ledger.emit('fen', 'agent.slept', null, { turns: 9, costUsd: 0.42, ceiling: 30 });
+  //
+  // The meter is the other half: on a subscription the dollars are imputed
+  // list price and nobody is billed them, so a fixture without tokens or a
+  // rate-limit reading proves the report against the one figure that is not
+  // real. This shift also carries the window it ran into.
+  ledger.emit('fen', 'agent.slept', null, {
+    turns: 9, costUsd: 0.42, ceiling: 30,
+    tokens: 1_240_000, tokensIn: 40_000, tokensOut: 200_000,
+    cacheRead: 900_000, cacheWrite: 100_000,
+    utilization: 0.84, limitType: 'five_hour',
+  });
   // A shift that woke, spent and left nothing behind. Barren shifts are the
   // expensive failure the report exists to name, and one has to exist.
   ledger.emit(cfg.ceo.id, 'agent.woke', null, {});

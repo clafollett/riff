@@ -17,8 +17,8 @@ import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import type { AgentId, Event } from '../core/types.ts';
 import type {
-  CommonsVitals, EnvelopeVitals, MoneyVitals, OrgVitals, PersonVitals, ShiftVitals,
-  TalkVitals, Trend, Vitals, Window, WorkVitals,
+  CommonsVitals, EnvelopeVitals, LimitVitals, MoneyVitals, OrgVitals, PersonVitals,
+  ShiftVitals, TalkVitals, TokenVitals, Trend, Vitals, Window, WorkVitals,
 } from './types.ts';
 
 export type * from './types.ts';
@@ -98,6 +98,7 @@ const numberOf = (o: Record<string, unknown>, k: string): number => {
 const trendOf = (v: Vitals): Trend => ({
   shifts: v.shifts.slept,
   costUsd: v.shifts.costUsd,
+  tokens: v.tokens.total,
   commits: v.talk.byStaff,
   messages: v.talk.messages,
   posted: v.commons.added,
@@ -152,10 +153,49 @@ export const vitals = (
   // slept in sequence is the only way to tell a shift that did something from
   // one that woke, read the company, and went back to sleep.
   const shiftLog = d.ledger.eventsOfKinds(
-    ['agent.woke', 'agent.slept', ...PRODUCTIVE], since, until);
+    ['agent.woke', 'agent.slept', 'agent.failed', ...PRODUCTIVE], since, until);
 
   const turnsBy = new Map<AgentId, number>();
   const costBy = new Map<AgentId, number>();
+  const tokensBy = new Map<AgentId, number>();
+  const tok = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  // Shifts that reported usage at all. Dividing by `slept` instead would
+  // quietly average in every shift that died before its first turn.
+  let measured = 0;
+  // The subscription window, read off whichever shift reported last. A shift
+  // that never heard from the rate limiter contributes nothing rather than a
+  // zero, which would read as "plenty left".
+  let limitLatest = 0;
+  let limitPeak = 0;
+  let limitType = '';
+  let limitSeen = 0;
+
+  /**
+   * Read the meter off a shift that ended, however it ended.
+   *
+   * A failed shift is the one most worth counting: it consumed the window and
+   * produced nothing, which is invisible in a dollar figure nobody pays and
+   * invisible again in a turn count that stops at the error.
+   */
+  const readMeter = (who: AgentId, dj: Record<string, unknown>): void => {
+    const n = numberOf(dj, 'tokens');
+    if (n > 0) {
+      measured++;
+      tok.input += numberOf(dj, 'tokensIn');
+      tok.output += numberOf(dj, 'tokensOut');
+      tok.cacheRead += numberOf(dj, 'cacheRead');
+      tok.cacheWrite += numberOf(dj, 'cacheWrite');
+      tokensBy.set(who, (tokensBy.get(who) ?? 0) + n);
+    }
+    const u = numberOf(dj, 'utilization');
+    if (u > 0) {
+      limitSeen++;
+      limitLatest = u;
+      limitPeak = Math.max(limitPeak, u);
+      const kind = dj['limitType'];
+      if (typeof kind === 'string' && kind) limitType = kind;
+    }
+  };
   const busy = new Set<AgentId>();      // has produced since waking
   const open = new Set<AgentId>();      // woke inside this window
   let slept = 0;
@@ -173,6 +213,7 @@ export const vitals = (
       const dj = data(e);
       const t = numberOf(dj, 'turns');
       const c = numberOf(dj, 'costUsd');
+      readMeter(e.actor, dj);
       slept++;
       turns += t;
       costUsd += c;
@@ -182,6 +223,15 @@ export const vitals = (
       // A shift whose waking fell before the window is not evidence of
       // anything — only a shift seen end to end can be called barren.
       if (open.has(e.actor) && !busy.has(e.actor)) barren++;
+      open.delete(e.actor);
+      busy.delete(e.actor);
+      continue;
+    }
+
+    // A shift that failed still spent the window, and is the case the meter
+    // exists for. It closes the shift without ever counting as productive.
+    if (e.kind === 'agent.failed') {
+      readMeter(e.actor, data(e));
       open.delete(e.actor);
       busy.delete(e.actor);
       continue;
@@ -213,6 +263,26 @@ export const vitals = (
     troubleRate: over(failed + blind, woke),
     barren,
     costShareTop: over(costliest, costUsd),
+  };
+
+  const totalTokens = tok.input + tok.output + tok.cacheRead + tok.cacheWrite;
+  const allInput = tok.input + tok.cacheRead + tok.cacheWrite;
+  const tokens: TokenVitals = {
+    total: totalTokens,
+    input: tok.input,
+    output: tok.output,
+    cacheRead: tok.cacheRead,
+    cacheWrite: tok.cacheWrite,
+    perShift: over(totalTokens, measured),
+    cacheHitRate: over(tok.cacheRead, allInput),
+    measured,
+  };
+
+  const limits: LimitVitals = {
+    latest: limitLatest,
+    peak: limitPeak,
+    type: limitType,
+    seen: limitSeen,
   };
 
   const gateRows = d.ledger.gateDecisions(since, until);
@@ -332,6 +402,7 @@ export const vitals = (
       shifts: nOf(a.id, 'agent.slept'),
       turns: turnsBy.get(a.id) ?? 0,
       costUsd: costBy.get(a.id) ?? 0,
+      tokens: tokensBy.get(a.id) ?? 0,
       commits: commitsBy.get(a.id) ?? 0,
       messages: nOf(a.id, 'message.sent'),
       posted: nOf(a.id, 'commons.posted'),
@@ -372,6 +443,8 @@ export const vitals = (
     window,
     previous,
     shifts,
+    tokens,
+    limits,
     org,
     throttle: {
       rateLimited: n('company.rate_limited'),

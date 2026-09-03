@@ -40,6 +40,11 @@ if (asJson) {
 
 const usd = (n: number): string => `$${n.toFixed(2)}`;
 
+/** Millions once it is millions. 41,283,904 is not a number anybody reads. */
+const tok = (n: number): string => (n >= 1e6
+  ? `${(n / 1e6).toFixed(1)}M`
+  : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n));
+
 /**
  * The same figure over the window before this one. A count with nothing to
  * compare it against is a number; with this it is a direction. Blank when
@@ -81,7 +86,8 @@ line('barren', s.barren,
 line('in trouble', pct(s.troubleRate),
   s.troubleRate > 0.2 ? '⚠ this is the loop, not the work' : '');
 line('turns a shift', s.turnsPerShift.toFixed(1));
-line('cost', usd(s.costUsd), s.slept ? `${usd(s.costPerShift)} a shift · ${d('costUsd', s.costUsd, '$')}` : '');
+line('list price', usd(s.costUsd),
+  s.slept ? `${usd(s.costPerShift)} a shift · ${d('costUsd', s.costUsd, '$')}` : '');
 line('biggest share', pct(s.costShareTop),
   s.costShareTop > 0.5 ? '⚠ one person is most of the bill' : '');
 if (s.rotated || s.compacted || s.rotateFailed) {
@@ -91,6 +97,34 @@ if (s.rotated || s.compacted || s.rotateFailed) {
 if (v.throttle.rateLimited || v.throttle.throttled || v.throttle.usagePaused) {
   line('rate limited', v.throttle.rateLimited,
     `${v.throttle.throttled} throttled, ${v.throttle.usagePaused} paused`);
+}
+
+// The section that says what the company actually spent. Everything above
+// priced in dollars is the SDK's imputed list price on an account that is
+// billed by subscription: a comparison, not a bill. Tokens and the window are
+// the resources that run out, so they get their own heading rather than a
+// footnote under the money.
+const tk = v.tokens;
+head('what it consumed');
+if (!tk.measured) {
+  line('tokens', '—', 'no shift in this window reported usage');
+} else {
+  line('tokens', tok(tk.total), `${tok(tk.perShift)} a shift · ${tk.measured} of ${s.slept} shifts measured`);
+  line('output', tok(tk.output), 'what the models actually wrote');
+  line('fresh input', tok(tk.input));
+  line('cache read · write', `${tok(tk.cacheRead)} · ${tok(tk.cacheWrite)}`,
+    tk.cacheHitRate < 0.5
+      ? `⚠ only ${pct(tk.cacheHitRate)} of input came from cache — rotating too eagerly?`
+      : `${pct(tk.cacheHitRate)} of input came from cache`);
+}
+const lm = v.limits;
+if (!lm.seen) {
+  line('subscription window', '—', 'no rate-limit reading in this window');
+} else {
+  const window = lm.type ? lm.type.replace(/_/g, ' ') : 'window';
+  line('subscription window', pct(lm.latest),
+    `${window} · peak ${pct(lm.peak)} over ${lm.seen} shift${lm.seen === 1 ? '' : 's'}`);
+  if (lm.peak >= 0.8) console.log('    ⚠ the company has come within a fifth of the ceiling this window');
 }
 
 // The failure mode worth catching in one figure: staff who message each other
@@ -165,12 +199,13 @@ if (v.people.length) {
   head('who did the work');
   console.log(`    ${'who'.padEnd(12)}${'shifts'.padStart(7)}${'commits'.padStart(8)}` +
     `${'posts'.padStart(7)}${'mail'.padStart(6)}${'drafts'.padStart(8)}` +
-    `${'done'.padStart(6)}${'cost'.padStart(9)}`);
+    `${'done'.padStart(6)}${'tokens'.padStart(9)}${'list $'.padStart(9)}`);
   for (const p of v.people) {
     console.log(`    ${p.name.slice(0, 11).padEnd(12)}${String(p.shifts).padStart(7)}` +
       `${String(p.commits).padStart(8)}${String(p.posted).padStart(7)}` +
       `${String(p.messages).padStart(6)}${String(p.filed).padStart(8)}` +
-      `${String(p.done).padStart(6)}${usd(p.costUsd).padStart(9)}` +
+      `${String(p.done).padStart(6)}${tok(p.tokens).padStart(9)}` +
+      `${usd(p.costUsd).padStart(9)}` +
       (p.denied ? `   ${p.denied} denied` : ''));
   }
 }

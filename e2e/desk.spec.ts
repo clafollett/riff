@@ -953,7 +953,7 @@ test('vitals reports what the week cost and what it produced', async ({ page }) 
   // turns and dollars are ever written down.
   const tiles = page.locator('.tile');
   await expect(tiles.filter({ hasText: 'shifts' }).locator('.tvalue')).toHaveText('2');
-  await expect(tiles.filter({ hasText: 'spent' }).locator('.tvalue')).toHaveText('$0.60');
+  await expect(tiles.filter({ hasText: 'list price' }).locator('.tvalue')).toHaveText('$0.60');
   await expect(tiles.filter({ hasText: 'barren' }).locator('.tvalue')).toHaveText('1');
 
   // A finding is a sentence, not a figure. A wall of numbers is something to
@@ -997,7 +997,7 @@ test('no figure in the report renders as a hole where a number should be', async
   const holes = /^(|undefined|null|NaN|\$NaN|NaN%|—%|\$undefined|Infinity|\$Infinity|Infinity%|-Infinity)$/;
 
   const tiles = await page.locator('.tile .tvalue').allInnerTexts();
-  expect(tiles.length).toBe(4);
+  expect(tiles.length).toBe(5);
   for (const t of tiles) expect(t.trim()).not.toMatch(holes);
 
   // Every figure in the six definition lists, and the sub-line under each tile.
@@ -1030,10 +1030,13 @@ test('a trend arrow says which way it moved, and whether that is good news', asy
   await expect(dirOf('shifts')).toHaveText(/▲/);
   await expect(dirOf('shifts')).toHaveClass(/good/);
 
-  // Spending more than the window before is the same arrow and the opposite
-  // reading — this is the pair that was rendering identically.
-  await expect(dirOf('spent')).toHaveText(/▲/);
-  await expect(dirOf('spent')).toHaveClass(/bad/);
+  // Consuming more than the window before is the same arrow and the opposite
+  // reading — this is the pair that was rendering identically. Tokens are the
+  // figure that means it; the dollars beside them are a list price nobody pays.
+  await expect(dirOf('tokens')).toHaveText(/▲/);
+  await expect(dirOf('tokens')).toHaveClass(/bad/);
+  await expect(dirOf('list price')).toHaveText(/▲/);
+  await expect(dirOf('list price')).toHaveClass(/bad/);
 });
 
 test('the vitals window is a choice, and changing it re-reads the record', async ({ page }) => {
@@ -1050,4 +1053,28 @@ test('the vitals window is a choice, and changing it re-reads the record', async
   // The fixture was built moments ago, so a narrower window holds the same
   // work — what must change is the window the report says it read.
   await expect(page.locator('.tile').filter({ hasText: 'shifts' }).locator('.tvalue')).toHaveText('2');
+});
+
+/**
+ * The company runs on a subscription, so the dollar figures are the SDK's
+ * imputed list price and no invoice will ever match them. The report has to
+ * say what actually depletes — tokens, and how much of the window is gone —
+ * or it reads as a bill nobody receives.
+ */
+test('vitals says what was consumed, not only what it would have cost', async ({ page }) => {
+  await go(page, 'Vitals');
+
+  const tiles = page.locator('.tile');
+  await expect(tiles.filter({ hasText: 'tokens' }).locator('.tvalue')).toHaveText('1.2M');
+  // The money tile is still there, and now says what it is.
+  await expect(tiles.filter({ hasText: 'list price' })).toContainText('not a bill');
+
+  const consumed = page.locator('section').filter({ hasText: 'What it consumed' });
+  await expect(consumed).toContainText('900.0K');   // read from cache
+  await expect(consumed).toContainText('200.0K');   // actually written
+  await expect(consumed).toContainText('84%');      // of the five-hour window
+
+  // The ceiling that can actually stop the company gets said in words.
+  await expect(page.locator('.finding').filter({ hasText: 'five hour window' }))
+    .toContainText('84%');
 });

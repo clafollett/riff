@@ -34,12 +34,29 @@ export type TickDeps = {
   signal?: AbortSignal;
 };
 
+/**
+ * A shift's consumption, split the way the subscription meter is.
+ *
+ * Cached input is the bulk of every leg after the first and is not priced or
+ * limited like fresh input, so a single total would say a company was heavy
+ * when it was mostly re-reading a system prompt it had already paid for.
+ */
+export type TokenCount = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+};
+
 export type TickResult = {
   agentId: string;
   ok: boolean;
   summary: string;
   costUsd: number;
   turns: number;
+  /** What the shift consumed, when any model reported usage. Counted because
+   *  costUsd is imputed list price and tokens are the resource that runs out. */
+  tokens?: TokenCount;
   /** Subscription rate-limit state, when the run reported any. On a Claude
    *  subscription this — not dollars — is what actually governs the company. */
   rateLimit?: SDKRateLimitInfo;
@@ -478,6 +495,33 @@ export const tick = async (
    * reported as zero when a shift died before any assistant turn — a 0% that
    * means "unknown" is worse than a gap, because it averages.
    */
+  /**
+   * Consumption and the subscription window, for the record.
+   *
+   * Both are omitted rather than zeroed when nothing reported them: a shift
+   * that died before its first turn consumed nothing measurable, and a zero
+   * that means "unknown" averages into every figure downstream. The
+   * rate-limit reading is the last one the run saw, which is the closest
+   * thing to what the operator had left when the shift ended.
+   */
+  const meter = (): Record<string, number | string> => ({
+    ...(spentAny()
+      ? {
+          tokens: tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite,
+          tokensIn: tokens.input,
+          tokensOut: tokens.output,
+          cacheRead: tokens.cacheRead,
+          cacheWrite: tokens.cacheWrite,
+        }
+      : {}),
+    ...(rateLimit?.utilization != null
+      ? {
+          utilization: rateLimit.utilization,
+          ...(rateLimit.rateLimitType ? { limitType: rateLimit.rateLimitType } : {}),
+        }
+      : {}),
+  });
+
   const context = (): Record<string, number> => (contextTokens
     ? {
         contextTokens,
@@ -486,6 +530,24 @@ export const tick = async (
           : {}),
       }
     : {});
+  /**
+   * What the shift consumed, as opposed to what it notionally cost.
+   *
+   * This company runs on a subscription: `total_cost_usd` is API list price
+   * imputed after the fact and nobody is billed a cent of it. Tokens and the
+   * rate-limit window are the resources that actually run out, so they are
+   * counted beside the money rather than left to be inferred from it.
+   *
+   * From `modelUsage` rather than `usage` on the SDK's own instruction: usage
+   * is the main loop only, while modelUsage covers subagents, sidechains and
+   * compaction — all of which spend the operator's window. It is cumulative
+   * within one query() call, and each leg is one call answering with one
+   * result, so legs add and turns within a leg do not.
+   */
+  const tokens: TokenCount = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const spentAny = (): boolean =>
+    tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite > 0;
+
   let rateLimit: SDKRateLimitInfo | undefined;
   /**
    * The ceiling in force, recorded alongside the count so the two can be read
@@ -645,6 +707,15 @@ export const tick = async (
       if (m.type === 'result') {
         turns += m.num_turns;
         costUsd += m.total_cost_usd;
+        // Counted before the hand-over guard below: a hand-over leg spends the
+        // operator's window like any other, even though its context is the
+        // conversation we are about to throw away.
+        for (const u of Object.values(m.modelUsage ?? {})) {
+          tokens.input += u.inputTokens;
+          tokens.output += u.outputTokens;
+          tokens.cacheRead += u.cacheReadInputTokens;
+          tokens.cacheWrite += u.cacheCreationInputTokens;
+        }
         if (handover) continue;
         contextWindow = m.modelUsage?.[agent.model]?.contextWindow ?? contextWindow;
         // "ended: error_max_turns" was going into the journal and the commit
@@ -735,8 +806,12 @@ export const tick = async (
   }
 
   if (failure) {
-    ledger.emit(agent.id, 'agent.failed', null, { error: failure });
-    return { agentId: agent.id, ok: false, summary: '', costUsd, turns, error: failure };
+    ledger.emit(agent.id, 'agent.failed', null, { error: failure, ...meter() });
+    return {
+      agentId: agent.id, ok: false, summary: '', costUsd, turns, error: failure,
+      ...(spentAny() ? { tokens } : {}),
+      ...(rateLimit ? { rateLimit } : {}),
+    };
   }
 
   // Their own account of the shift, in their own hand, in the world's git log.
@@ -753,9 +828,11 @@ export const tick = async (
     ...(truncated ? { truncated: true } : {}),
     ...(rotations ? { rotations } : {}),
     ...context(),
+    ...meter(),
   });
   return {
     agentId: agent.id, ok: true, summary: account, costUsd, turns,
+    ...(spentAny() ? { tokens } : {}),
     ...(truncated ? { truncated: true } : {}),
     ...(rotations ? { rotations } : {}),
     ...(rateLimit ? { rateLimit } : {}),

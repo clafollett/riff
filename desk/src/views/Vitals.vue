@@ -32,6 +32,11 @@ onEvents(() => props.events, /^(agent\.slept|agent\.failed|commons\.|role\.)/, l
 
 const usd = (n: number): string => `$${n.toFixed(2)}`;
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
+/** Millions once it is millions. Nobody reads 41,283,904. */
+const tok = (n: number): string => (n >= 1e6
+  ? `${(n / 1e6).toFixed(1)}M`
+  : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(Math.round(n)));
+const whole = (n: number): string => String(Math.round(n));
 const hrs = (n: number | null): string => (n == null ? '—' : `${n.toFixed(1)}h`);
 
 /**
@@ -47,12 +52,14 @@ type Dir = { text: string; way: 'good' | 'bad' | 'flat' } | null;
  * painted a week that cost forty dollars more than the last one in the success
  * colour — as it did a week with more barren shifts.
  */
-const delta = (key: keyof Trend, now: number, better: 'up' | 'down', unit = ''): Dir => {
+const delta = (key: keyof Trend, now: number, better: 'up' | 'down', fmt = whole): Dir => {
   const was = v.value?.previous?.[key];
   if (was == null) return null;
   const d = now - was;
   if (Math.abs(d) < 0.005) return { text: 'level', way: 'flat' };
-  const size = unit === '$' ? `$${Math.abs(d).toFixed(2)}` : String(Math.round(Math.abs(d)));
+  // The tile's own formatter, handed over rather than guessed at from a unit
+  // string: a token delta printed as a raw integer is nine digits of noise.
+  const size = fmt(Math.abs(d));
   const rose = d > 0;
   return {
     text: `${rose ? '▲' : '▼'} ${size}`,
@@ -97,9 +104,20 @@ const findings = computed<Array<{ severity: 'warn' | 'note'; text: string }>>(()
       `A draft has waited ${hrs(d.envelope.oldestPendingHours)} on the board. ` +
       `The staff cannot route around you.` });
   }
+  if (d.limits.seen && d.limits.peak >= 0.8) {
+    out.push({ severity: 'warn', text:
+      `The company reached ${pct(d.limits.peak)} of the ` +
+      `${d.limits.type ? d.limits.type.replace(/_/g, ' ') : 'subscription'} window. ` +
+      `That ceiling stops the work; the dollar figures do not.` });
+  }
+  if (d.tokens.measured && d.tokens.cacheHitRate < 0.5) {
+    out.push({ severity: 'note', text:
+      `Only ${pct(d.tokens.cacheHitRate)} of input came from cache. ` +
+      `Rotating conversations pays for the whole prompt again.` });
+  }
   if (d.shifts.costShareTop > 0.5 && d.people.length > 1) {
     out.push({ severity: 'note', text:
-      `${pct(d.shifts.costShareTop)} of the inference bill is one person.` });
+      `${pct(d.shifts.costShareTop)} of the imputed cost is one person.` });
   }
   if (d.talk.byStaff && d.talk.perCommit > 8) {
     out.push({ severity: 'warn', text:
@@ -132,9 +150,12 @@ const TILES: Tile[] = [
   { label: 'shifts', key: 'shifts', better: 'up',
     now: (d) => d.shifts.slept, fmt: String,
     sub: (d) => `${d.shifts.turnsPerShift.toFixed(1)} turns each` },
-  { label: 'spent', key: 'costUsd', better: 'down',
+  { label: 'tokens', key: 'tokens', better: 'down',
+    now: (d) => d.tokens.total, fmt: tok,
+    sub: (d) => (d.tokens.measured ? `${tok(d.tokens.perShift)} a shift` : 'not reported yet') },
+  { label: 'list price', key: 'costUsd', better: 'down',
     now: (d) => d.shifts.costUsd, fmt: usd,
-    sub: (d) => `${usd(d.shifts.costPerShift)} a shift` },
+    sub: (d) => `${usd(d.shifts.costPerShift)} a shift · not a bill` },
   { label: 'landed', key: 'commits', better: 'up',
     now: (d) => d.talk.byStaff, fmt: String,
     sub: (d) => (d.talk.byStaff ? `${usd(d.talk.costPerCommit)} a commit` : 'nothing reached the world') },
@@ -152,7 +173,7 @@ const tiles = computed(() => {
       label: t.label,
       value: t.fmt(now),
       sub: t.sub(d),
-      dir: delta(t.key, now, t.better, t.fmt === usd ? '$' : ''),
+      dir: delta(t.key, now, t.better, t.fmt),
     };
   });
 });
@@ -204,6 +225,28 @@ const tiles = computed(() => {
       </p>
 
       <div class="cols">
+        <section>
+          <h2>What it consumed</h2>
+          <dl v-if="v.tokens.measured">
+            <dt>tokens</dt><dd>{{ tok(v.tokens.total) }}</dd>
+            <dt>output</dt><dd>{{ tok(v.tokens.output) }}</dd>
+            <dt>fresh input</dt><dd>{{ tok(v.tokens.input) }}</dd>
+            <dt>cache read · write</dt>
+            <dd>{{ tok(v.tokens.cacheRead) }} · {{ tok(v.tokens.cacheWrite) }}</dd>
+            <dt>from cache</dt>
+            <dd :class="{ hot: v.tokens.cacheHitRate < 0.5 }">{{ pct(v.tokens.cacheHitRate) }}</dd>
+            <dt>subscription window</dt>
+            <dd v-if="v.limits.seen" :class="{ hot: v.limits.peak >= 0.8 }">
+              {{ pct(v.limits.latest) }}<span class="faint"> · peak {{ pct(v.limits.peak) }}</span>
+            </dd>
+            <dd v-else class="muted">not reported</dd>
+          </dl>
+          <p v-else class="muted">
+            No shift in this window reported usage. Dollars above are the SDK's
+            imputed list price, which nobody is billed.
+          </p>
+        </section>
+
         <section>
           <h2>Commons — rule 6</h2>
           <dl>
@@ -316,7 +359,7 @@ const tiles = computed(() => {
               <th scope="col" class="n">commits</th><th scope="col" class="n">posts</th>
               <th scope="col" class="n">mail</th><th scope="col" class="n">drafts</th>
               <th scope="col" class="n">done</th><th scope="col" class="n">denied</th>
-              <th scope="col" class="n">cost</th>
+              <th scope="col" class="n">tokens</th><th scope="col" class="n">list $</th>
             </tr>
           </thead>
           <tbody>
@@ -329,6 +372,7 @@ const tiles = computed(() => {
               <td class="n">{{ p.filed }}</td>
               <td class="n">{{ p.done }}</td>
               <td class="n" :class="{ hot: p.denied > 5 }">{{ p.denied || '' }}</td>
+              <td class="n">{{ p.tokens ? tok(p.tokens) : '—' }}</td>
               <td class="n">{{ usd(p.costUsd) }}</td>
             </tr>
           </tbody>

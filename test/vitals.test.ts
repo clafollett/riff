@@ -29,11 +29,20 @@ let root: string;
  */
 const shift = (
   who: string, did: Array<[string, (string | null)?, unknown?]>, turns = 4, costUsd = 0.1,
+  meter: Record<string, number | string> = {},
 ): void => {
   ledger.emit(who, 'agent.woke', null, { resumed: false });
   for (const [kind, subject, data] of did) ledger.emit(who, kind, subject ?? null, data);
-  ledger.emit(who, 'agent.slept', null, { turns, costUsd });
+  ledger.emit(who, 'agent.slept', null, { turns, costUsd, ...meter });
 };
+
+/** What staff.ts writes onto a shift that reported usage. */
+const meter = (
+  tokensIn: number, tokensOut: number, cacheRead = 0, cacheWrite = 0,
+): Record<string, number> => ({
+  tokens: tokensIn + tokensOut + cacheRead + cacheWrite,
+  tokensIn, tokensOut, cacheRead, cacheWrite,
+});
 
 /**
  * The window is half-open — `[since, until)` — so that a figure and the same
@@ -473,6 +482,97 @@ describe('who did the work', () => {
     ledger.emit('vim', 'gate.deny', null, { rule: 'R4.not_treasurer', capability: 'spend' });
     const v = report();
     assert.equal(v.people.find((p) => p.id === 'vim')?.denied, 1);
+    cleanup();
+  });
+});
+
+/**
+ * The company runs on a subscription. `costUsd` is the SDK's imputed list
+ * price and nobody is billed it; tokens and the rate-limit window are the
+ * resources that genuinely run out, so they are counted in their own right.
+ */
+describe('what the company consumed', () => {
+  test('tokens are counted apart from the dollars nobody is billed', () => {
+    shift('rae', [['commons.posted', 'commons/a.md']], 4, 0.5, meter(1_000, 500, 8_000, 2_000));
+    const v = report();
+    assert.equal(v.tokens.total, 11_500);
+    assert.equal(v.tokens.input, 1_000);
+    assert.equal(v.tokens.output, 500);
+    assert.equal(v.tokens.cacheRead, 8_000);
+    assert.equal(v.tokens.cacheWrite, 2_000);
+    // The dollar figure is still reported; it is simply a different claim.
+    assert.equal(v.shifts.costUsd, 0.5);
+    cleanup();
+  });
+
+  test('a shift that never reported usage is a gap, not a zero', () => {
+    shift('rae', [['message.sent']], 4, 0.1, meter(1_000, 1_000));
+    shift('vim', [['message.sent']]);
+    const v = report();
+    assert.equal(v.shifts.slept, 2);
+    // Averaging 2,000 over both shifts would report half of what the one
+    // measured shift actually consumed.
+    assert.equal(v.tokens.measured, 1);
+    assert.equal(v.tokens.perShift, 2_000);
+    cleanup();
+  });
+
+  test('a company with no usage reported anywhere says so rather than zero', () => {
+    shift('rae', [['message.sent']]);
+    const v = report();
+    assert.equal(v.tokens.measured, 0);
+    assert.equal(v.tokens.total, 0);
+    assert.equal(v.limits.seen, 0);
+    cleanup();
+  });
+
+  test('cached input is told from fresh, because only one of them is paid twice', () => {
+    shift('rae', [['message.sent']], 4, 0.1, meter(1_000, 0, 3_000, 0));
+    const v = report();
+    // 3,000 cached against 4,000 of input in total.
+    assert.equal(v.tokens.cacheHitRate, 0.75);
+    cleanup();
+  });
+
+  test('a failed shift still spent the window, and is counted for it', () => {
+    ledger.emit('rae', 'agent.woke', null, { resumed: false });
+    ledger.emit('rae', 'agent.failed', null, { error: 'boom', ...meter(5_000, 100) });
+    const v = report();
+    assert.equal(v.shifts.failed, 1);
+    assert.equal(v.tokens.total, 5_100);
+    // It failed. It must not read as a shift that produced anything.
+    assert.equal(v.shifts.slept, 0);
+    cleanup();
+  });
+
+  test('the subscription window reports where it stands and how close it came', () => {
+    shift('rae', [['message.sent']], 4, 0.1,
+      { ...meter(100, 100), utilization: 0.9, limitType: 'five_hour' });
+    shift('rae', [['message.sent']], 4, 0.1,
+      { ...meter(100, 100), utilization: 0.4, limitType: 'five_hour' });
+    const v = report();
+    // Latest is what is left now; peak is how close the company has come.
+    assert.equal(v.limits.latest, 0.4);
+    assert.equal(v.limits.peak, 0.9);
+    assert.equal(v.limits.type, 'five_hour');
+    assert.equal(v.limits.seen, 2);
+    cleanup();
+  });
+
+  test('tokens are attributed to the person who spent them', () => {
+    shift('rae', [['message.sent']], 4, 0.1, meter(9_000, 1_000));
+    shift('vim', [['message.sent']], 4, 0.1, meter(400, 100));
+    const v = report();
+    assert.equal(v.people.find((p) => p.id === 'rae')?.tokens, 10_000);
+    assert.equal(v.people.find((p) => p.id === 'vim')?.tokens, 500);
+    cleanup();
+  });
+
+  test('consumption is a trend, so a heavier week can be seen as one', () => {
+    shift('rae', [['message.sent']], 4, 0.1, meter(1_000, 1_000));
+    const v = report();
+    assert.equal(v.previous?.tokens, 0);
+    assert.equal(v.tokens.total, 2_000);
     cleanup();
   });
 });

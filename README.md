@@ -313,7 +313,14 @@ every tool call and every gate decision.
 
 `vitals.ts` is how you find out whether a week of them went well. Every figure
 is read back out of the event log, the ledger and the world's git history, so
-nothing is recorded for it and the window costs nothing to widen. It exists to
+nothing is recorded for it and the window costs nothing to widen.
+
+The dollar figures in it are the Agent SDK's `total_cost_usd`: API list price,
+imputed after the fact. Running this against a Claude subscription — which is
+how it is developed — means no invoice will ever match them, and they are
+reported as a comparison rather than a bill. What actually depletes is tokens
+and the rate-limit window, so the report leads with those and Rule 4's cap is
+a consumption cap denominated in dollars rather than a spending one. It exists to
 be able to **contradict this README**: a commons that never removes anything,
 a payroll that only grows, shifts that wake and leave nothing behind, and a
 board that has become the bottleneck all show up as numbers rather than as

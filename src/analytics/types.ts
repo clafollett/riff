@@ -146,6 +146,50 @@ export type TalkVitals = {
 
 export type MoneyVitals = { spends: number; cents: number; exceptions: number };
 
+/**
+ * What the company consumed, which is the figure that means something.
+ *
+ * Riff runs on a Claude subscription. `costUsd` everywhere else in this module
+ * is the SDK's `total_cost_usd`: API list price imputed after the fact, useful
+ * as a comparison and billed to nobody. Tokens are the resource that actually
+ * depletes, so they are reported in their own right rather than left to be
+ * guessed at from a dollar figure that no invoice will ever match.
+ */
+export type TokenVitals = {
+  total: number;
+  /** Fresh input — the part that was not already paid for by a cache write. */
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  perShift: number;
+  /**
+   * Cached input as a share of all input. A company that rotates its
+   * conversations too eagerly pays the full prompt again each time, and this
+   * is where that shows up before the window does.
+   */
+  cacheHitRate: number;
+  /** Shifts that reported usage at all. The rest are gaps, not zeroes. */
+  measured: number;
+};
+
+/**
+ * The subscription window: the ceiling this company actually runs into.
+ *
+ * `utilization` is a fraction of the window in force, which is why `type`
+ * travels with it — 60% of five hours and 60% of seven days are not the same
+ * news. Absent when no shift in the window heard from the rate limiter.
+ */
+export type LimitVitals = {
+  /** The most recent reading: what is left right now. */
+  latest: number;
+  /** The highest reading in the window: how close the company has come. */
+  peak: number;
+  type: string;
+  /** Shifts carrying a reading. Zero means the whole section is unknown. */
+  seen: number;
+};
+
 /** A rule that refused something. Allows are counted in the totals but never
  *  listed: there are thousands of them and none is news. */
 export type RuleBite = { kind: string; rule: string; capability: string; n: number };
@@ -158,6 +202,9 @@ export type PersonVitals = {
   shifts: number;
   turns: number;
   costUsd: number;
+  /** What they consumed of the subscription window, which is the figure that
+   *  decides who is expensive. `costUsd` beside it is a list-price comparison. */
+  tokens: number;
   commits: number;
   messages: number;
   posted: number;
@@ -174,7 +221,7 @@ export type PersonVitals = {
  * against is a number, not a signal.
  */
 export type Trend = {
-  shifts: number; costUsd: number; commits: number; messages: number;
+  shifts: number; costUsd: number; tokens: number; commits: number; messages: number;
   posted: number; removed: number; filed: number; released: number;
   done: number; dropped: number; blind: number; failed: number;
   hired: number; retired: number; barren: number;
@@ -184,6 +231,8 @@ export type Vitals = {
   window: Window;
   previous: Trend | null;
   shifts: ShiftVitals;
+  tokens: TokenVitals;
+  limits: LimitVitals;
   org: OrgVitals;
   throttle: ThrottleVitals;
   commons: CommonsVitals;
