@@ -969,7 +969,7 @@ test('vitals reports what the week cost and what it produced', async ({ page }) 
   // Scoped by heading, never by position. These two tables are the only ones
   // on the page, so an empty refusals section would slide a positional
   // .first() onto the people table and fail with the wrong explanation.
-  const refusals = page.locator('section').filter({ hasText: 'Where the rules bit' });
+  const refusals = page.locator('section').filter({ hasText: 'The gate' });
   await expect(refusals.locator('.grid')).toContainText('R6.commons_full');
   const who = page.locator('section').filter({ hasText: 'Who did the work' });
   await expect(who.locator('.grid')).toContainText('Fen');
@@ -1013,7 +1013,7 @@ test('no figure in the report renders as a hole where a number should be', async
 
   // Both tables, scoped by heading rather than by position, and each held to
   // its own floor — one row of either would satisfy a count across the pair.
-  for (const [heading, floor] of [['Where the rules bit', 4], ['Who did the work', 9]] as const) {
+  for (const [heading, floor] of [['The gate', 4], ['Who did the work', 9]] as const) {
     const cells = page.locator('section').filter({ hasText: heading }).locator('.grid td');
     expect(await cells.count()).toBeGreaterThanOrEqual(floor);
     for (const c of await cells.allInnerTexts()) {
@@ -1072,8 +1072,12 @@ test('vitals says what was consumed, not only what it would have cost', async ({
 
   const tiles = page.locator('.tile');
   await expect(tiles.filter({ hasText: 'tokens' }).locator('.tvalue')).toHaveText('1.2M');
-  // The money tile is still there, and now says what it is.
-  await expect(tiles.filter({ hasText: 'list price' })).toContainText('not a bill');
+  // The money tile says what it is in its label, and the section says it in
+  // words — whether or not there is usage to report, because the claim is
+  // needed most when there are numbers beside it to misread.
+  await expect(tiles.filter({ hasText: 'list price' })).toBeVisible();
+  await expect(page.locator('section').filter({ hasText: 'What it consumed' }))
+    .toContainText('billed by subscription and nobody is charged them');
 
   // A window is wall clock; the company only exists while its scheduler is up,
   // so the header says how much of the window was actually worked.

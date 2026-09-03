@@ -159,6 +159,13 @@ type Tile = {
   fmt: (n: number) => string;
   sub: (d: Vitals) => string;
   better: 'up' | 'down';
+  /**
+   * Nothing measured this figure in the window, so there is no number to
+   * show. A 0 here is a claim — "the company consumed nothing" — and an
+   * arrow beside it compares two absences and calls them level. The section
+   * below already reports the gap; the tile has to agree with it.
+   */
+  absent?: (d: Vitals) => boolean;
 };
 
 const TILES: Tile[] = [
@@ -166,11 +173,13 @@ const TILES: Tile[] = [
     now: (d) => d.shifts.slept, fmt: String,
     sub: (d) => `${d.shifts.turnsPerShift.toFixed(1)} turns each` },
   { label: 'tokens', key: 'tokens', better: 'down',
-    now: (d) => d.tokens.total, fmt: tok,
-    sub: (d) => (d.tokens.measured ? `${tok(d.tokens.perShift)} a shift` : 'not reported yet') },
+    now: (d) => d.tokens.total, fmt: tok, absent: (d) => !d.tokens.measured,
+    sub: (d) => (d.tokens.measured ? `${tok(d.tokens.perShift)} a shift` : 'no shift reported usage') },
+  // The label carries "list price"; repeating "not a bill" in the sub-line
+  // wrapped the tile onto a second row next to a delta.
   { label: 'list price', key: 'costUsd', better: 'down',
     now: (d) => d.shifts.costUsd, fmt: usd,
-    sub: (d) => `${usd(d.shifts.costPerShift)} a shift · not a bill` },
+    sub: (d) => `${usd(d.shifts.costPerShift)} a shift` },
   { label: 'landed', key: 'commits', better: 'up',
     now: (d) => d.talk.byStaff, fmt: String,
     sub: (d) => (d.talk.byStaff ? `${usd(d.talk.costPerCommit)} a commit` : 'nothing reached the world') },
@@ -184,11 +193,12 @@ const tiles = computed(() => {
   if (!d) return [];
   return TILES.map((t) => {
     const now = t.now(d);
+    const absent = t.absent?.(d) ?? false;
     return {
       label: t.label,
-      value: t.fmt(now),
+      value: absent ? '—' : t.fmt(now),
       sub: t.sub(d),
-      dir: delta(t.key, now, t.better, t.fmt),
+      dir: absent ? null : delta(t.key, now, t.better, t.fmt),
     };
   });
 });
@@ -264,8 +274,14 @@ const tiles = computed(() => {
             <dd v-else class="muted">not reported</dd>
           </dl>
           <p v-else class="muted">
-            No shift in this window reported usage. Dollars above are the SDK's
-            imputed list price, which nobody is billed.
+            No shift in this window reported usage.
+          </p>
+          <!-- Said whether or not there is usage to report. Dropping it into
+               the empty state only meant the claim vanished the moment there
+               were numbers to misread. -->
+          <p class="note">
+            Dollars anywhere in this report are the SDK's imputed list price.
+            This account is billed by subscription and nobody is charged them.
           </p>
         </section>
 
@@ -332,27 +348,36 @@ const tiles = computed(() => {
         </section>
 
         <section>
-          <h2>The gate</h2>
+          <h2>Housekeeping</h2>
           <dl>
-            <dt>allow</dt><dd>{{ v.gate.allow }}</dd>
-            <dt>deny</dt><dd>{{ v.gate.deny }}</dd>
-            <dt>escalate</dt><dd>{{ v.gate.escalate }}</dd>
             <dt v-if="v.money.cents">spent</dt>
             <dd v-if="v.money.cents">{{ usd(v.money.cents / 100) }}</dd>
-            <dt v-if="v.shifts.rotated || v.shifts.compacted">rotated · compacted</dt>
-            <dd v-if="v.shifts.rotated || v.shifts.compacted">
-              {{ v.shifts.rotated }} · {{ v.shifts.compacted }}</dd>
+            <dt>rotated · compacted</dt>
+            <dd>{{ v.shifts.rotated }} · {{ v.shifts.compacted }}</dd>
+            <dt>cut at the ceiling</dt><dd>{{ v.shifts.truncated }}</dd>
+            <dt>failed · blind</dt>
+            <dd :class="{ hot: v.shifts.blind > 0 }">{{ v.shifts.failed }} · {{ v.shifts.blind }}</dd>
           </dl>
         </section>
       </div>
 
       <!-- Which rules actually bite. The constitution claims Rule 6 is the
-           load-bearing one; this is the table that can contradict it. -->
-      <section v-if="v.gate.rules.length">
-        <h2>Where the rules bit</h2>
+           load-bearing one; this is the table that can contradict it.
+           The three totals lead it rather than sitting in a grid cell of
+           their own: they are the same subject, and as a seventh cell in a
+           three-column grid they stranded a row to hold three numbers. -->
+      <section>
+        <h2>The gate</h2>
+        <p class="tally">
+          <strong>{{ v.gate.allow.toLocaleString() }}</strong> allowed,
+          <strong>{{ v.gate.deny.toLocaleString() }}</strong> refused,
+          <strong>{{ v.gate.escalate.toLocaleString() }}</strong> sent up.
+          <span v-if="!v.gate.rules.length" class="faint">
+            Nothing was refused in this window.</span>
+        </p>
         <!-- Nine columns of figures do not fit a narrow window, and a table
              that widens the document scrolls the whole page sideways. -->
-        <div class="tablewrap">
+        <div v-if="v.gate.rules.length" class="tablewrap">
         <table class="grid">
           <caption class="offscreen">Rules that refused something, most often first</caption>
           <thead><tr><th scope="col">times</th><th scope="col">decision</th>
@@ -418,6 +443,11 @@ h1 { font-size: 30px; }
 h2 { font-size: 13px; font-family: var(--sans); text-transform: uppercase;
   letter-spacing: .1em; color: var(--faint); margin: 30px 0 10px; }
 .lede { margin: 6px 0 24px; font-size: 14px; max-width: 62ch; }
+/* Three totals that belong to the table under them, not to a grid cell of
+   their own — as one they stranded a row of a three-column grid. */
+.note { margin: 14px 0 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
+.tally { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+.tally strong { font-family: var(--mono); font-weight: 500; color: var(--ink); }
 .empty, .clean { font-size: 15px; max-width: 58ch; margin: 18px 0; }
 .windows { display: flex; gap: 6px; margin-left: auto; flex: none; }
 .win { font-family: var(--mono); font-size: 11px; letter-spacing: .05em;
@@ -447,7 +477,12 @@ h2 { font-size: 13px; font-family: var(--sans); text-transform: uppercase;
 .failed { border: 1px solid #5c3a26; background: #241a11; border-radius: 5px;
   padding: 12px 16px; font-size: 14px; }
 
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 34px; }
+/* Multi-column rather than a grid: the sections are different heights and a
+   grid puts each on a row of its own height, so seven of them left one
+   stranded alone on a third row with two empty columns beside it. Columns
+   balance the flow instead, and break-inside keeps a section whole. */
+.cols { columns: 3 280px; column-gap: 34px; }
+.cols > section { break-inside: avoid; margin-bottom: 30px; }
 dl { display: grid; grid-template-columns: 1fr auto; gap: 5px 14px; margin: 0;
   font-size: 13px; align-items: baseline; }
 dt { color: var(--muted); }
