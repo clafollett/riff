@@ -677,3 +677,4 @@ describe('how much of the window the company actually worked', () => {
     cleanup();
   });
 });
+

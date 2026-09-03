@@ -234,6 +234,41 @@ export class World {
 
   commonsCount(): number { return this.listCommons().length; }
 
+  /**
+   * What the company is carrying, for R7.
+   *
+   * A project is a directory directly under `projects/`. Nothing declares
+   * one — it exists because somebody wrote a file into it, which is how they
+   * actually begin. Dotfiles are skipped so a stray `.DS_Store` or a
+   * scratch `.work-mut-*` never counts as work.
+   */
+  listProjects(): string[] {
+    const dir = join(this.#root, 'projects');
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => !f.startsWith('.') && statSync(join(dir, f)).isDirectory())
+      .sort();
+  }
+
+  projectCount(): number { return this.listProjects().length; }
+
+  /**
+   * Retire a project: the counterpart to R7, as remove() is to R6.
+   *
+   * Recursive, unlike remove(), because a project is a tree and rmSync on a
+   * directory without it throws rather than refusing — a ceiling whose only
+   * escape hatch errors is a wall.
+   */
+  removeProject(name: string): boolean {
+    // Never let a name climb out of projects/. The gate classifies paths, but
+    // this is reachable from a tool argument and must not depend on that.
+    if (!name || name.startsWith('.') || name.includes('/') || name.includes('\\')) return false;
+    const abs = join(this.#root, 'projects', name);
+    if (!existsSync(abs)) return false;
+    rmSync(abs, { recursive: true, force: true });
+    return true;
+  }
+
   listDrafts(id: AgentId): string[] {
     const dir = join(this.#root, 'staff', slug(id), 'drafts');
     if (!existsSync(dir)) return [];

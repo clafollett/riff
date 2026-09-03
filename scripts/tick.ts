@@ -26,8 +26,18 @@ const clock = systemClock;
 const { ledger, world } = found(cfg, clock);
 const gate = new Gate(
   ledger,
-  constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) }),
+  // The company's own policy, not the defaults. These scripts exist to prove
+  // a change before a company runs on it, and a gate built from defaults
+  // proves it against rules the runtime does not use.
+  constitutionFor({
+    ceo: cfg.ceo.id,
+    board: cfg.board.map((b) => b.id),
+    commonsCeiling: cfg.policy.commonsCeiling,
+    portfolioCeiling: cfg.policy.portfolioCeiling,
+    dailyCapCents: cfg.policy.dailyCapCents,
+  }),
   { count: () => world.commonsCount(), exists: (p) => world.exists(p) },
+  { count: () => world.projectCount(), has: (n) => world.listProjects().includes(n) },
 );
 
 const agent = ledger.getAgent(who);

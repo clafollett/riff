@@ -225,3 +225,89 @@ describe('a draft can be taken back by the person who sent it', () => {
     assert.equal(ledger.getApproval(ap.id)!.state, 'approved', 'the board had already spoken');
   });
 });
+
+/**
+ * R7 — the portfolio budget.
+ *
+ * R6 rations what the company writes down; nothing rationed what it works
+ * on. A real company shipped sixteen point releases of the first idea it had
+ * because continuing is always locally cheaper than starting, and no shift
+ * was ever given a reason to ask whether the project should still exist.
+ */
+describe('R7 — the portfolio has a ceiling too', () => {
+  /** A gate whose world is carrying `names`, under a ceiling of `ceiling`. */
+  const carrying = (names: string[], ceiling = 2) => {
+    const held = new Set(names);
+    return new Gate(
+      ledger,
+      constitutionFor({ ceo: 'ceo', board: ['chair'], portfolioCeiling: ceiling }),
+      commons,
+      { count: () => held.size, has: (n) => held.has(n) },
+    );
+  };
+
+  test('starting a project past the ceiling is refused, and says what to do', () => {
+    const d = carrying(['alpha', 'beta']).request({
+      actor: 'rae', capability: 'world.write',
+      summary: 'begin the thing', target: 'projects/gamma/README.md',
+    });
+    assert.equal(d.kind, 'deny');
+    assert.equal(d.kind === 'deny' && d.rule, 'R7.portfolio_full');
+    assert.match(d.kind === 'deny' ? d.reason : '', /retire one/i);
+    assert.match(d.kind === 'deny' ? d.reason : '', /gamma/);
+  });
+
+  test('working on a project the company already carries is always free', () => {
+    // The rule rations starting, never continuing. Rationing both would stop
+    // a full company working at all.
+    const d = carrying(['alpha', 'beta']).request({
+      actor: 'rae', capability: 'world.write',
+      summary: 'fix a bug', target: 'projects/alpha/src/index.js',
+    });
+    assert.equal(d.kind, 'allow');
+  });
+
+  test('there is room until there is not', () => {
+    const d = carrying(['alpha']).request({
+      actor: 'rae', capability: 'world.write',
+      summary: 'begin', target: 'projects/beta/README.md',
+    });
+    assert.equal(d.kind, 'allow');
+  });
+
+  test('the rule can be switched off, for a company that wants to accrete', () => {
+    const d = carrying(['alpha', 'beta', 'gamma'], 0).request({
+      actor: 'rae', capability: 'world.write',
+      summary: 'begin', target: 'projects/delta/README.md',
+    });
+    assert.equal(d.kind, 'allow');
+  });
+
+  test('writing outside projects/ is not portfolio work and never counts', () => {
+    for (const target of ['commons/notes.md', 'staff/rae/memory.md', 'README.md']) {
+      const d = carrying(['alpha', 'beta']).request({
+        actor: 'rae', capability: 'world.write', summary: 'write', target,
+      });
+      assert.equal(d.kind, 'allow', `${target} was rationed as a project`);
+    }
+  });
+
+  test('a dotfile under projects/ does not spend a slot on the portfolio', () => {
+    // projects/.gitignore is housekeeping. Counting it would refuse a write
+    // the company must be able to make, and World.listProjects skips it too.
+    const d = carrying(['alpha', 'beta']).request({
+      actor: 'rae', capability: 'world.write',
+      summary: 'ignore build output', target: 'projects/.gitignore',
+    });
+    assert.equal(d.kind, 'allow');
+  });
+
+  test('the refusal is on the record, like every other decision', () => {
+    carrying(['alpha', 'beta']).request({
+      actor: 'rae', capability: 'world.write',
+      summary: 'begin', target: 'projects/gamma/README.md',
+    });
+    const denies = ledger.eventsSince(0).filter((e) => e.kind === 'gate.deny');
+    assert.equal(denies.at(-1)?.subject, 'projects/gamma/README.md');
+  });
+});

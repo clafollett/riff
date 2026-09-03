@@ -996,6 +996,10 @@ test('no figure in the report renders as a hole where a number should be', async
   // x/0 is the likelier slip of the two, so Infinity belongs here as much as NaN.
   const holes = /^(|undefined|null|NaN|\$NaN|NaN%|—%|\$undefined|Infinity|\$Infinity|Infinity%|-Infinity)$/;
 
+  // The section that says whether the company can still do something new.
+  await expect(page.locator('section').filter({ hasText: 'Is it still finding things' }))
+    .toContainText('carrying');
+
   const tiles = await page.locator('.tile .tvalue').allInnerTexts();
   expect(tiles.length).toBe(5);
   for (const t of tiles) expect(t.trim()).not.toMatch(holes);

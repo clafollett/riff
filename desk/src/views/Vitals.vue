@@ -112,6 +112,20 @@ const findings = computed<Array<{ severity: 'warn' | 'note'; text: string }>>(()
       `The company worked ${d.run.hours.toFixed(1)} hours of this ${d.window.spec} window. ` +
       `Read the rates per running hour — per day they are wrong by ${(1 / d.run.dutyCycle).toFixed(0)}×.` });
   }
+  // Every other figure in this report rewards throughput, so a company
+  // shipping the sixteenth point release of its first idea outscores one that
+  // launched something. Rule 7 exists to make that expensive; this is what
+  // says whether it worked.
+  if ((d.novelty.newestAgeDays ?? 0) > 14 && d.novelty.carrying > 0) {
+    out.push({ severity: 'warn', text:
+      `Nothing new in ${d.novelty.newestAgeDays} days — the newest project is the ` +
+      `oldest thing here. ${d.novelty.retired ? '' : 'Nothing has been retired either.'}` });
+  }
+  if (d.novelty.carrying > 1 && d.novelty.concentration > 0.9) {
+    out.push({ severity: 'note', text:
+      `${pct(d.novelty.concentration)} of the work went into one project. ` +
+      `That is focus or a rut, and how old it is says which.` });
+  }
   // The weekly window is the one worth a sentence: it is what the company is
   // actually paced against, and the only ceiling that cannot recover overnight.
   if (d.limits.week && d.limits.week.latest >= 0.75) {
@@ -283,6 +297,26 @@ const tiles = computed(() => {
             Dollars anywhere in this report are the SDK's imputed list price.
             This account is billed by subscription and nobody is charged them.
           </p>
+        </section>
+
+        <section>
+          <h2>Is it still finding things</h2>
+          <dl>
+            <dt>carrying</dt>
+            <dd :class="{ hot: v.novelty.ceiling > 0 && v.novelty.carrying >= v.novelty.ceiling }">
+              {{ v.novelty.carrying }}<span v-if="v.novelty.ceiling">/{{ v.novelty.ceiling }}</span>
+            </dd>
+            <dt>started · retired</dt>
+            <dd>{{ v.novelty.started }} · {{ v.novelty.retired }}</dd>
+            <dt>newest is</dt>
+            <dd :class="{ hot: (v.novelty.newestAgeDays ?? 0) > 14 }">
+              {{ v.novelty.newestAgeDays == null ? '—' : v.novelty.newestAgeDays + 'd old' }}
+            </dd>
+            <dt>worked on</dt><dd>{{ v.novelty.touched }}</dd>
+            <dt>biggest share</dt>
+            <dd :class="{ hot: v.novelty.concentration > 0.9 && v.novelty.carrying > 1 }">
+              {{ pct(v.novelty.concentration) }}</dd>
+          </dl>
         </section>
 
         <section>

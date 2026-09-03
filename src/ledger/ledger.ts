@@ -145,18 +145,21 @@ export class Ledger {
   }
 
   /**
-   * The last of these kinds before an instant, or null.
+   * The most recent event of these kinds, or null.
    *
-   * A window that opens mid-shift needs to know what the company was doing
-   * when it opened. Counting only the events inside it reads a company that
-   * had been running for a week as one that started when the window did.
+   * `before` bounds it, for a window that opens mid-shift and needs to know
+   * what the company was doing when it opened — counting only the events
+   * inside the window reads a company that had been running for a week as one
+   * that started when the window did. Left off, it means "the latest, ever",
+   * which is what a caller asking "has this changed?" wants: bounding that at
+   * the current instant drops a change made in the same millisecond.
    */
-  lastEventBefore(kinds: string[], at: string): Event | null {
+  lastEvent(kinds: string[], before?: string): Event | null {
     if (kinds.length === 0) return null;
     const holes = kinds.map(() => '?').join(',');
     const r = this.#db.prepare(
-      `SELECT * FROM events WHERE at<? AND kind IN (${holes}) ORDER BY seq DESC LIMIT 1`
-    ).get(at, ...(kinds as never[])) as Row | undefined;
+      `SELECT * FROM events WHERE ${before ? 'at<? AND ' : ''}kind IN (${holes}) ORDER BY seq DESC LIMIT 1`
+    ).get(...(before ? [before] : []), ...(kinds as never[])) as Row | undefined;
     return r ? this.#toEvent(r) : null;
   }
 

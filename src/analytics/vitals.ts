@@ -18,7 +18,8 @@ import type { Clock } from '../core/clock.ts';
 import type { AgentId, Event } from '../core/types.ts';
 import type {
   CommonsVitals, EnvelopeVitals, LimitVitals, MoneyVitals, OrgVitals, PersonVitals,
-  RunVitals, ShiftVitals, TalkVitals, TokenVitals, Trend, Vitals, Window, WorkVitals,
+  NoveltyVitals, RunVitals, ShiftVitals, TalkVitals, TokenVitals, Trend, Vitals, Window,
+  WorkVitals,
 } from './types.ts';
 
 export type * from './types.ts';
@@ -119,6 +120,8 @@ export type VitalsDeps = {
   world: World;
   clock: Clock;
   commonsCeiling: number;
+  /** R7's ceiling, for reporting it beside what the company is carrying. */
+  portfolioCeiling?: number;
 };
 
 export const vitals = (
@@ -283,7 +286,7 @@ export const vitals = (
    * window opened — and if it never paused, `until` closes the last stretch.
    */
   const marks = d.ledger.eventsOfKinds(['work.started', 'work.paused'], since, until);
-  const before = d.ledger.lastEventBefore(['work.started', 'work.paused'], since);
+  const before = d.ledger.lastEvent(['work.started', 'work.paused'], since);
   let openedAt: number | null = before?.kind === 'work.started' ? Date.parse(since) : null;
   let runningMs = 0;
   for (const e of marks) {
@@ -314,6 +317,37 @@ export const vitals = (
     shiftsPerHour: over(slept, runHours),
     tokensPerHour: over(totalTokens, runHours),
     costPerHour: over(costUsd, runHours),
+  };
+
+  /**
+   * Whether the company can still do something it has not done.
+   *
+   * Everything else here rewards throughput, so a company shipping the
+   * sixteenth point release of its first idea outscores one that launched
+   * something. R7 exists to make that expensive; this is what says whether
+   * it worked, and it has to be readable before the rule is judged.
+   */
+  const projects = d.world.listProjects();
+  const perProject = projects.map((name) => ({
+    name,
+    commits: d.world.git.commitsTouching(`projects/${name}`, since, until),
+    first: d.world.git.firstCommitAt(`projects/${name}`),
+  }));
+  const projectCommits = perProject.reduce((s, p) => s + p.commits, 0);
+  const newestFirst = perProject
+    .map((p) => (p.first ? Date.parse(p.first) : 0))
+    .reduce((a, b) => Math.max(a, b), 0);
+  const novelty: NoveltyVitals = {
+    carrying: projects.length,
+    ceiling: d.portfolioCeiling ?? 0,
+    // A project whose first commit lands inside the window was started in it.
+    started: perProject.filter((p) => p.first && p.first >= since && p.first < until).length,
+    retired: n('project.retired'),
+    newestAgeDays: newestFirst
+      ? Math.round(((endAt - newestFirst) / 86_400_000) * 10) / 10
+      : null,
+    concentration: over(Math.max(0, ...perProject.map((p) => p.commits)), projectCommits),
+    touched: perProject.filter((p) => p.commits > 0).length,
   };
 
   const limits: LimitVitals = {
@@ -483,6 +517,7 @@ export const vitals = (
     previous,
     shifts,
     run,
+    novelty,
     tokens,
     limits,
     org,

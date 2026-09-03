@@ -136,6 +136,32 @@ export class WorldGit {
     });
   }
 
+  /**
+   * Commits touching one path inside a window.
+   *
+   * Per-path rather than parsing --name-only over the whole log: a project is
+   * a directory and git already answers "what happened in this directory"
+   * exactly, where reconstructing it from file lists has to guess at renames.
+   * The caller asks about a handful of projects, not thousands of files.
+   */
+  commitsTouching(path: string, when: string, until?: string): number {
+    const out = this.#git(['log', `--since=${when}`, ...(until ? [`--until=${until}`] : []),
+      '--pretty=format:%h', '--', path]);
+    return out ? out.split('\n').filter(Boolean).length : 0;
+  }
+
+  /**
+   * When a path was first committed, ever — not inside a window.
+   *
+   * The age of the newest project is a fact about the company's history, and
+   * a window-bounded answer would report a five-week-old project as new the
+   * first time anyone touched it in a fresh week.
+   */
+  firstCommitAt(path: string): string | null {
+    const out = this.#git(['log', '--reverse', '--pretty=format:%aI', '--', path]);
+    return out ? (out.split('\n')[0] ?? null) : null;
+  }
+
   diffOf(sha: string): string {
     return this.#git(['show', '--stat', '--pretty=format:%an %s', sha]);
   }

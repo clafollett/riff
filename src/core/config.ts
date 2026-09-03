@@ -71,6 +71,16 @@ export type CompanyPolicy = {
   rotateAtContextPct: number;
   /** R6: how many documents the commons may hold. */
   commonsCeiling: number;
+  /**
+   * R7: how many projects the company may carry at once.
+   *
+   * Rule 6 rations documents and nothing rationed the work itself, so a
+   * company kept shipping point releases of the first thing it thought of:
+   * continuing is always locally cheaper than starting, and no shift ever had
+   * a reason to ask whether the project should still exist. 0 turns the rule
+   * off, for a company that genuinely wants to accrete.
+   */
+  portfolioCeiling: number;
   /** R4: per-treasurer, per-day ceiling on real money, in whole cents. */
   dailyCapCents: number;
 };
@@ -94,6 +104,9 @@ export const DEFAULT_POLICY: CompanyPolicy = {
   // paying for it too.
   rotateAtContextPct: 50,
   commonsCeiling: 40,
+  // Small on purpose. The rule does nothing until it bites, and a ceiling a
+  // company never reaches is a ceiling that never made it choose.
+  portfolioCeiling: 3,
   dailyCapCents: 500,
 };
 
@@ -125,6 +138,8 @@ export const readPolicy = (raw: unknown): CompanyPolicy => {
     // fires, because compaction is what it exists to pre-empt.
     rotateAtContextPct: Math.round(num('rotateAtContextPct', 0, 90)),
     commonsCeiling: Math.round(num('commonsCeiling', 1, 500)),
+    // 0 is a real setting here, unlike the commons: it means "no ceiling".
+    portfolioCeiling: Math.round(num('portfolioCeiling', 0, 200)),
     dailyCapCents: Math.round(num('dailyCapCents', 0, 100_000_00)),
   };
 };

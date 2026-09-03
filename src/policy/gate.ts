@@ -15,15 +15,41 @@ import type { Constitution } from './rules.ts';
 /** The gate asks about the commons rather than reading the disk itself. */
 export type CommonsView = { count(): number; exists(path: string): boolean };
 
+/** The same, for the projects the company is carrying. R7 rations starting one. */
+export type PortfolioView = { count(): number; has(name: string): boolean };
+
+/**
+ * The project a world path belongs to, or null if it is not project work.
+ *
+ * `projects/mcplint/src/x.js` is the mcplint project. `projects/mcplint` on
+ * its own is too — a project begins the moment anything is written under its
+ * name, because nothing else declares one.
+ */
+export const projectOf = (target: string): string | null => {
+  const m = /^projects\/([^/]+)/.exec(target);
+  const name = m?.[1];
+  // A dotfile directly under projects/ is not a project, matching
+  // World.listProjects — otherwise writing projects/.gitignore would spend a
+  // slot on the portfolio.
+  return name && !name.startsWith('.') ? name : null;
+};
+
 export class Gate {
   #ledger: Ledger;
   #c: Constitution;
   #commons: CommonsView;
+  #portfolio: PortfolioView;
 
-  constructor(ledger: Ledger, constitution: Constitution, commons: CommonsView) {
+  constructor(
+    ledger: Ledger, constitution: Constitution, commons: CommonsView,
+    // Optional so the many call sites that only ever exercise R1-R6 keep
+    // working. Absent, R7 has nothing to count and does not fire.
+    portfolio: PortfolioView = { count: () => 0, has: () => true },
+  ) {
     this.#ledger = ledger;
     this.#c = constitution;
     this.#commons = commons;
+    this.#portfolio = portfolio;
   }
 
   get constitution(): Constitution { return this.#c; }
@@ -115,6 +141,27 @@ export class Gate {
             reason: `the commons holds ${count} of ${c.commonsCeiling} documents. ` +
               `Remove one that has stopped being true before adding another — ` +
               `and say which, and why, when you do.`,
+          };
+        }
+      }
+    }
+
+    // ---- R7: the portfolio budget ----
+    // The same shape as R6 one rule up, aimed at what the company works on
+    // rather than what it writes down. Continuing an existing project is
+    // free; only STARTING another is rationed, because the failure is a
+    // company that ships point releases of its first idea forever — every
+    // one of them defensible, none of them a decision to keep going.
+    if (capability === 'world.write' && c.portfolioCeiling > 0 && req.target) {
+      const project = projectOf(req.target);
+      if (project && !this.#portfolio.has(project)) {
+        const count = this.#portfolio.count();
+        if (count >= c.portfolioCeiling) {
+          return {
+            kind: 'deny', rule: 'R7.portfolio_full',
+            reason: `you are carrying ${count} of ${c.portfolioCeiling} projects. ` +
+              `Retire one you have stopped believing in before starting "${project}" — ` +
+              `and say what you learned from it, and why it is over.`,
           };
         }
       }

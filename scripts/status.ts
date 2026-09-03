@@ -18,7 +18,13 @@ takeCompanyFlag();
 const cfg = resolveConfig();
 const ledger = new Ledger(cfg.ledgerPath, systemClock);
 const world = new World(cfg.worldDir, systemClock);
-const c = constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) });
+const c = constitutionFor({
+  ceo: cfg.ceo.id,
+  board: cfg.board.map((b) => b.id),
+  commonsCeiling: cfg.policy.commonsCeiling,
+  portfolioCeiling: cfg.policy.portfolioCeiling,
+  dailyCapCents: cfg.policy.dailyCapCents,
+});
 
 const agents = ledger.listAgents();
 const tasks = ledger.listTasks();
@@ -39,6 +45,8 @@ const orphans = agents.filter((a) => a.reportsTo && !ledger.getAgent(a.reportsTo
 if (orphans.length) console.log(`\n  ⚠ ${orphans.length} broken reporting line(s): ${orphans.map((a) => a.id).join(', ')}`);
 
 console.log(`\n  COMMONS  ${world.commonsCount()} / ${c.commonsCeiling}`);
+console.log(`  CARRYING ${world.projectCount()}${c.portfolioCeiling ? ` / ${c.portfolioCeiling}` : ''}` +
+  `${world.listProjects().length ? `  ${world.listProjects().join(', ')}` : ''}`);
 for (const d of world.listCommons()) console.log(`    ${d}`);
 
 console.log(`\n  WAITING ON THE BOARD  ${pending.filter((a) => a.tier === 'board').length}`);

@@ -39,6 +39,21 @@ export type Constitution = {
    * structural. Variation without selection is not emergence, it is a pile.
    */
   commonsCeiling: number;
+
+  /**
+   * R7 — the portfolio budget.
+   *
+   * The company may carry this many projects. Past it, starting one requires
+   * retiring one. 0 disables the rule.
+   *
+   * R6 rations what the company writes down and nothing rationed what it
+   * works on, which is the accretion that actually costs: a company shipped
+   * sixteen point releases of the first idea it had, because continuing is
+   * always cheaper than starting and no shift was ever given a reason to ask
+   * whether the project should still exist. Variation without selection is a
+   * pile — and R6 was selecting on the wrong thing.
+   */
+  portfolioCeiling: number;
 };
 
 export const constitutionFor = (opts: {
@@ -47,6 +62,7 @@ export const constitutionFor = (opts: {
   treasurers?: AgentId[];
   dailyCapCents?: number;
   commonsCeiling?: number;
+  portfolioCeiling?: number;
 }): Constitution => ({
   ceo: opts.ceo,
   board: opts.board,
@@ -58,6 +74,7 @@ export const constitutionFor = (opts: {
   // there is a bypass, something will eventually find a reason to use it.
   boardApproves: ['external.write'],
   commonsCeiling: opts.commonsCeiling ?? 40,
+  portfolioCeiling: opts.portfolioCeiling ?? 3,
 });
 
 /** Rendered into every agent's prompt, so the rules are stated once. */
@@ -70,7 +87,14 @@ export const RULES_TEXT = (c: Constitution): string => [
   '5. If the board is not around, do not stop.',
   `6. The commons holds ${c.commonsCeiling} documents. To add one past that, remove one.`,
   '   Decide what stops being true, not just what starts being true.',
+  ...(c.portfolioCeiling > 0 ? [
+    `7. You may carry ${c.portfolioCeiling} project${c.portfolioCeiling === 1 ? '' : 's'} at once. ` +
+      'To start another, retire one.',
+    '   Retiring is a decision, not a defeat. Something you have stopped',
+    '   believing in is costing you the thing you would rather be doing.',
+  ] : []),
   '',
-  'Rules 2, 3, 4 and 6 are enforced by the company itself, not by your good intentions.',
+  `Rules 2, 3, 4${c.portfolioCeiling > 0 ? ', 6 and 7' : ' and 6'} are enforced by the company itself, ` +
+    'not by your good intentions.',
   'Rules 1 and 5 are yours to keep. Nothing checks them but each other.',
 ].join('\n');

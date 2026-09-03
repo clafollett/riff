@@ -134,11 +134,15 @@ export class Registry {
       ceo: cfg.ceo.id,
       board: cfg.board.map((b) => b.id),
       commonsCeiling: p.commonsCeiling,
+      portfolioCeiling: p.portfolioCeiling,
       dailyCapCents: p.dailyCapCents,
     });
     const gate = new Gate(ledger, constitution, {
       count: () => world.commonsCount(),
       exists: (p) => world.exists(p),
+    }, {
+      count: () => world.projectCount(),
+      has: (name) => world.listProjects().includes(name),
     });
     const scheduler = new Scheduler({
       ledger, gate, world, clock: this.#clock,

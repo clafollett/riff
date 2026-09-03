@@ -487,7 +487,11 @@ const server = createServer(async (req, res) => {
       // Whether any of this is working, as numbers rather than as impressions.
       if (p === '/api/vitals' && method === 'GET') {
         return json(res, vitals(
-          { ledger, world, clock: systemClock, commonsCeiling: constitution.commonsCeiling },
+          {
+            ledger, world, clock: systemClock,
+            commonsCeiling: constitution.commonsCeiling,
+            portfolioCeiling: constitution.portfolioCeiling,
+          },
           url.searchParams.get('window') ?? '7.days',
         ));
       }

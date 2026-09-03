@@ -25,10 +25,21 @@ const spec = process.argv.slice(2).find((a) => !a.startsWith('-')) ?? '7.days';
 const cfg = resolveConfig();
 const ledger = new Ledger(cfg.ledgerPath, systemClock);
 const world = new World(cfg.worldDir, systemClock);
-const c = constitutionFor({ ceo: cfg.ceo.id, board: cfg.board.map((b) => b.id) });
+// The company's own ceilings, not the defaults — a report that grades Rule 6
+// and Rule 7 against numbers this company does not use is grading nothing.
+const c = constitutionFor({
+  ceo: cfg.ceo.id,
+  board: cfg.board.map((b) => b.id),
+  commonsCeiling: cfg.policy.commonsCeiling,
+  portfolioCeiling: cfg.policy.portfolioCeiling,
+  dailyCapCents: cfg.policy.dailyCapCents,
+});
 
 const v = vitals(
-  { ledger, world, clock: systemClock, commonsCeiling: c.commonsCeiling },
+  {
+    ledger, world, clock: systemClock,
+    commonsCeiling: c.commonsCeiling, portfolioCeiling: c.portfolioCeiling,
+  },
   spec,
 );
 
@@ -142,6 +153,24 @@ if (!lm.seen) {
   line('tightest window', pct(lm.latest),
     `${window} · peak ${pct(lm.peak)} over ${lm.seen} shift${lm.seen === 1 ? '' : 's'}`);
 }
+
+// Whether the company can still do something it has not done. Every figure
+// above rewards throughput, and shipping the sixteenth point release of one
+// idea outscores launching something — which is the failure Rule 7 exists to
+// make expensive, so it has to be readable before the rule can be judged.
+const nv = v.novelty;
+head('is it still finding things');
+line('carrying', nv.ceiling ? `${nv.carrying}/${nv.ceiling}` : String(nv.carrying),
+  nv.ceiling && nv.carrying >= nv.ceiling ? 'full — starting another means retiring one' : '');
+line('started · retired', `${nv.started} · ${nv.retired}`,
+  !nv.started && !nv.retired && nv.carrying ? '⚠ nothing began and nothing ended' : '');
+line('newest is', nv.newestAgeDays == null ? '—' : `${nv.newestAgeDays}d old`,
+  nv.newestAgeDays != null && nv.newestAgeDays > 14
+    ? '⚠ the company has not had a new idea in a fortnight' : '');
+line('worked on', nv.touched, nv.carrying ? `of ${nv.carrying} carried` : '');
+line('biggest share', pct(nv.concentration),
+  nv.concentration > 0.9 && nv.carrying > 1
+    ? '⚠ one project is nearly all the work' : '');
 
 // The failure mode worth catching in one figure: staff who message each other
 // all week and land nothing anybody can read back.

@@ -165,6 +165,32 @@ export type MoneyVitals = { spends: number; cents: number; exceptions: number };
  * measured, so a "$25.59 a day" reading was out by a factor of thirty-three.
  * Rates that mean anything are per running hour.
  */
+/**
+ * Whether the company is still capable of doing something it has not done.
+ *
+ * Every other figure here rewards throughput, and a company shipping the
+ * sixteenth point release of its first idea scores exactly like one that
+ * launched something new. That is the failure R7 exists to make expensive,
+ * so it has to be visible before anyone can say whether R7 worked.
+ */
+export type NoveltyVitals = {
+  /** Projects the company is carrying, and what Rule 7 allows. 0 = no ceiling. */
+  carrying: number;
+  ceiling: number;
+  /** Started and retired inside the window. Retiring is the rare one. */
+  started: number;
+  retired: number;
+  /** Days since the newest project's first commit. Null if there are none. */
+  newestAgeDays: number | null;
+  /**
+   * Share of staff commits landing in the single busiest project. 1 means
+   * every hand on one thing, which is focus or a rut and the age says which.
+   */
+  concentration: number;
+  /** How many distinct projects saw a commit at all in the window. */
+  touched: number;
+};
+
 export type RunVitals = {
   /** Hours the scheduler was running inside the window. */
   hours: number;
@@ -260,6 +286,7 @@ export type Vitals = {
   previous: Trend | null;
   shifts: ShiftVitals;
   run: RunVitals;
+  novelty: NoveltyVitals;
   tokens: TokenVitals;
   limits: LimitVitals;
   org: OrgVitals;

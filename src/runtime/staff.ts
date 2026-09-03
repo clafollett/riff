@@ -217,9 +217,48 @@ const buildSystemPrompt = (d: TickDeps): string => {
 };
 
 /** The volatile half — what changed since this staff member last woke. */
-const buildTickPrompt = (d: TickDeps): string => {
+export const buildTickPrompt = (d: TickDeps): string => {
   const { agent, ledger, clock } = d;
   const parts: string[] = [`It is ${clock.now().toLocaleString()}. You have woken up.`];
+
+  /**
+   * A change to the founding brief, which nobody was ever told about.
+   *
+   * The brief is what the company is FOR, and it is editable — `company.brief`
+   * records `was` and `now`. But nothing surfaced it, so an operator who
+   * widened the premise 1h47m after founding changed a document that no shift
+   * ever read again: by then the CEO had written the original wording into the
+   * commons as the company's own charter, and a brief edit cannot reach a
+   * decision the company has already made its own. It kept building inside the
+   * boundary for another fortnight.
+   *
+   * Surfaced once, at the top, above even decisions: everything else in this
+   * prompt is work inside a premise, and this is the premise changing.
+   */
+  const brief = ledger.lastEvent(['company.brief']);
+  const briefSeen = ledger.getMeta(`brief-seen:${agent.id}`);
+  if (brief && briefSeen !== brief.id) {
+    // Malformed JSON here must not cost a shift its wake-up.
+    let d: { was?: unknown; now?: unknown } = {};
+    try { d = JSON.parse(brief.dataJson ?? '{}') as typeof d; } catch { d = {}; }
+    if (typeof d.now === 'string') {
+      parts.push(
+        '',
+        '## The brief for this company has changed',
+        '',
+        'This is what the company is for, and somebody has rewritten it. Read it',
+        'against what you are currently doing and what the commons says the',
+        'company has decided. Anything you wrote down under the old wording is',
+        'now a claim to re-examine, not a settled decision — including your own',
+        'charter, and including the project you are in the middle of.',
+        '',
+        '### It now says',
+        d.now,
+        ...(typeof d.was === 'string' ? ['', '### It used to say', d.was] : []),
+      );
+    }
+    ledger.setMeta(`brief-seen:${agent.id}`, brief.id);
+  }
 
   // Decisions come FIRST. A rejection you have to go looking for is a
   // rejection that changes nothing.

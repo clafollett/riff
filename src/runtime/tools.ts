@@ -168,6 +168,50 @@ export const createTools = (ctx: Ctx) => {
     { annotations: { readOnlyHint: true } },
   );
 
+  // --------------------------------------------------------- the portfolio
+  const portfolio = tool(
+    'portfolio',
+    'What the company is carrying, and whether there is room to start something else.',
+    {},
+    async () => {
+      const projects = world.listProjects();
+      const ceiling = ctx.gate.constitution.portfolioCeiling;
+      if (ceiling <= 0) {
+        return say(projects.length
+          ? `${projects.length} projects, no ceiling:\n${projects.map((p) => `- ${p}`).join('\n')}`
+          : 'Nothing under way. No ceiling on how many you may carry.');
+      }
+      const room = ceiling - projects.length;
+      return say(
+        `${projects.length} of ${ceiling} projects:\n${projects.map((p) => `- ${p}`).join('\n')}\n\n` +
+        (room > 0
+          ? `Room for ${room} more.`
+          : 'Full. Starting another means retiring one — retire_project.'),
+      );
+    },
+    { annotations: { readOnlyHint: true } },
+  );
+
+  const retireProject = tool(
+    'retire_project',
+    'Retire a project the company has stopped believing in, freeing a slot under Rule 7. Say what you learned and why it is over. Retiring is a decision, not a defeat: the thing you keep out of habit is costing you the one you would rather be doing.',
+    { name: z.string().describe('The project directory name, as portfolio lists it'), why: z.string().max(800) },
+    async ({ name, why }) => {
+      if (!world.listProjects().includes(name)) {
+        return say(`There is no project called "${name}". portfolio lists what there is.`);
+      }
+      return say(gated(ctx, 'world.write', `retire ${name}: ${why}`, `projects/${name}`, () => {
+        // The record outlives the tree. What was tried and why it ended is the
+        // part worth keeping; the code is in the world's git history either way.
+        world.removeProject(name);
+        ledger.emit(actor, 'project.retired', `projects/${name}`, { why });
+        const left = world.projectCount();
+        const ceiling = ctx.gate.constitution.portfolioCeiling;
+        return `Retired ${name}. ${left}${ceiling > 0 ? ` of ${ceiling}` : ''} projects remain.`;
+      }));
+    },
+  );
+
   // ------------------------------------------------------------- expression
   const sendMessage = tool(
     'send_message',
@@ -351,6 +395,7 @@ export const createTools = (ctx: Ctx) => {
     tools: [
       whoIsHere, readColleague, proposeRole, retireRole,
       postToCommons, removeFromCommons, commonsIndex,
+      portfolio, retireProject,
       sendMessage, noteAbout, remember, setActivity,
       openTask, claimTask, finishTask, spend, draftOutward,
       myDrafts, withdrawDraft,
