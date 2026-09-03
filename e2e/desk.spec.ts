@@ -1000,6 +1000,12 @@ test('no figure in the report renders as a hole where a number should be', async
   expect(tiles.length).toBe(5);
   for (const t of tiles) expect(t.trim()).not.toMatch(holes);
 
+  // Findings are prose built from the same figures, and a division by a duty
+  // cycle of zero put "wrong by Infinity×" in one — which no dd or tile shows.
+  for (const f of await page.locator('.finding').allInnerTexts()) {
+    expect(f).not.toMatch(/undefined|NaN|Infinity/);
+  }
+
   // Every figure in the six definition lists, and the sub-line under each tile.
   const figures = await page.locator('.cols dd, .tile .tsub').allInnerTexts();
   expect(figures.length).toBeGreaterThan(25);
@@ -1068,6 +1074,10 @@ test('vitals says what was consumed, not only what it would have cost', async ({
   await expect(tiles.filter({ hasText: 'tokens' }).locator('.tvalue')).toHaveText('1.2M');
   // The money tile is still there, and now says what it is.
   await expect(tiles.filter({ hasText: 'list price' })).toContainText('not a bill');
+
+  // A window is wall clock; the company only exists while its scheduler is up,
+  // so the header says how much of the window was actually worked.
+  await expect(page.locator('.foot')).toContainText(/worked \d+\.\d+h of it/);
 
   const consumed = page.locator('section').filter({ hasText: 'What it consumed' });
   await expect(consumed).toContainText('900.0K');   // read from cache

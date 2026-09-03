@@ -145,6 +145,22 @@ export class Ledger {
   }
 
   /**
+   * The last of these kinds before an instant, or null.
+   *
+   * A window that opens mid-shift needs to know what the company was doing
+   * when it opened. Counting only the events inside it reads a company that
+   * had been running for a week as one that started when the window did.
+   */
+  lastEventBefore(kinds: string[], at: string): Event | null {
+    if (kinds.length === 0) return null;
+    const holes = kinds.map(() => '?').join(',');
+    const r = this.#db.prepare(
+      `SELECT * FROM events WHERE at<? AND kind IN (${holes}) ORDER BY seq DESC LIMIT 1`
+    ).get(at, ...(kinds as never[])) as Row | undefined;
+    return r ? this.#toEvent(r) : null;
+  }
+
+  /**
    * Which rules actually bite. The constitution claims Rule 6 is the
    * load-bearing one; this is the query that can contradict it.
    */

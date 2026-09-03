@@ -155,6 +155,27 @@ export type MoneyVitals = { spends: number; cents: number; exceptions: number };
  * depletes, so they are reported in their own right rather than left to be
  * guessed at from a dollar figure that no invoice will ever match.
  */
+/**
+ * How much of the window the company was actually working.
+ *
+ * A window is wall clock; a company only exists while its scheduler is
+ * running. Thirty days of window over twenty-one hours of work reports a
+ * month of operation, and every per-day rate read off it is wrong by the
+ * reciprocal of the duty cycle — which was 3% the first time this was
+ * measured, so a "$25.59 a day" reading was out by a factor of thirty-three.
+ * Rates that mean anything are per running hour.
+ */
+export type RunVitals = {
+  /** Hours the scheduler was running inside the window. */
+  hours: number;
+  /** Those hours as a share of the window. 1 is a company that never stopped. */
+  dutyCycle: number;
+  shiftsPerHour: number;
+  tokensPerHour: number;
+  /** Imputed list price per running hour. Still not a bill. */
+  costPerHour: number;
+};
+
 export type TokenVitals = {
   total: number;
   /** Fresh input — the part that was not already paid for by a cache write. */
@@ -238,6 +259,7 @@ export type Vitals = {
   window: Window;
   previous: Trend | null;
   shifts: ShiftVitals;
+  run: RunVitals;
   tokens: TokenVitals;
   limits: LimitVitals;
   org: OrgVitals;

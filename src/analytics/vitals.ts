@@ -18,7 +18,7 @@ import type { Clock } from '../core/clock.ts';
 import type { AgentId, Event } from '../core/types.ts';
 import type {
   CommonsVitals, EnvelopeVitals, LimitVitals, MoneyVitals, OrgVitals, PersonVitals,
-  ShiftVitals, TalkVitals, TokenVitals, Trend, Vitals, Window, WorkVitals,
+  RunVitals, ShiftVitals, TalkVitals, TokenVitals, Trend, Vitals, Window, WorkVitals,
 } from './types.ts';
 
 export type * from './types.ts';
@@ -274,6 +274,27 @@ export const vitals = (
     costShareTop: over(costliest, costUsd),
   };
 
+  /**
+   * How long the company was actually working inside the window.
+   *
+   * `work.started` and `work.paused` bracket a scheduler that is running.
+   * The state at `since` has to come from before the window, or a company
+   * that had been running for a week reads as one that started when the
+   * window opened — and if it never paused, `until` closes the last stretch.
+   */
+  const marks = d.ledger.eventsOfKinds(['work.started', 'work.paused'], since, until);
+  const before = d.ledger.lastEventBefore(['work.started', 'work.paused'], since);
+  let openedAt: number | null = before?.kind === 'work.started' ? Date.parse(since) : null;
+  let runningMs = 0;
+  for (const e of marks) {
+    if (e.kind === 'work.started') { openedAt ??= Date.parse(e.at); continue; }
+    if (openedAt != null) { runningMs += Date.parse(e.at) - openedAt; openedAt = null; }
+  }
+  if (openedAt != null) runningMs += Date.parse(until) - openedAt;
+
+  const runHours = runningMs / 3_600_000;
+  const windowHours = window.days * 24;
+
   const totalTokens = tok.input + tok.output + tok.cacheRead + tok.cacheWrite;
   const allInput = tok.input + tok.cacheRead + tok.cacheWrite;
   const tokens: TokenVitals = {
@@ -285,6 +306,14 @@ export const vitals = (
     perShift: over(totalTokens, measured),
     cacheHitRate: over(tok.cacheRead, allInput),
     measured,
+  };
+
+  const run: RunVitals = {
+    hours: Math.round(runHours * 100) / 100,
+    dutyCycle: over(runHours, windowHours),
+    shiftsPerHour: over(slept, runHours),
+    tokensPerHour: over(totalTokens, runHours),
+    costPerHour: over(costUsd, runHours),
   };
 
   const limits: LimitVitals = {
@@ -453,6 +482,7 @@ export const vitals = (
     window,
     previous,
     shifts,
+    run,
     tokens,
     limits,
     org,

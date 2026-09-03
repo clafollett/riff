@@ -72,7 +72,8 @@ const head = (s: string): void => console.log(`\n  ${s.toUpperCase()}`);
 // A report header wants the first line of it, not the document.
 const business = (cfg.company.business.split('\n').find((l) => l.trim()) ?? '').trim();
 console.log(`\n  ${cfg.company.name}${business ? ` — ${business.slice(0, 72)}` : ''}`);
-console.log(`  ${v.window.spec}, since ${v.window.since.slice(0, 16).replace('T', ' ')}`);
+console.log(`  ${v.window.spec}, since ${v.window.since.slice(0, 16).replace('T', ' ')}` +
+  ` — worked ${v.run.hours.toFixed(1)}h of it (${pct(v.run.dutyCycle)})`);
 
 const s = v.shifts;
 head('shifts');
@@ -88,6 +89,11 @@ line('in trouble', pct(s.troubleRate),
 line('turns a shift', s.turnsPerShift.toFixed(1));
 line('list price', usd(s.costUsd),
   s.slept ? `${usd(s.costPerShift)} a shift · ${d('costUsd', s.costUsd, '$')}` : '');
+// Per running hour, never per window day. The window is wall clock and the
+// company only exists while its scheduler is up: 21 hours of work inside a
+// 30-day window makes every per-day rate wrong by a factor of thirty-three.
+line('an hour worked', v.run.hours ? usd(v.run.costPerHour) : '—',
+  v.run.hours ? `over ${v.run.hours.toFixed(1)} running hours` : 'the scheduler never ran in this window');
 line('biggest share', pct(s.costShareTop),
   s.costShareTop > 0.5 ? '⚠ one person is most of the bill' : '');
 if (s.rotated || s.compacted || s.rotateFailed) {
@@ -110,6 +116,9 @@ if (!tk.measured) {
   line('tokens', '—', 'no shift in this window reported usage');
 } else {
   line('tokens', tok(tk.total), `${tok(tk.perShift)} a shift · ${tk.measured} of ${s.slept} shifts measured`);
+  if (v.run.hours) {
+    line('an hour worked', tok(v.run.tokensPerHour), `over ${v.run.hours.toFixed(1)} running hours`);
+  }
   line('output', tok(tk.output), 'what the models actually wrote');
   line('fresh input', tok(tk.input));
   line('cache read · write', `${tok(tk.cacheRead)} · ${tok(tk.cacheWrite)}`,

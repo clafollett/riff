@@ -104,6 +104,14 @@ const findings = computed<Array<{ severity: 'warn' | 'note'; text: string }>>(()
       `A draft has waited ${hrs(d.envelope.oldestPendingHours)} on the board. ` +
       `The staff cannot route around you.` });
   }
+  // `d.run.hours` guards the division as much as it reads: a company with
+  // shifts but no scheduler lifecycle in the window has a duty cycle of zero,
+  // and 1/0 put "wrong by Infinity×" on the page.
+  if (d.shifts.slept && d.run.hours > 0 && d.run.dutyCycle < 0.25) {
+    out.push({ severity: 'note', text:
+      `The company worked ${d.run.hours.toFixed(1)} hours of this ${d.window.spec} window. ` +
+      `Read the rates per running hour — per day they are wrong by ${(1 / d.run.dutyCycle).toFixed(0)}×.` });
+  }
   // The weekly window is the one worth a sentence: it is what the company is
   // actually paced against, and the only ceiling that cannot recover overnight.
   if (d.limits.week && d.limits.week.latest >= 0.75) {
@@ -240,6 +248,8 @@ const tiles = computed(() => {
             <dt>fresh input</dt><dd>{{ tok(v.tokens.input) }}</dd>
             <dt>cache read · write</dt>
             <dd>{{ tok(v.tokens.cacheRead) }} · {{ tok(v.tokens.cacheWrite) }}</dd>
+            <dt>an hour worked</dt>
+            <dd>{{ tok(v.run.tokensPerHour) }}<span class="faint"> · {{ usd(v.run.costPerHour) }}</span></dd>
             <dt>from cache</dt>
             <dd :class="{ hot: v.tokens.cacheHitRate < 0.5 }">{{ pct(v.tokens.cacheHitRate) }}</dd>
             <dt>weekly usage</dt>
@@ -393,7 +403,8 @@ const tiles = computed(() => {
       </section>
 
       <p class="muted foot">
-        {{ v.window.spec }}, from {{ new Date(v.window.since).toLocaleString() }}.
+        {{ v.window.spec }}, from {{ new Date(v.window.since).toLocaleString() }} —
+        worked {{ v.run.hours.toFixed(1) }}h of it ({{ pct(v.run.dutyCycle) }} of the window).
         <span v-if="v.previous">Arrows compare against the {{ v.window.spec }} before it.</span>
       </p>
     </template>

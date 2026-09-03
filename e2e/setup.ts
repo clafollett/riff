@@ -77,6 +77,10 @@ export default async function globalSetup(): Promise<void> {
   for (let i = 1; i <= 20; i++) {
     ledger.emit('fen', 'gate.allow', 'world.write', { summary: `check ${i}` });
   }
+  // The scheduler's own lifecycle. Without a stretch of it the company reports
+  // zero running hours, every per-hour rate divides by nothing, and the report
+  // is proved only against a company that never worked.
+  ledger.emit('company', 'work.started', null, {});
   ledger.emit('fen', 'agent.woke', null, {});
   ledger.emit('fen', 'memory.consolidated', 'fen', {});
   // The turns and the dollars of a shift are written down here and nowhere

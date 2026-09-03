@@ -601,3 +601,79 @@ describe('what the company consumed', () => {
     cleanup();
   });
 });
+
+/**
+ * A window is wall clock; a company only exists while its scheduler is up.
+ * The first real measurement was 21.4 running hours inside a 30-day window —
+ * a 3% duty cycle — which makes every per-day rate read off that window wrong
+ * by a factor of thirty-three.
+ */
+describe('how much of the window the company actually worked', () => {
+  test('running time is the stretches between starting and pausing', () => {
+    ledger.emit('company', 'work.started', null, {});
+    clock.advance(2 * 3_600_000);
+    ledger.emit('company', 'work.paused', null, {});
+    clock.advance(20 * 3_600_000);   // idle, and not counted
+    ledger.emit('company', 'work.started', null, {});
+    clock.advance(1 * 3_600_000);
+    ledger.emit('company', 'work.paused', null, {});
+    const v = report();
+    assert.equal(v.run.hours, 3);
+    cleanup();
+  });
+
+  test('a company still running when the window closes is counted to the edge', () => {
+    ledger.emit('company', 'work.started', null, {});
+    clock.advance(4 * 3_600_000);
+    // No pause: it is still working. Dropping the open stretch would report
+    // a company that has run all day as one that never started.
+    const v = report();
+    assert.equal(v.run.hours, 4);
+    cleanup();
+  });
+
+  test('a company already running when the window opens is not credited from zero', () => {
+    // Started well before the window. Counting only events inside it reads a
+    // company that had been up for days as one that started when we looked.
+    ledger.emit('company', 'work.started', null, {});
+    clock.advance(10 * 86_400_000);
+    const v = report('2.days');
+    assert.equal(v.run.hours, 48);
+    assert.equal(v.run.dutyCycle, 1);
+    cleanup();
+  });
+
+  test('the duty cycle says how badly a per-day rate would mislead', () => {
+    ledger.emit('company', 'work.started', null, {});
+    clock.advance(3_600_000);           // one hour of work
+    ledger.emit('company', 'work.paused', null, {});
+    const v = report('1.days');         // inside a 24-hour window
+    assert.equal(v.run.hours, 1);
+    assert.ok(Math.abs(v.run.dutyCycle - 1 / 24) < 0.001, `duty cycle was ${v.run.dutyCycle}`);
+    cleanup();
+  });
+
+  test('rates are per running hour, and a company that never ran divides by nothing', () => {
+    shift('rae', [['message.sent']], 4, 6, meter(1_000, 1_000));
+    const v = report();
+    // No work.started at all: the scheduler was never up, so there is no hour
+    // to divide by. A NaN or an Infinity here blanks the whole console.
+    assert.equal(v.run.hours, 0);
+    assert.equal(v.run.costPerHour, 0);
+    assert.equal(v.run.tokensPerHour, 0);
+    assert.equal(v.run.shiftsPerHour, 0);
+    cleanup();
+  });
+
+  test('cost an hour worked is the figure a duty cycle cannot distort', () => {
+    ledger.emit('company', 'work.started', null, {});
+    shift('rae', [['message.sent']], 4, 10, meter(3_000, 1_000));
+    clock.advance(2 * 3_600_000);
+    ledger.emit('company', 'work.paused', null, {});
+    const v = report('30.days');
+    assert.equal(v.run.hours, 2);
+    assert.equal(v.run.costPerHour, 5);          // $10 over two hours
+    assert.equal(v.run.tokensPerHour, 2_000);    // 4,000 tokens over two hours
+    cleanup();
+  });
+});
