@@ -32,3 +32,47 @@ export const worstWindow = (
  * week spent on Tuesday is gone until Tuesday.
  */
 export const isWeekly = (kind: string): boolean => kind.startsWith('seven_day');
+
+const KNOWN_LIMIT_TYPES = new Set<string>([
+  'five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet',
+  'seven_day_overage_included', 'overage',
+]);
+
+/** The subset of the SDK's experimental usage response that we depend on. */
+export type UsageReading = {
+  rate_limits_available?: boolean;
+  rate_limits?: Record<string, { utilization: number | null; resets_at: string | null } | null | undefined> | null;
+};
+
+/**
+ * Turn an on-demand usage reading into the same windows a `rate_limit_event`
+ * would have produced.
+ *
+ * The push event is the only source the runtime had, and it is rare: 15 of 155
+ * shifts in one company, and 0 of 14 across a whole night's run. So the figure
+ * that is supposed to govern pacing on a subscription was almost never
+ * present, and a report that should have been in percent-of-window came out in
+ * tokens, which nobody on a subscription is billed for.
+ *
+ * The two sources disagree about scale — the event reports 0-1, this reports
+ * 0-100 — so the conversion happens here, once, rather than at each of the
+ * three places that read a utilization.
+ */
+export const windowsFromUsage = (u: UsageReading | null | undefined): Array<[string, SDKRateLimitInfo]> => {
+  if (!u || u.rate_limits_available === false || !u.rate_limits) return [];
+  const out: Array<[string, SDKRateLimitInfo]> = [];
+  for (const [kind, w] of Object.entries(u.rate_limits)) {
+    if (!w || w.utilization == null) continue;
+    // `seven_day_oauth_apps` is reported here and is not one of the event's
+    // types. Keep the window under its own key either way — `isWeekly` reads
+    // the key, not this field — and only name a type the event could carry.
+    const named = KNOWN_LIMIT_TYPES.has(kind);
+    out.push([kind, {
+      status: 'allowed',
+      utilization: w.utilization / 100,
+      ...(named ? { rateLimitType: kind as NonNullable<SDKRateLimitInfo['rateLimitType']> } : {}),
+      ...(w.resets_at ? { resetsAt: Date.parse(w.resets_at) / 1000 } : {}),
+    }]);
+  }
+  return out;
+};

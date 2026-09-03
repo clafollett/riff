@@ -8,7 +8,7 @@ import type { Clock } from '../core/clock.ts';
 import { createTools, TOOL_NAMESPACE } from './tools.ts';
 import { makeCanUseTool, shellIsContained } from './permissions.ts';
 import { DEFAULT_POLICY } from '../core/config.ts';
-import { worstWindow, isWeekly } from './limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage } from './limits.ts';
 import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
@@ -470,6 +470,10 @@ export const blindWatch = (limit = BLIND_TURNS) => {
 const WENT_BLIND = 'the permission channel died mid-shift: tools were being called and the '
   + `gate was never asked. Stopped after ${BLIND_TURNS} blind turns.`;
 
+/** Said plainly for the same reason: the CLI only wrote it to a debug log. */
+const NO_TOOLS = "the company's own tools never connected, twice running — the shift had no "
+  + 'way to write anything down, so it was stopped instead of spending its turns finding out.';
+
 /**
  * Where a toolchain is told to keep its cache.
  *
@@ -710,6 +714,33 @@ export const tick = async (
   }
   const watch = blindWatch();
   let wentBlind = false;
+  /** Did the company's own MCP server come up for this leg? */
+  let toolsUp = true;
+  let toolRetries = 0;
+
+  /**
+   * Ask what is left of the subscription, rather than waiting to be told.
+   *
+   * `rate_limit_event` is a push and a rare one — 0 of 14 shifts across a
+   * whole night — so pacing and reporting fell back to tokens, which is not
+   * what anyone on a subscription is billed against. This asks directly.
+   *
+   * The SDK marks the call experimental and reserves the right to move it, so
+   * a failure here is a missing reading and never a failed shift: every
+   * consumer already handles having no window at all.
+   */
+  const readUsage = async (q: {
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET?: () => Promise<unknown>;
+  }): Promise<void> => {
+    try {
+      const fn = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
+      if (typeof fn !== 'function') return;
+      for (const [kind, w] of windowsFromUsage(await fn.call(q) as never)) {
+        windows.set(kind, w);
+        rateLimit = w;
+      }
+    } catch { /* a reading we could not take is not a shift that failed */ }
+  };
   const rotateAt = d.rotateAtContextPct ?? DEFAULT_POLICY.rotateAtContextPct;
   let rotations = 0;
 
@@ -812,6 +843,29 @@ export const tick = async (
         session = m.session_id;
         ledger.setMeta(`session:${agent.id}`, m.session_id);
       }
+      // Whether the company's own tools actually came up.
+      //
+      // Three shifts in one night were killed by the blind watch after the
+      // CLI logged `tools/list failed (Stream closed)` at wake — the company
+      // server never connected, so every write path was refused and the
+      // permission stream was gone with it. Nothing in the ledger said so;
+      // the failure was only visible in a CLI debug log inside the container.
+      // A shift that starts without its tools cannot do its job, so say it
+      // out loud and stop instead of spending a turn ceiling finding out.
+      if (m.type === 'system' && m.subtype === 'init') {
+        const server = m.mcp_servers.find((x) => x.name === TOOL_NAMESPACE);
+        toolsUp = server?.status === 'connected';
+        if (!toolsUp) {
+          ledger.emit(agent.id, 'shift.tools_missing', null, {
+            status: server?.status ?? 'absent',
+            servers: m.mcp_servers,
+            resumed: session != null,
+          });
+          stop.abort();
+          break;
+        }
+        void readUsage(q);
+      }
       if (m.type === 'rate_limit_event') {
         rateLimit = m.rate_limit_info;
         windows.set(m.rate_limit_info.rateLimitType ?? 'unknown', m.rate_limit_info);
@@ -844,6 +898,7 @@ export const tick = async (
         // message — an error code standing in for the agent's own account of
         // its shift. Their last words are a truer record than the subtype.
         summary = m.subtype === 'success' ? m.result : (said || `ended: ${m.subtype}`);
+        await readUsage(q);
       }
     }
   };
@@ -858,6 +913,26 @@ export const tick = async (
 
     try {
       await runLeg(prompt, left);
+
+      // A leg whose tools never connected is worth exactly one cold retry.
+      //
+      // Every observed occurrence was on a resumed session, and the same
+      // session resumed cleanly on the next attempt — so the cheap thing is
+      // to drop the resume and take the leg again rather than burn a whole
+      // tick. Once, then stop: a second failure is a real fault and should
+      // look like one.
+      if (!toolsUp) {
+        if (toolRetries++ < 1) {
+          ledger.setMeta(`session:${agent.id}`, '');
+          ledger.emit(agent.id, 'session.reset', null, { was: session, why: 'tools did not connect' });
+          session = null;
+          toolsUp = true;
+          continue;
+        }
+        failure = NO_TOOLS;
+        break;
+      }
+
       // Leaving the message loop is a normal return, so this never reaches
       // the catch below on its own.
       if (wentBlind) { failure = WENT_BLIND; break; }

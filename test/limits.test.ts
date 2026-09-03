@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
-import { worstWindow, isWeekly } from '../src/runtime/limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage } from '../src/runtime/limits.ts';
 
 const at = (utilization: number, rateLimitType?: string): SDKRateLimitInfo => ({
   status: 'allowed',
@@ -77,5 +77,76 @@ describe('which subscription window the company is paced against', () => {
       ['seven_day', at(0.6, 'seven_day')],
     ]);
     assert.equal(worstWindow(windows)?.rateLimitType, 'seven_day');
+  });
+});
+
+/**
+ * `rate_limit_event` is a push, and a rare one: 15 of 155 shifts in one
+ * company, and 0 of 14 across a whole night. So the figure that governs pacing
+ * on a subscription was almost never present, and a night's report came out in
+ * tokens — which is not what anyone on a subscription is billed against. The
+ * SDK will answer on demand instead; it just answers on a different scale.
+ */
+describe('a usage reading asked for, rather than waited for', () => {
+  const reading = {
+    rate_limits_available: true,
+    rate_limits: {
+      five_hour: { utilization: 34, resets_at: '2026-09-03T11:00:00.000Z' },
+      seven_day: { utilization: 71.5, resets_at: '2026-09-08T00:00:00.000Z' },
+      seven_day_opus: { utilization: 88, resets_at: null },
+    },
+  };
+
+  test('percentages become the 0-1 scale everything else pace against', () => {
+    const w = new Map(windowsFromUsage(reading));
+    assert.equal(w.get('five_hour')?.utilization, 0.34);
+    assert.equal(w.get('seven_day')?.utilization, 0.715);
+    assert.equal(w.get('seven_day_opus')?.utilization, 0.88);
+  });
+
+  test('the fullest window is the one to pace against, not the last one seen', () => {
+    assert.equal(worstWindow(windowsFromUsage(reading))?.utilization, 0.88);
+  });
+
+  test('the weekly figure is separable from the five-hour one', () => {
+    assert.equal(worstWindow(windowsFromUsage(reading), isWeekly)?.utilization, 0.88);
+  });
+
+  test('88% would trip a pause set at 92%? no — but 0.88 is compared, not 88', () => {
+    // The bug this guards: a 0-100 figure left unconverted reads as 8800% and
+    // pauses a company that has used a third of its week.
+    const worst = worstWindow(windowsFromUsage(reading))?.utilization ?? 0;
+    assert.ok(worst <= 1, `${worst} is not on the 0-1 scale`);
+    assert.equal(worst > 0.92, false);
+  });
+
+  test('a window with no reading is skipped rather than counted as zero', () => {
+    const w = new Map(windowsFromUsage({
+      rate_limits_available: true,
+      rate_limits: { five_hour: { utilization: null, resets_at: null },
+                     seven_day: { utilization: 12, resets_at: null } },
+    }));
+    assert.equal(w.has('five_hour'), false);
+    assert.equal(w.get('seven_day')?.utilization, 0.12);
+  });
+
+  test('an API-key session has no plan limits and yields nothing', () => {
+    assert.deepEqual(windowsFromUsage({ rate_limits_available: false, rate_limits: null }), []);
+    assert.deepEqual(windowsFromUsage(null), []);
+    assert.deepEqual(windowsFromUsage(undefined), []);
+  });
+
+  test('a window the event type does not know is still kept and still weekly', () => {
+    const w = new Map(windowsFromUsage({
+      rate_limits_available: true,
+      rate_limits: { seven_day_oauth_apps: { utilization: 40, resets_at: null } },
+    }));
+    assert.equal(w.get('seven_day_oauth_apps')?.utilization, 0.4);
+    assert.equal(worstWindow(w, isWeekly)?.utilization, 0.4);
+  });
+
+  test('a reset time is carried through as epoch seconds', () => {
+    const w = new Map(windowsFromUsage(reading));
+    assert.equal(w.get('five_hour')?.resetsAt, Date.parse('2026-09-03T11:00:00.000Z') / 1000);
   });
 });
