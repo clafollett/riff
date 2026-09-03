@@ -8,7 +8,8 @@ import type { Clock } from '../core/clock.ts';
 import { createTools, TOOL_NAMESPACE } from './tools.ts';
 import { makeCanUseTool, shellIsContained } from './permissions.ts';
 import { DEFAULT_POLICY } from '../core/config.ts';
-import { worstWindow, isWeekly, windowsFromUsage, limitsReadable, mergeWindow } from './limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage, limitsReadable, mergeWindow,
+         isKnownLimit } from './limits.ts';
 import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
@@ -621,7 +622,7 @@ export const tick = async (
    * thing to what the operator had left when the shift ended.
    */
   const meter = (): Record<string, number | string> => {
-    const binding = worstWindow(windows);
+    const binding = worstWindow(windows, isKnownLimit);
     const weekly = worstWindow(windows, isWeekly);
     // Every window by name, not just whichever one is tightest. The five-hour
     // reading used to vanish from the record whenever the week was the

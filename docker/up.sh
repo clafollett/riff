@@ -252,6 +252,43 @@ if [ "$subcommand" = creds ]; then
   exit 0
 fi
 
+# Recreating the container kills whoever is mid-shift.
+#
+# Compose sends SIGTERM and waits ten seconds; a shift runs for minutes, so the
+# shift dies and the ledger records `Claude Code process aborted by user` for
+# work that was going fine. Pausing first lets the scheduler finish what is in
+# flight — `stop()` waits on it deliberately — and the server restores whatever
+# was running when it comes back up, so nothing has to be restarted by hand.
+drain() {
+  port=${PORT:-4173}
+  base="http://127.0.0.1:$port/api"
+  running=$(curl -sf -m 5 "$base/companies" 2>/dev/null \
+    | tr ',' '\n' | grep -B1 '"running":true' | grep -o '"slug":"[^"]*"' \
+    | cut -d'"' -f4) || return 0
+  [ -n "$running" ] || return 0
+
+  for slug in $running; do
+    echo "riff: pausing $slug so its shift is not killed by the rebuild"
+    curl -sf -m 10 -X POST "$base/companies/$slug/running" \
+      -H 'content-type: application/json' -d '{"running":false}' >/dev/null 2>&1 || true
+  done
+
+  waited=0
+  while [ "$waited" -lt 300 ]; do
+    awake=$(curl -sf -m 5 "$base/companies" 2>/dev/null | grep -o '"awake":\[[^]]*\]' \
+      | grep -v '"awake":\[\]' | head -1) || break
+    [ -z "$awake" ] && break
+    [ $((waited % 15)) -eq 0 ] && echo "riff: waiting for shifts to finish (${waited}s)"
+    sleep 3
+    waited=$((waited + 3))
+  done
+  echo "riff: shifts drained; the server restores what was running on boot"
+}
+
+case $subcommand in
+  up|restart|down|stop|create) drain ;;
+esac
+
 run_compose "$@" || exit $?
 
 # Push the record in. The home directory is a tmpfs created with the container,

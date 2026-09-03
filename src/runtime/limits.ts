@@ -33,6 +33,18 @@ export const worstWindow = (
  */
 export const isWeekly = (kind: string): boolean => kind.startsWith('seven_day');
 
+/**
+ * A window this build knows how to reason about.
+ *
+ * The live API returned `nimbus_quill` today alongside the five-hour and
+ * seven-day windows. It sat at 0%, but `worstWindow` takes the maximum over
+ * everything it is given, so a window Riff has never heard of reporting 95%
+ * would have throttled or stopped the company on a number meaning nothing to
+ * it. Every window is still recorded — an unknown one is news, and a silent
+ * drop is how it would stay unknown.
+ */
+export const isKnownLimit = (kind: string): boolean => KNOWN_LIMIT_TYPES.has(kind);
+
 const KNOWN_LIMIT_TYPES = new Set<string>([
   'five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet',
   'seven_day_overage_included', 'overage',

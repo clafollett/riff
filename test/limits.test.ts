@@ -1,7 +1,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
-import { worstWindow, isWeekly, windowsFromUsage, limitsReadable, mergeWindow } from '../src/runtime/limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage, limitsReadable, mergeWindow,
+         isKnownLimit } from '../src/runtime/limits.ts';
 
 const at = (utilization: number, rateLimitType?: string): SDKRateLimitInfo => ({
   status: 'allowed',
@@ -201,5 +202,42 @@ describe('two half-readings of one window make one whole one', () => {
   test('nothing held yet is just the new reading', () => {
     const only: SDKRateLimitInfo = { status: 'allowed', utilization: 0.5, rateLimitType: 'five_hour' } as SDKRateLimitInfo;
     assert.deepEqual(mergeWindow(undefined, only), only);
+  });
+});
+
+describe('a window this build cannot read does not get to stop the company', () => {
+  test('an unknown window is ignored when choosing what to pace off', () => {
+    // The live API returned `nimbus_quill` beside the five-hour and seven-day
+    // windows. At 95% it would have been the maximum, and the company would
+    // have stopped itself on a number it has no way to interpret.
+    const windows: Array<[string, SDKRateLimitInfo]> = [
+      ['five_hour', at(0.2, 'five_hour')],
+      ['nimbus_quill', at(0.95, 'nimbus_quill')],
+    ];
+    assert.equal(worstWindow(windows, isKnownLimit)?.utilization, 0.2);
+    // Unfiltered it is still the worst, which is what the scheduler used to see.
+    assert.equal(worstWindow(windows)?.utilization, 0.95);
+  });
+
+  test('nothing known reported means nothing to pace off, not a made-up figure', () => {
+    const windows: Array<[string, SDKRateLimitInfo]> = [['nimbus_quill', at(0.95, 'nimbus_quill')]];
+    assert.equal(worstWindow(windows, isKnownLimit), null);
+  });
+
+  test('an unknown window is still recorded, because an unknown one is news', () => {
+    const reading = {
+      rate_limits_available: true,
+      rate_limits: {
+        five_hour: { utilization: 20, resets_at: null },
+        nimbus_quill: { utilization: 95, resets_at: null },
+      },
+    };
+    const kinds = windowsFromUsage(reading).map(([k]) => k);
+    assert.deepEqual(kinds.sort(), ['five_hour', 'nimbus_quill']);
+  });
+
+  test('the known set is the one the runtime names, not a second list', () => {
+    for (const k of ['five_hour', 'seven_day', 'seven_day_opus']) assert.ok(isKnownLimit(k), k);
+    assert.equal(isKnownLimit('nimbus_quill'), false);
   });
 });

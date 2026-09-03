@@ -222,12 +222,30 @@ describe('the example env file describes this container, not an imagined one', (
    * prints nothing. Guessing at intent from a regex is the wrong tool: run it,
    * and look at what actually came out.
    */
-  const launch = (args: string[] = ['up'], credentialsCmd: string | null = null): { out: string; argv: string; env: string; asked: boolean } => {
+  const launch = (args: string[] = ['up'], credentialsCmd: string | null = null):
+  { out: string; curl: string; argv: string; env: string; asked: boolean } => {
     const dir = mkdtempSync(join(tmpdir(), 'riff-launch-'));
     // A stub `docker` that records how it was called, so the test can prove
     // the token was passed by environment and never as an argument.
     writeFileSync(join(dir, 'docker'),
       `#!/bin/sh\nprintf '%s\\n' "$*" > ${dir}/argv\nenv > ${dir}/env\n`, { mode: 0o755 });
+    // And a stub `curl`, because the launcher asks a running server to pause
+    // its companies before recreating the container. Unstubbed, this suite
+    // would reach 127.0.0.1:4173 and pause the operator's real work — the same
+    // hole that once delivered a live credential to a running container.
+    // It answers a listing once with one company running, then with none, so
+    // the drain both acts and terminates.
+    writeFileSync(join(dir, 'curl'),
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> ${dir}/curl.log\n`
+      + `case "$*" in\n`
+      + `  *"-X POST"*) exit 0 ;;\n`
+      + `esac\n`
+      + `if [ -f ${dir}/asked ]; then\n`
+      + `  printf '{"companies":[{"slug":"testco","running":false,"awake":[]}]}'\n`
+      + `else\n`
+      + `  : > ${dir}/asked\n`
+      + `  printf '{"companies":[{"slug":"testco","running":true,"awake":[]}]}'\n`
+      + `fi\n`, { mode: 0o755 });
     // The stub vault announces itself, so a test can tell whether the password
     // manager was asked to open at all.
     const r = spawnSync('sh', ['docker/up.sh', ...args], {
@@ -247,6 +265,7 @@ describe('the example env file describes this container, not an imagined one', (
     assert.equal(r.status, 0, `up.sh ${args.join(' ')} failed: ${r.stderr}`);
     return {
       out: r.stdout,
+      curl: existsSync(join(dir, 'curl.log')) ? readFileSync(join(dir, 'curl.log'), 'utf8') : '',
       argv: existsSync(join(dir, 'argv')) ? readFileSync(join(dir, 'argv'), 'utf8') : '',
       env: existsSync(join(dir, 'env')) ? readFileSync(join(dir, 'env'), 'utf8') : '',
       // The stub vault announces itself on stderr when it is opened.
@@ -267,6 +286,35 @@ describe('the example env file describes this container, not an imagined one', (
     const { argv, env } = launch();
     assert.ok(!argv.includes(SENTINEL), `the token was passed on the command line: ${argv}`);
     assert.match(env, new RegExp(`^CLAUDE_CODE_OAUTH_TOKEN=${SENTINEL}$`, 'm'));
+  });
+
+  test('a rebuild pauses what is working before it recreates the container', () => {
+    // Compose sends SIGTERM and waits ten seconds; a shift runs for minutes,
+    // so recreating under one killed it and the ledger recorded "Claude Code
+    // process aborted by user" for work that was going fine.
+    const { curl, out } = launch(['up', '--build', '-d']);
+    assert.match(curl, /-X POST[^\n]*companies\/testco\/running/,
+      `the running company should have been paused first:\n${curl}`);
+    assert.match(curl, /"running":false/);
+    assert.match(out, /pausing testco/);
+  });
+
+  test('reading logs does not pause anybody', () => {
+    // Draining is for recreating the container. A subcommand that only reads
+    // has no business stopping work.
+    assert.equal(launch(['logs']).curl, '');
+    assert.equal(launch(['ps']).curl, '');
+  });
+
+  test('the launcher never reaches a server on the operator\'s own port by accident', () => {
+    // Every request the drain makes has to go through $PORT, so a test can
+    // point it somewhere harmless. A hardcoded 4173 would make this suite
+    // pause the operator's real companies.
+    const src = readFileSync('docker/up.sh', 'utf8');
+    const drain = src.slice(src.indexOf('drain() {'), src.indexOf('run_compose "$@"'));
+    assert.ok(drain.includes('${PORT:-4173}'), 'the port must come from the environment');
+    assert.ok(!/127\.0\.0\.1:4173/.test(drain.replace('${PORT:-4173}', '')),
+      'no hardcoded port in the drain');
   });
 
   test('only the subcommands that start something open the password manager', () => {

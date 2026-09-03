@@ -4,7 +4,7 @@ import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { tick, type TickResult } from './staff.ts';
-import { worstWindow, isWeekly } from './limits.ts';
+import { worstWindow, isWeekly, isKnownLimit } from './limits.ts';
 import type { SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 import { applyApproved } from './executor.ts';
 import { RANK } from '../core/types.ts';
@@ -167,7 +167,7 @@ export class Scheduler {
    * The window closest to stopping the company, which is the only one worth
    * pacing against. Null until some window has reported.
    */
-  get binding(): SDKRateLimitInfo | null { return worstWindow(this.#windows); }
+  get binding(): SDKRateLimitInfo | null { return worstWindow(this.#windows, isKnownLimit); }
 
   /**
    * Every window by name, for the console.
