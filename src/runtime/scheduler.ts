@@ -82,6 +82,7 @@ export const DEFAULT_SCHEDULE: SchedulerOptions = {
 type Deps = {
   ledger: Ledger; gate: Gate; world: World; clock: Clock;
   connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
+  release?: 'none' | 'bundle';
   options?: Partial<SchedulerOptions>;
   onTick?: (r: TickResult) => void;
 };
@@ -331,7 +332,8 @@ const due = selectDue(this.#d.ledger.listAgents(), {
 
       // Approved work is applied by the company, never by the requester — so a
       // staff member cannot enact its own escalation.
-      applyApproved(this.#d.ledger, this.#d.world, this.#d.clock, Object.keys(this.#d.connectors ?? {}));
+      applyApproved(this.#d.ledger, this.#d.world, this.#d.clock,
+        Object.keys(this.#d.connectors ?? {}), this.#d.release ?? 'none');
 
       await sleep(2_000, this.#abort.signal);
     }
@@ -349,6 +351,7 @@ const due = selectDue(this.#d.ledger.listAgents(), {
         rotateAtContextPct: this.#opts.rotateAtContextPct,
         ...(this.#opts.cacheDir ? { cacheDir: this.#opts.cacheDir } : {}),
         ...(this.#d.connectors ? { connectors: this.#d.connectors } : {}),
+        ...(this.#d.release ? { release: this.#d.release } : {}),
         signal: this.#abort.signal,
       });
       this.#spentToday += r.costUsd;

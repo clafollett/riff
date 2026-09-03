@@ -178,6 +178,17 @@ export type RiffConfig = {
    * `external.write`, which always lands as a draft.
    */
   connectors: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
+  /**
+   * How approved work physically leaves, when no connector is wired.
+   *
+   * 'none' means it does not: an approved draft sits in the drafts folder and
+   * the company must not describe anything as published. 'bundle' means the
+   * board collects it by hand — the company builds a release under `dist/` in
+   * its world and the board carries it out. The difference matters to what
+   * staff may honestly claim, which is why it is configuration and not a
+   * sentence in a brief that a session can talk itself out of.
+   */
+  release: 'none' | 'bundle';
   /** How hard this company works, and what it may authorise. See CompanyPolicy. */
   policy: CompanyPolicy;
   /**
@@ -364,6 +375,7 @@ const fromHome = (home: string): RiffConfig => {
     board: [{ id: slugId(name), name, role: 'Chairman' }],
     ceo: { id: 'ceo', name: 'CEO' },
     connectors: {},
+    release: 'none',
     policy: DEFAULT_POLICY,
   };
 };
@@ -455,6 +467,7 @@ export const resolveConfig = (cwd = process.cwd(), slug?: string): RiffConfig =>
         ? { id: slugId(env['RIFF_CEO'].trim()), name: env['RIFF_CEO'].trim() }
         : { id: 'ceo', name: 'CEO' }),
     connectors: merged.connectors ?? {},
+    release: merged.release === 'bundle' ? 'bundle' : 'none',
     // Companies founded before policy existed have none written down, and
     // read back at the defaults rather than at zero.
     policy: readPolicy(stored.policy),

@@ -29,6 +29,8 @@ export type TickDeps = {
   /** External MCP servers (image generation, calendar, inbox). Everything they
    *  reach still crosses the gate — canUseTool sees these calls too. */
   connectors?: Record<string, { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }>;
+  /** How approved work leaves when no connector is wired. See RiffConfig.release. */
+  release?: 'none' | 'bundle';
   /** Observe the shift: every tool the staff member reaches for, and why it
    *  was allowed or refused. Used by scripts/tick.ts to diagnose a shift. */
   trace?: (line: string) => void;
@@ -142,7 +144,7 @@ const HOUSE_STYLE = [
   '',
 ].join('\n');
 
-const outwardState = (d: TickDeps): string => {
+export const outwardState = (d: TickDeps): string => {
   const channels = Object.keys(d.connectors ?? {});
   if (channels.length) {
     return [
@@ -151,6 +153,23 @@ const outwardState = (d: TickDeps): string => {
       '',
       `Connected channels: ${channels.join(', ')}. Approved work can reach them.`,
       'Everything still lands as a draft first — approval is what releases it.',
+    ].join('\n');
+  }
+  if (d.release === 'bundle') {
+    return [
+      READING_OUT,
+      '## Sending things out',
+      '',
+      'There is no connected channel, so nothing you write reaches anyone by',
+      'itself. What there is instead: the board collects releases by hand.',
+      '',
+      'Build the artefact locally — tagged in the world\'s git history, and',
+      'bundled under `dist/` with whatever a stranger needs to use it. An',
+      'approved draft plus a bundle is what the board carries out.',
+      '',
+      'Until the board says it went out, it has not. Do not describe our work',
+      'as public, published or citable, and do not tell an outsider they can',
+      'go and check something. Ask the board what was actually released.',
     ].join('\n');
   }
   return [

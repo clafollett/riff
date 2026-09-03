@@ -16,6 +16,7 @@ import type { Clock } from '../core/clock.ts';
  */
 export const applyApproved = (
   ledger: Ledger, world: World, clock: Clock, connectors: string[] = [],
+  release: 'none' | 'bundle' = 'none',
 ): number => {
   const approved = ledger.listApprovals('approved');
   let applied = 0;
@@ -58,7 +59,11 @@ export const applyApproved = (
           ledger.emit('company', 'external.released', ap.requestedBy, {
             channel: p.channel, draftPath: p.draftPath, approvalId: ap.id,
             delivered: wired,
-            ...(wired ? {} : { note: 'approved, not sent — no channel is connected' }),
+            ...(wired ? {} : {
+              note: release === 'bundle'
+                ? 'approved and releasable — waiting for the board to collect the bundle'
+                : 'approved, not sent — no channel is connected',
+            }),
           });
           applied++;
           break;

@@ -117,6 +117,7 @@ export class Registry {
       board: [{ id: slugId(chair), name: chair, role: 'Chairman' }],
       ceo: { id: slugId(ceo), name: ceo },
       connectors: {},
+      release: 'none',
       policy: DEFAULT_POLICY,
     };
     scaffoldConfig(cfg);
@@ -158,6 +159,7 @@ export class Registry {
         pauseAboveUtilization: p.pauseAboveUtilization,
       },
       ...(Object.keys(cfg.connectors ?? {}).length ? { connectors: cfg.connectors } : {}),
+      ...(cfg.release === 'bundle' ? { release: 'bundle' as const } : {}),
     });
     const company: Company = { slug, cfg, ledger, world, gate, constitution, scheduler };
     this.#open.set(slug, company);
