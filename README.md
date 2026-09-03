@@ -317,10 +317,16 @@ nothing is recorded for it and the window costs nothing to widen.
 
 The dollar figures in it are the Agent SDK's `total_cost_usd`: API list price,
 imputed after the fact. Running this against a Claude subscription — which is
-how it is developed — means no invoice will ever match them, and they are
-reported as a comparison rather than a bill. What actually depletes is tokens
-and the rate-limit window, so the report leads with those and Rule 4's cap is
-a consumption cap denominated in dollars rather than a spending one. It exists to
+how it is developed — means no invoice will ever match them, and on a
+subscription they are not even proportional to what the run costs. They are a
+comparison, not a bill. What actually depletes is tokens and the rate-limit
+window, so the report leads with those.
+
+None of this touches Rule 4. That cap is the staff's spending money — real
+purchases, in `amountCents`, through the `spend` capability — and it is
+enforced in the gate against a ledger. Inference has its own budget, separate
+and `null` by default, precisely because on a subscription there is nothing
+for it to meter. It exists to
 be able to **contradict this README**: a commons that never removes anything,
 a payroll that only grows, shifts that wake and leave nothing behind, and a
 board that has become the bottleneck all show up as numbers rather than as

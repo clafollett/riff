@@ -169,6 +169,9 @@ export const vitals = (
   let limitPeak = 0;
   let limitType = '';
   let limitSeen = 0;
+  let weekLatest = 0;
+  let weekPeak = 0;
+  let weekSeen = 0;
 
   /**
    * Read the meter off a shift that ended, however it ended.
@@ -194,6 +197,12 @@ export const vitals = (
       limitPeak = Math.max(limitPeak, u);
       const kind = dj['limitType'];
       if (typeof kind === 'string' && kind) limitType = kind;
+    }
+    const w = numberOf(dj, 'weekUtilization');
+    if (w > 0) {
+      weekSeen++;
+      weekLatest = w;
+      weekPeak = Math.max(weekPeak, w);
     }
   };
   const busy = new Set<AgentId>();      // has produced since waking
@@ -283,6 +292,7 @@ export const vitals = (
     peak: limitPeak,
     type: limitType,
     seen: limitSeen,
+    week: weekSeen ? { latest: weekLatest, peak: weekPeak } : null,
   };
 
   const gateRows = d.ledger.gateDecisions(since, until);

@@ -8,6 +8,7 @@ import type { Clock } from '../core/clock.ts';
 import { createTools, TOOL_NAMESPACE } from './tools.ts';
 import { makeCanUseTool, shellIsContained } from './permissions.ts';
 import { DEFAULT_POLICY } from '../core/config.ts';
+import { worstWindow, isWeekly } from './limits.ts';
 import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
@@ -504,23 +505,31 @@ export const tick = async (
    * rate-limit reading is the last one the run saw, which is the closest
    * thing to what the operator had left when the shift ended.
    */
-  const meter = (): Record<string, number | string> => ({
-    ...(spentAny()
-      ? {
-          tokens: tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite,
-          tokensIn: tokens.input,
-          tokensOut: tokens.output,
-          cacheRead: tokens.cacheRead,
-          cacheWrite: tokens.cacheWrite,
-        }
-      : {}),
-    ...(rateLimit?.utilization != null
-      ? {
-          utilization: rateLimit.utilization,
-          ...(rateLimit.rateLimitType ? { limitType: rateLimit.rateLimitType } : {}),
-        }
-      : {}),
-  });
+  const meter = (): Record<string, number | string> => {
+    const binding = worstWindow(windows);
+    const weekly = worstWindow(windows, isWeekly);
+    return {
+      ...(spentAny()
+        ? {
+            tokens: tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite,
+            tokensIn: tokens.input,
+            tokensOut: tokens.output,
+            cacheRead: tokens.cacheRead,
+            cacheWrite: tokens.cacheWrite,
+          }
+        : {}),
+      ...(binding?.utilization != null
+        ? {
+            utilization: binding.utilization,
+            ...(binding.rateLimitType ? { limitType: binding.rateLimitType } : {}),
+          }
+        : {}),
+      // Recorded separately because it is the figure that governs a week's
+      // planning: five hours spent by lunch is back by dinner, a week spent on
+      // Tuesday is gone until Tuesday.
+      ...(weekly?.utilization != null ? { weekUtilization: weekly.utilization } : {}),
+    };
+  };
 
   const context = (): Record<string, number> => (contextTokens
     ? {
@@ -549,6 +558,14 @@ export const tick = async (
     tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite > 0;
 
   let rateLimit: SDKRateLimitInfo | undefined;
+  /**
+   * Each window's latest reading, kept apart. A subscription runs several at
+   * once and the last event to arrive is not the one that matters: a five-hour
+   * window fresh off a reset reads low all afternoon while the seven-day one
+   * climbs all week, and the weekly is the one an operator plans around.
+   */
+  const windows = new Map<string, SDKRateLimitInfo>();
+
   /**
    * The ceiling in force, recorded alongside the count so the two can be read
    * together.
@@ -693,6 +710,7 @@ export const tick = async (
       }
       if (m.type === 'rate_limit_event') {
         rateLimit = m.rate_limit_info;
+        windows.set(m.rate_limit_info.rateLimitType ?? 'unknown', m.rate_limit_info);
       }
       // Compaction is the backstop, not the mechanism. If it fires, our own
       // threshold was too high — and without this it happens silently and the

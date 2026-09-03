@@ -1072,9 +1072,11 @@ test('vitals says what was consumed, not only what it would have cost', async ({
   const consumed = page.locator('section').filter({ hasText: 'What it consumed' });
   await expect(consumed).toContainText('900.0K');   // read from cache
   await expect(consumed).toContainText('200.0K');   // actually written
-  await expect(consumed).toContainText('84%');      // of the five-hour window
+  await expect(consumed).toContainText('84%');      // the tightest window
+  await expect(consumed).toContainText('78%');      // of the week, which is what is planned around
 
-  // The ceiling that can actually stop the company gets said in words.
-  await expect(page.locator('.finding').filter({ hasText: 'five hour window' }))
-    .toContainText('84%');
+  // The ceiling that can actually stop the company gets said in words, and it
+  // is the weekly one — the only window that cannot recover overnight.
+  await expect(page.locator('.finding').filter({ hasText: 'weekly subscription window' }))
+    .toContainText('78%');
 });

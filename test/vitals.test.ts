@@ -545,6 +545,31 @@ describe('what the company consumed', () => {
     cleanup();
   });
 
+  test('the weekly window is reported apart from the five-hour one', () => {
+    // The figure an operator plans around. A five-hour window at 99% is back
+    // within the afternoon; a weekly at 60% governs the rest of the week, and
+    // collapsing them into one number loses exactly that distinction.
+    shift('rae', [['message.sent']], 4, 0.1, {
+      ...meter(100, 100),
+      utilization: 0.99, limitType: 'five_hour', weekUtilization: 0.6,
+    });
+    const v = report();
+    assert.equal(v.limits.latest, 0.99);
+    assert.equal(v.limits.type, 'five_hour');
+    assert.deepEqual(v.limits.week, { latest: 0.6, peak: 0.6 });
+    cleanup();
+  });
+
+  test('a company that never heard a weekly reading says so rather than zero', () => {
+    shift('rae', [['message.sent']], 4, 0.1,
+      { ...meter(100, 100), utilization: 0.5, limitType: 'five_hour' });
+    const v = report();
+    assert.equal(v.limits.seen, 1);
+    // 0% weekly would read as a fresh week with everything still to spend.
+    assert.equal(v.limits.week, null);
+    cleanup();
+  });
+
   test('the subscription window reports where it stands and how close it came', () => {
     shift('rae', [['message.sent']], 4, 0.1,
       { ...meter(100, 100), utilization: 0.9, limitType: 'five_hour' });

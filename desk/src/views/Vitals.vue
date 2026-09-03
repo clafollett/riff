@@ -104,7 +104,14 @@ const findings = computed<Array<{ severity: 'warn' | 'note'; text: string }>>(()
       `A draft has waited ${hrs(d.envelope.oldestPendingHours)} on the board. ` +
       `The staff cannot route around you.` });
   }
-  if (d.limits.seen && d.limits.peak >= 0.8) {
+  // The weekly window is the one worth a sentence: it is what the company is
+  // actually paced against, and the only ceiling that cannot recover overnight.
+  if (d.limits.week && d.limits.week.latest >= 0.75) {
+    out.push({ severity: 'warn', text:
+      `${pct(d.limits.week.latest)} of the weekly subscription window is gone, ` +
+      `leaving ${pct(1 - d.limits.week.latest)}. That ceiling stops the work; ` +
+      `the dollar figures do not.` });
+  } else if (d.limits.seen && d.limits.peak >= 0.8) {
     out.push({ severity: 'warn', text:
       `The company reached ${pct(d.limits.peak)} of the ` +
       `${d.limits.type ? d.limits.type.replace(/_/g, ' ') : 'subscription'} window. ` +
@@ -235,9 +242,14 @@ const tiles = computed(() => {
             <dd>{{ tok(v.tokens.cacheRead) }} · {{ tok(v.tokens.cacheWrite) }}</dd>
             <dt>from cache</dt>
             <dd :class="{ hot: v.tokens.cacheHitRate < 0.5 }">{{ pct(v.tokens.cacheHitRate) }}</dd>
-            <dt>subscription window</dt>
+            <dt>weekly usage</dt>
+            <dd v-if="v.limits.week" :class="{ hot: v.limits.week.latest >= 0.75 }">
+              {{ pct(v.limits.week.latest) }}<span class="faint"> · peak {{ pct(v.limits.week.peak) }}</span>
+            </dd>
+            <dd v-else class="muted">not reported</dd>
+            <dt>tightest window</dt>
             <dd v-if="v.limits.seen" :class="{ hot: v.limits.peak >= 0.8 }">
-              {{ pct(v.limits.latest) }}<span class="faint"> · peak {{ pct(v.limits.peak) }}</span>
+              {{ pct(v.limits.latest) }}<span class="faint"> · {{ v.limits.type.replace(/_/g, ' ') }}</span>
             </dd>
             <dd v-else class="muted">not reported</dd>
           </dl>

@@ -91,7 +91,7 @@ export default async function globalSetup(): Promise<void> {
     turns: 9, costUsd: 0.42, ceiling: 30,
     tokens: 1_240_000, tokensIn: 40_000, tokensOut: 200_000,
     cacheRead: 900_000, cacheWrite: 100_000,
-    utilization: 0.84, limitType: 'five_hour',
+    utilization: 0.84, limitType: 'five_hour', weekUtilization: 0.78,
   });
   // A shift that woke, spent and left nothing behind. Barren shifts are the
   // expensive failure the report exists to name, and one has to exist.

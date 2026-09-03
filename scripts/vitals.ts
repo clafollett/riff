@@ -119,12 +119,19 @@ if (!tk.measured) {
 }
 const lm = v.limits;
 if (!lm.seen) {
-  line('subscription window', '—', 'no rate-limit reading in this window');
+  line('weekly usage', '—', 'no rate-limit reading in this window');
 } else {
   const window = lm.type ? lm.type.replace(/_/g, ' ') : 'window';
-  line('subscription window', pct(lm.latest),
+  // The weekly first: it is the figure a week is planned around. A five-hour
+  // window spent by lunch is back by dinner; a week spent on Tuesday is gone.
+  if (lm.week) {
+    line('weekly usage', pct(lm.week.latest), `peak ${pct(lm.week.peak)} this window`);
+    if (lm.week.latest >= 0.75) {
+      console.log(`    ⚠ ${pct(1 - lm.week.latest)} of the week is left — the company paces off this`);
+    }
+  }
+  line('tightest window', pct(lm.latest),
     `${window} · peak ${pct(lm.peak)} over ${lm.seen} shift${lm.seen === 1 ? '' : 's'}`);
-  if (lm.peak >= 0.8) console.log('    ⚠ the company has come within a fifth of the ceiling this window');
 }
 
 // The failure mode worth catching in one figure: staff who message each other

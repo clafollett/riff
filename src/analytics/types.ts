@@ -188,6 +188,13 @@ export type LimitVitals = {
   type: string;
   /** Shifts carrying a reading. Zero means the whole section is unknown. */
   seen: number;
+  /**
+   * The seven-day window, reported apart from the rest because it is the one
+   * an operator plans around. Five hours spent by lunch is back by dinner; a
+   * week spent on Tuesday is gone until Tuesday. Null when no shift in the
+   * window reported a weekly reading.
+   */
+  week: { latest: number; peak: number } | null;
 };
 
 /** A rule that refused something. Allows are counted in the totals but never

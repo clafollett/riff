@@ -4,6 +4,7 @@ import type { Gate } from '../policy/gate.ts';
 import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { tick, type TickResult } from './staff.ts';
+import { worstWindow, isWeekly } from './limits.ts';
 import type { SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 import { applyApproved } from './executor.ts';
 import { RANK } from '../core/types.ts';
@@ -137,6 +138,17 @@ export class Scheduler {
   /** Epoch ms. The company rests until the rate-limit window resets. */
   #pausedUntil = 0;
   #lastRateLimit: SDKRateLimitInfo | null = null;
+  /**
+   * The most recent reading of each window, kept apart rather than collapsed.
+   *
+   * A subscription has several running at once — five-hour, seven-day, and
+   * per-model seven-day — and they are all live constraints. Keeping only the
+   * last event paced the company off whichever happened to arrive: a five-hour
+   * window that had just reset read 15% and put the throttle back to 1 while
+   * the weekly sat at 92%, so the company sprinted into the ceiling that takes
+   * days rather than hours to recover.
+   */
+  #windows = new Map<string, SDKRateLimitInfo>();
 
   constructor(d: Deps) {
     this.#d = d;
@@ -148,6 +160,19 @@ export class Scheduler {
   get spentTodayUsd(): number { return this.#spentToday; }
   get ticks(): number { return this.#ticks; }
   get rateLimit(): SDKRateLimitInfo | null { return this.#lastRateLimit; }
+
+  /**
+   * The window closest to stopping the company, which is the only one worth
+   * pacing against. Null until some window has reported.
+   */
+  get binding(): SDKRateLimitInfo | null { return worstWindow(this.#windows); }
+
+  /**
+   * The weekly window specifically. It is the one an operator plans around:
+   * a five-hour window spent at lunchtime is back by dinner, and a seven-day
+   * one spent on Tuesday is gone for the week.
+   */
+  get weekly(): SDKRateLimitInfo | null { return worstWindow(this.#windows, isWeekly); }
   get pausedUntil(): number { return this.#pausedUntil; }
 
   /** Who is mid-shift this second. The console shows it live. */
@@ -170,7 +195,10 @@ export class Scheduler {
    */
   #applyRateLimit(info: SDKRateLimitInfo): void {
     this.#lastRateLimit = info;
+    this.#windows.set(info.rateLimitType ?? 'unknown', info);
 
+    // A refusal is about the window that refused, whether or not it is the
+    // fullest one — there is nothing to pace, the door is shut.
     if (info.status === 'rejected') {
       this.#pausedUntil = normaliseResetsAt(info.resetsAt) ?? Date.now() + 15 * 60_000;
       this.#d.ledger.emit('company', 'company.rate_limited', null, {
@@ -179,27 +207,31 @@ export class Scheduler {
       return;
     }
 
-    const u = info.utilization ?? 0;
+    // Everything below reads the fullest window rather than the one that just
+    // reported. Any of them can stop the company, so the binding one is the
+    // only honest input to a decision about slowing down.
+    const worst = this.binding ?? info;
+    const u = worst.utilization ?? 0;
 
     // The operator's headroom. Slowing down still spends the window, just
     // later; only stopping leaves any of it for the person who pays for it.
     if (this.#opts.pauseAboveUtilization < 1 && u >= this.#opts.pauseAboveUtilization) {
-      this.#pausedUntil = normaliseResetsAt(info.resetsAt) ?? Date.now() + 15 * 60_000;
+      this.#pausedUntil = normaliseResetsAt(worst.resetsAt) ?? Date.now() + 15 * 60_000;
       this.#d.ledger.emit('company', 'company.usage_paused', null, {
         utilization: u, ceiling: this.#opts.pauseAboveUtilization,
-        rateLimitType: info.rateLimitType,
+        rateLimitType: worst.rateLimitType,
         resumesAt: new Date(this.#pausedUntil).toISOString(),
       });
       return;
     }
 
     const prev = this.#throttle;
-    this.#throttle = info.status === 'allowed_warning' ? 3
+    this.#throttle = worst.status === 'allowed_warning' ? 3
       : u > this.#opts.throttleAboveUtilization ? 1 + (u - this.#opts.throttleAboveUtilization) * 6
       : 1;
     if (Math.abs(this.#throttle - prev) > 0.25) {
       this.#d.ledger.emit('company', 'company.throttled', null, {
-        utilization: u, factor: Number(this.#throttle.toFixed(2)), rateLimitType: info.rateLimitType,
+        utilization: u, factor: Number(this.#throttle.toFixed(2)), rateLimitType: worst.rateLimitType,
       });
     }
   }
