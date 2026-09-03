@@ -1090,3 +1090,40 @@ test('vitals says what was consumed, not only what it would have cost', async ({
   await expect(page.locator('.finding').filter({ hasText: 'weekly subscription window' }))
     .toContainText('78%');
 });
+
+/**
+ * The shell is the viewport. Only the main pane scrolls.
+ *
+ * A grid row sized 1fr still has min-height:auto, so the longest view grew
+ * the row past the window instead of scrolling inside it: the document itself
+ * scrolled and carried the rail and the status bar up off the top. It looks
+ * like a rendering glitch and it is a one-property CSS bug, so it is measured
+ * here rather than trusted to a screenshot.
+ */
+test('the page itself never scrolls, however long the view is', async ({ page }) => {
+  await go(page, 'Vitals');
+  await expect(page.locator('.tile').first()).toBeVisible();
+
+  // The longest view in the console, at a height that cannot contain it.
+  await page.setViewportSize({ width: 1280, height: 500 });
+  await expect(page.locator('.foot')).toBeAttached();
+
+  const doc = await page.evaluate(() => ({
+    scrollHeight: document.documentElement.scrollHeight,
+    clientHeight: document.documentElement.clientHeight,
+  }));
+  expect(doc.scrollHeight).toBeLessThanOrEqual(doc.clientHeight);
+
+  // And the pane that should scroll, does — otherwise the assertion above
+  // would also pass on a view whose content had been clipped away entirely.
+  const main = await page.locator('.main').evaluate((el) => ({
+    scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+  }));
+  expect(main.scrollHeight).toBeGreaterThan(main.clientHeight);
+
+  // Scrolling to the bottom of it must leave the rail and status bar put.
+  const railBefore = (await page.locator('.rail').boundingBox())!.y;
+  await page.locator('.main').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await expect(page.locator('.status')).toBeInViewport();
+  expect((await page.locator('.rail').boundingBox())!.y).toBe(railBefore);
+});

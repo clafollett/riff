@@ -283,7 +283,11 @@ const util = computed(() => {
 
 <style scoped>
 .shell { display: grid; grid-template-columns: var(--rail-w, 208px) 1fr;
-  grid-template-rows: 1fr 34px; height: 100%; position: relative; }
+  grid-template-rows: 1fr 34px; height: 100%; position: relative;
+  /* The shell is the viewport and never scrolls; only .main does. Without
+     this the document itself scrolled and carried the rail and the status
+     bar up off the top of the window. */
+  overflow: hidden; }
 .rail {
   grid-row: 1 / span 2; background: var(--rail);
   padding: 22px 0 14px; display: flex; flex-direction: column; overflow: hidden;
@@ -325,7 +329,11 @@ const util = computed(() => {
 .pill { background: var(--alert); color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
 .grow { flex: 1; }
 .who { padding: 0 20px; font-size: 12px; line-height: 1.7; }
-.main { overflow-y: auto; }
+/* min-height:0 is what makes overflow-y actually bite. A grid row sized 1fr
+   still has min-height:auto, so a long view — Vitals is the longest — grew
+   the row past the viewport instead of scrolling inside it, and the whole
+   shell slid up out of the window. */
+.main { overflow-y: auto; min-height: 0; }
 .blank { max-width: 46ch; }
 .blank h1 { font-size: 26px; margin-bottom: 8px; }
 .blank p { font-size: 14px; line-height: 1.6; margin-bottom: 18px; }
