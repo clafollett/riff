@@ -381,6 +381,34 @@ const LOST_SESSION = /No conversation found with session ID|session .* not found
 const OUT_OF_TURNS = /Reached maximum number of turns/i;
 
 /**
+ * How much of the subprocess's stderr to keep for a shift that dies.
+ *
+ * `Claude Code process exited with code 1` is the whole of what the SDK says,
+ * and the CLI's own account of why goes to a stderr nobody was reading. Two
+ * shifts died that way on 2026-09-03 and the cause had to be reconstructed
+ * from transcript files inside the container. A tail is enough — the end is
+ * where the reason is.
+ */
+const STDERR_KEPT = 3_000;
+
+/**
+ * The subscription token must never reach the ledger.
+ *
+ * `docker/.env` holds a command that prints the token precisely so the value
+ * is never written down, and the ledger is a file on disk. Anything
+ * token-shaped in a crash dump is replaced rather than trusted not to be
+ * there — a diagnostic is not worth a credential.
+ */
+export const withoutSecrets = (text: string): string => {
+  let out = text;
+  for (const k of ['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'RIFF_TOKEN']) {
+    const v = process.env[k];
+    if (v && v.length > 8) out = out.split(v).join(`[${k}]`);
+  }
+  return out.replace(/\b(sk-[A-Za-z0-9_-]{12,}|Bearer\s+[A-Za-z0-9._-]{12,})/g, '[redacted]');
+};
+
+/**
  * Turns held back for the hand-over when a conversation is replaced.
  *
  * These are the most expensive turns of the shift — they run against the full
@@ -749,6 +777,33 @@ export const tick = async (
   }
   const watch = blindWatch();
   let wentBlind = false;
+  /** The tail of what the CLI said on its way out, kept only for a failure. */
+  let noise = '';
+  /**
+   * This leg has already taken every turn it was allowed.
+   *
+   * Reaching the ceiling normally ends the leg with a result whose subtype is
+   * `error_max_turns`. Sometimes it kills the process instead, and the SDK
+   * reports `Claude Code process exited with code 1` with nothing else — no
+   * result, no turns, no summary, and a red failure in the console for a shift
+   * that did thirty turns of work.
+   *
+   * Measured on 2026-09-03 from the transcripts of all three shifts that hit
+   * the ceiling that hour. Every one of them ends on the same internal record,
+   * `max_turns_reached {maxTurns: 30, turnCount: 31}`. What separates the two
+   * that died from the one that returned cleanly is the tool call underneath:
+   *
+   *   rafe   died    Bash `timeout 60 node --test …`   result after  60.3s
+   *   juno   died    Bash `timeout 120 npm test …`     result after 120.0s
+   *   nadia  clean   an MCP message                    result after   0.02s
+   *
+   * Both deaths ended on a Bash command its own `timeout` had just killed,
+   * landing on the last turn the shift was allowed. So the count is kept here
+   * rather than inferred from a message that never arrives: a leg that has
+   * spent its budget and then dies was truncated, not broken, and it gets its
+   * journal and its commit like any other shift that ran out of turns.
+   */
+  let atCeiling = false;
   /** Did the company's own MCP server come up for this leg? */
   let toolsUp = true;
   let toolRetries = 0;
@@ -792,6 +847,8 @@ export const tick = async (
    * would be a way to buy more turns than the company allowed.
    */
   const runLeg = async (prompt: string, maxTurns: number, handover = false): Promise<void> => {
+    atCeiling = false;
+    let toolTurns = 0;
     // The hand-over's own context is not the shift's context — it is measured
     // against the conversation we have already decided to discard — and its
     // closing words are about note-taking rather than about the work.
@@ -832,6 +889,11 @@ export const tick = async (
         // control that can be argued with in a prompt. See SECURITY.md.
         permissionMode: 'default',
 
+        // The CLI's own account of a death. Without it the ledger records
+        // `exited with code 1` and nothing else, and the reason has to be
+        // reconstructed from transcript files inside the container.
+        stderr: (data: string) => { noise = (noise + data).slice(-STDERR_KEPT); },
+
         // ---- limits ----
         maxTurns,
         ...(d.maxBudgetUsd != null ? { maxBudgetUsd: d.maxBudgetUsd } : {}),
@@ -852,6 +914,12 @@ export const tick = async (
 
     for await (const m of q) {
       if (m.type === 'assistant') {
+        // Every tool-using turn, not only the gated ones — this is the count
+        // the ceiling is measured against. Confirmed at 30 of 30 in both the
+        // shift that died and the one that returned cleanly.
+        if (m.message.content.some((b) => b.type === 'tool_use') && ++toolTurns >= maxTurns) {
+          atCeiling = true;
+        }
         const wantsGated = m.message.content.some(
           (b) => b.type === 'tool_use' && reachesGate(b.name));
         if (watch.turn(gateCalls, wantsGated)) {
@@ -1021,7 +1089,7 @@ export const tick = async (
       // worked, spent real money and usually wrote something down; it simply
       // hit the ceiling before it chose to stop. Recording that as a failure
       // made a busy company look broken and buried the errors that matter.
-      if (OUT_OF_TURNS.test(error)) { truncated = true; break; }
+      if (OUT_OF_TURNS.test(error) || atCeiling) { truncated = true; break; }
 
       if (wentBlind) { failure = WENT_BLIND; break; }
 
@@ -1060,7 +1128,11 @@ export const tick = async (
   }
 
   if (failure) {
-    ledger.emit(agent.id, 'agent.failed', null, { error: failure, ...meter() });
+    ledger.emit(agent.id, 'agent.failed', null, {
+      error: failure,
+      ...(noise.trim() ? { stderr: withoutSecrets(noise).trim() } : {}),
+      ...meter(),
+    });
     return {
       agentId: agent.id, ok: false, summary: '', costUsd, turns, error: failure,
       ...(spentAny() ? { tokens } : {}),
