@@ -262,9 +262,15 @@ fi
 drain() {
   port=${PORT:-4173}
   base="http://127.0.0.1:$port/api"
+  # Split on `{` so each line is one company object, carrying both its slug and
+  # its running flag whatever order the fields arrive in. The first version cut
+  # on commas and took the line before "running":true, which assumed slug and
+  # running were adjacent — they are eight fields apart, so it silently matched
+  # nothing and two rebuilds killed a shift each while the test passed against a
+  # fixture that had them side by side.
   running=$(curl -sf -m 5 "$base/companies" 2>/dev/null \
-    | tr ',' '\n' | grep -B1 '"running":true' | grep -o '"slug":"[^"]*"' \
-    | cut -d'"' -f4) || return 0
+    | tr '{' '\n' | grep '"running":true' \
+    | sed -n 's/.*"slug":"\([^"]*\)".*/\1/p') || return 0
   [ -n "$running" ] || return 0
 
   for slug in $running; do

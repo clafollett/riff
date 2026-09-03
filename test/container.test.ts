@@ -253,11 +253,17 @@ describe('the example env file describes this container, not an imagined one', (
       + `case "$*" in\n`
       + `  *"-X POST"*) exit 0 ;;\n`
       + `esac\n`
+      // The REAL field order from registry.list(): slug and running are eight
+      // fields apart. The first fixture put them side by side, which is the one
+      // shape the original parser handled — it went green while the launcher
+      // killed a shift on every rebuild.
+      + `head='{"companies":[{"slug":"testco","name":"Test","business":"b","home":"/h",'\n`
+      + `head="$head"'"ceo":"C","founded":true,"wanted":true,"release":"none",'\n`
       + `if [ -f ${dir}/asked ]; then\n`
-      + `  printf '{"companies":[{"slug":"testco","running":false,"awake":[]}]}'\n`
+      + `  printf '%s"running":false,"awake":[]}]}' "$head"\n`
       + `else\n`
       + `  : > ${dir}/asked\n`
-      + `  printf '{"companies":[{"slug":"testco","running":true,"awake":[]}]}'\n`
+      + `  printf '%s"running":true,"awake":[]}]}' "$head"\n`
       + `fi\n`, { mode: 0o755 });
     // The stub vault announces itself, so a test can tell whether the password
     // manager was asked to open at all.
