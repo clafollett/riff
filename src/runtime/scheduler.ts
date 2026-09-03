@@ -5,6 +5,7 @@ import type { World } from '../worldfs/world.ts';
 import type { Clock } from '../core/clock.ts';
 import { tick, type TickResult } from './staff.ts';
 import { worstWindow, isWeekly, isKnownLimit } from './limits.ts';
+import { roundIsDue } from './cadence.ts';
 import type { SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 import { applyApproved } from './executor.ts';
 import { RANK } from '../core/types.ts';
@@ -151,6 +152,8 @@ export class Scheduler {
    */
   #windows = new Map<string, SDKRateLimitInfo>();
   #readAt = new Map<string, number>();
+  /** When the last round of shifts began. Zero so the first one fires at once. */
+  #lastRound = 0;
 
   constructor(d: Deps) {
     this.#d = d;
@@ -290,6 +293,7 @@ export class Scheduler {
     if (this.#running) return;
     this.#running = true;
     this.#ticks = 0;
+    this.#lastRound = 0;
     this.#opts.until = bounds?.until ?? null;
     this.#opts.maxTicks = bounds?.maxTicks ?? null;
     this.#abort = new AbortController();
@@ -357,11 +361,33 @@ export class Scheduler {
       }
 
       const now = Date.now();
-const due = selectDue(this.#d.ledger.listAgents(), {
+
+      // One cadence for the company, not one per person.
+      //
+      // baseIntervalMinutes used to space out only an INDIVIDUAL's shifts, so
+      // a roster of four on a ten-minute interval never rested: while the CEO
+      // waited out his ten minutes the other three were already due, and the
+      // queue never emptied. Measured over 70 minutes of a real run, the
+      // shifts totalled 69.9 of them — a duty cycle of 100%, and every hire
+      // silently made the company spend faster.
+      //
+      // Now the interval gates ROUNDS. Every interval, up to `concurrency`
+      // agents wake; nobody wakes in between. Rank still decides who comes due
+      // first, which is what selectDue and #intervalFor are for.
+      if (!roundIsDue(now, this.#lastRound, this.#opts.baseIntervalMs, this.#throttle)) {
+        await sleep(2_000, this.#abort.signal);
+        continue;
+      }
+
+      const due = selectDue(this.#d.ledger.listAgents(), {
         now, nextDue: this.#nextDue, inFlight: this.#inFlight,
         slots: this.#opts.concurrency - this.#inFlight.size,
       });
 
+      // Only a round that actually woke somebody starts the clock. An empty
+      // one means nobody was due yet, and holding the gate open lets the next
+      // agent start the moment they are.
+      if (due.length) this.#lastRound = now;
       for (const a of due) this.#track(this.#wake(a));
 
       // Approved work is applied by the company, never by the requester — so a

@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { selectDue } from '../src/runtime/scheduler.ts';
+import { roundIsDue } from '../src/runtime/cadence.ts';
 import type { Agent, AgentId, Tier } from '../src/core/types.ts';
 
 const staff = (id: string, tier: Tier): Agent => ({
@@ -74,5 +75,80 @@ describe('ten staff and three slots: everybody works', () => {
 
   test('no slots means no wakeups, not a negative slice', () => {
     assert.deepEqual(selectDue(TEN, { now: 1, nextDue: new Map(), inFlight: new Set(), slots: -2 }), []);
+  });
+});
+
+describe('the interval paces the company, not one person at a time', () => {
+  /**
+   * Replay an hour of the loop's gating, in minutes.
+   *
+   * Only what decides WHEN work starts: the company gate, selectDue, and each
+   * agent's own next-due. Shift length is fixed rather than modelled — the
+   * question is how much of the hour the company is working, and a real run
+   * answered 100% of it.
+   */
+  const run = (opts: { minutes: number; interval: number; slots: number; shift: number }) => {
+    const nextDue = new Map<AgentId, number>();
+    const busyUntil = new Map<AgentId, number>();
+    let lastRound = 0;
+    let started = 0;
+    let workingMinutes = 0;
+
+    for (let now = 1; now <= opts.minutes; now++) {
+      const inFlight = new Set([...busyUntil].filter(([, until]) => until > now).map(([id]) => id));
+      if (inFlight.size) workingMinutes++;
+      if (!roundIsDue(now, lastRound, opts.interval)) continue;
+
+      const due = selectDue(TEN.slice(0, 4), {
+        now, nextDue, inFlight, slots: opts.slots - inFlight.size,
+      });
+      if (!due.length) continue;
+      lastRound = now;
+      for (const a of due) {
+        started++;
+        busyUntil.set(a.id, now + opts.shift);
+        // Rank still staggers an individual; it no longer sets the rate.
+        nextDue.set(a.id, now + opts.interval);
+      }
+    }
+    return { started, workingMinutes };
+  };
+
+  test('four staff on a fifteen-minute interval do not work the whole hour', () => {
+    // The bug this exists for: the gap applied to each person, so with four on
+    // the roster somebody was always due. A real 70-minute run logged 69.9
+    // minutes of shifts.
+    const { started, workingMinutes } = run({ minutes: 60, interval: 15, slots: 2, shift: 4 });
+    assert.ok(started <= 8, `at most one round of 2 every 15 minutes, got ${started} shifts`);
+    assert.ok(workingMinutes < 40, `the company should rest; it worked ${workingMinutes} of 60 minutes`);
+  });
+
+  test('concurrency sets how many wake together, not how often', () => {
+    const one = run({ minutes: 60, interval: 15, slots: 1, shift: 4 });
+    const two = run({ minutes: 60, interval: 15, slots: 2, shift: 4 });
+    assert.ok(two.started > one.started, 'two slots should do more work per round');
+    // Rounds are gated the same either way — more hands, not more often.
+    assert.ok(two.started <= one.started * 2 + 1,
+      `two slots must not start more than twice the rounds: ${one.started} vs ${two.started}`);
+  });
+
+  test('a throttled company starts its rounds further apart', () => {
+    // Throttling stretches the company cadence for the same reason it stretches
+    // an individual's: pacing against a filling window means fewer rounds, not
+    // the same number staggered differently.
+    assert.equal(roundIsDue(10 * 60_000, 0, 10 * 60_000, 1), true);
+    assert.equal(roundIsDue(10 * 60_000, 0, 10 * 60_000, 3), false);
+    assert.equal(roundIsDue(30 * 60_000, 0, 10 * 60_000, 3), true);
+  });
+
+  test('the first round fires at once rather than waiting out an interval', () => {
+    // lastRound starts at zero, so starting a company does not buy silence —
+    // the operator who pressed Start should see a shift, not a quarter hour of
+    // nothing. Any real clock is further from zero than any interval.
+    assert.ok(roundIsDue(Date.now(), 0, 15 * 60_000), 'a fresh company works immediately');
+    // And the round after it waits the full interval.
+    const t0 = Date.now();
+    assert.equal(roundIsDue(t0 + 60_000, t0, 15 * 60_000), false);
+    assert.equal(roundIsDue(t0 + 15 * 60_000, t0, 15 * 60_000), true);
   });
 });

@@ -49,7 +49,14 @@ export type CompanyPolicy = {
   maxTurns: number;
   /** How many staff may be awake at once. */
   concurrency: number;
-  /** Base gap between an agent's shifts. Rank and throttle scale it. */
+  /**
+   * How often the COMPANY starts a round of shifts. Every interval, up to
+   * `concurrency` staff wake; nobody wakes in between. Throttling stretches it.
+   *
+   * It used to be per agent, which meant a roster of four never rested — the
+   * gap applied to each person while the others were already due. Rank still
+   * decides who comes due first; this decides how often anyone does.
+   */
   baseIntervalMinutes: number;
   /** Stretch the intervals once the window is this far spent (0–1). */
   throttleAboveUtilization: number;
