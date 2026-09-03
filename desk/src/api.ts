@@ -147,7 +147,11 @@ export const api = {
     if (!r.ok) throw new Error(`/api/companies → ${r.status}`);
     return r.json() as Promise<{ companies: CompanyRef[]; active: string | null }>;
   },
-  foundCompany: (input: { name: string; business: string; ceo: string; chair: string }) =>
+  foundCompany: (input: { name: string; business: string; ceo: string; chair: string;
+                         board?: Array<{ name: string; role?: string }>;
+                         policy?: Partial<CompanyPolicy>;
+                         release?: 'none' | 'bundle';
+                         running?: boolean }) =>
     send<{ slug: string }>('/api/companies', 'POST', input),
   setCompanyRunning: (slug: string, running: boolean) =>
     send<{ running: boolean }>(`/api/companies/${encodeURIComponent(slug)}/running`, 'POST', { running }),

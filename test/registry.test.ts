@@ -425,6 +425,178 @@ describe('what someone says they are doing leaves a trace', () => {
   });
 });
 
+describe('founding says everything a founding decides', () => {
+  // Every one of these was a manual config.json edit before the API grew the
+  // field, and the board one was a live bug: the second seat was written in
+  // after founding, so the roster never had it while the gate still read its
+  // standing from config.
+  test('a second board seat is seeded at founding, not written in afterwards', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'Two Seats', business: 'b', ceo: 'Juno', chair: 'Cali',
+                          board: [{ name: 'Marvin', role: 'Board' }] });
+      if (!c.ok) throw new Error(c.reason);
+      const rows = c.company.ledger.listAgents().filter((a) => a.tier === 'board');
+      console.log(JSON.stringify(rows.map((a) => [a.id, a.role]).sort()));
+    `);
+    assert.deepEqual(JSON.parse(out), [['cali', 'Chairman'], ['marvin', 'Board']]);
+  });
+
+  test('a board seat may be a bare name, and takes the default role', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'Bare Name', business: 'b', ceo: 'Juno', chair: 'Cali',
+                          board: [{ name: 'Marvin' }] });
+      if (!c.ok) throw new Error(c.reason);
+      console.log(c.company.cfg.board.map((b) => b.id + ':' + b.role).join(','));
+    `);
+    assert.equal(out.trim(), 'cali:Chairman,marvin:Board');
+  });
+
+  test('a board seat sharing the CEO\'s name is refused, not silently overwritten', () => {
+    // genesis seeds the board and then the CEO, both with upsertAgent. The
+    // shared id replaced the board row with an executive one and left the
+    // gate granting board standing to the CEO's own seat.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'Same Name', business: 'b', ceo: 'Juno', chair: 'Cali',
+                          board: [{ name: 'Juno' }] });
+      console.log(c.ok ? 'FOUNDED' : c.reason);
+    `);
+    assert.match(out, /cannot be both the CEO and on the board/);
+  });
+
+  test('two board seats with the same name are refused', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'Twice Over', business: 'b', ceo: 'Juno', chair: 'Marvin',
+                          board: [{ name: 'Marvin' }] });
+      console.log(c.ok ? 'FOUNDED' : c.reason);
+    `);
+    assert.match(out, /two board members would both answer to marvin/);
+  });
+
+  test('policy and release route are set at founding and clamped on the way in', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'Set At Founding', business: 'b', ceo: 'Juno', chair: 'Cali',
+                          policy: { concurrency: 3, baseIntervalMinutes: 10, maxTurns: 99999 },
+                          release: 'bundle' });
+      if (!c.ok) throw new Error(c.reason);
+      const p = c.company.cfg.policy;
+      console.log(JSON.stringify({ concurrency: p.concurrency, interval: p.baseIntervalMinutes,
+                                   maxTurns: p.maxTurns, release: c.company.cfg.release }));
+    `);
+    // 99999 turns is clamped to the ceiling rather than accepted or refused.
+    assert.deepEqual(JSON.parse(out), { concurrency: 3, interval: 10, maxTurns: 400, release: 'bundle' });
+  });
+
+  test('an omitted policy is every default, not a policy of zeroes', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { DEFAULT_POLICY } = await import('${process.cwd()}/src/core/config.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'No Policy', business: 'b', ceo: 'Juno', chair: 'Cali' });
+      if (!c.ok) throw new Error(c.reason);
+      console.log(JSON.stringify(c.company.cfg.policy) === JSON.stringify(DEFAULT_POLICY)
+        ? 'DEFAULTS' : JSON.stringify(c.company.cfg.policy));
+    `);
+    assert.equal(out.trim(), 'DEFAULTS');
+  });
+
+  test('an unknown release route is the safe one, not the bundle', () => {
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const c = r.found({ name: 'Odd Route', business: 'b', ceo: 'Juno', chair: 'Cali',
+                          release: 'publish-everywhere' });
+      if (!c.ok) throw new Error(c.reason);
+      console.log(c.company.cfg.release);
+    `);
+    assert.equal(out.trim(), 'none');
+  });
+});
+
+/** Bring the gateway up against the throwaway installation. */
+const serve = async (): Promise<{ port: number; kill: () => void }> => {
+  const port = 4400 + (process.pid % 400);
+  const child = spawn(process.execPath, ['src/gateway/server.ts'], {
+    cwd: process.cwd(), stdio: 'ignore',
+    env: { ...process.env, HOME: home, RIFF_ROOT: join(home, '.riff'),
+           RIFF_COMPANY_ID: '', PORT: String(port) },
+  });
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    try { await fetch(`http://localhost:${port}/api/companies`); return { port, kill: () => child.kill('SIGTERM') }; }
+    catch { /* not listening yet */ }
+  }
+  child.kill('SIGTERM');
+  throw new Error('the gateway never came up');
+};
+
+describe('the API can found a company without anyone editing config.json', () => {
+  test('a brief longer than a paragraph arrives whole', async () => {
+    // It used to be sliced to 2000 characters with no error. Fathom's fifth
+    // brief is 3755, and the cut landed four paragraphs before the one that
+    // names the acceptance test — so the company was founded on instructions
+    // that stopped mid-word and nobody was told.
+    const brief = ('This company has no assigned field. ').repeat(120).trim();
+    assert.ok(brief.length > 2000, 'the fixture has to be longer than the old cap');
+    const { port, kill } = await serve();
+    try {
+      const r = await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Whole Brief', ceo: 'Juno', chair: 'Cali', business: brief,
+          board: [{ name: 'Marvin', role: 'Board' }],
+          policy: { concurrency: 3, baseIntervalMinutes: 10 },
+          release: 'bundle', running: false,
+        }),
+      });
+      const body = await r.json() as {
+        slug: string; company: { business: string };
+        board: Array<{ id: string }>; policy: { concurrency: number; baseIntervalMinutes: number };
+        release: string; running: boolean;
+      };
+      assert.equal(r.status, 201, JSON.stringify(body));
+      assert.equal(body.company.business.length, brief.length, 'the brief must not be truncated');
+      assert.deepEqual(body.board.map((b) => b.id), ['cali', 'marvin']);
+      assert.equal(body.policy.concurrency, 3);
+      assert.equal(body.policy.baseIntervalMinutes, 10);
+      assert.equal(body.release, 'bundle');
+      assert.equal(body.running, false, 'running:false founds without spending anything');
+    } finally { kill(); }
+  });
+
+  test('a brief past the ceiling is refused, so nobody founds on half of one', async () => {
+    const { port, kill } = await serve();
+    try {
+      const r = await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Too Much', ceo: 'Juno', chair: 'Cali',
+                               business: 'x'.repeat(20_001), running: false }),
+      });
+      const body = await r.json() as { error?: string };
+      assert.equal(r.status, 400);
+      assert.match(body.error ?? '', /20001 characters/);
+      const listing = await (await fetch(`http://localhost:${port}/api/companies`)).json() as { companies: unknown[] };
+      assert.deepEqual(listing.companies, [], 'and nothing was founded');
+    } finally { kill(); }
+  });
+});
+
 describe('a fresh installation starts empty', () => {
   test('the server founds nothing, and still serves', async () => {
     // It used to found "Untitled Company" so a new checkout was never blank.

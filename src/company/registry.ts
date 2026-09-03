@@ -94,12 +94,22 @@ export class Registry {
   }
 
   /**
-   * Found a new company. The board is inherited — one person runs this
-   * installation and every company on it answers to them — but everything
-   * else starts empty, because the CEO builds the rest.
+   * Found a new company.
+   *
+   * Board, policy and release route belong to the founding rather than to a
+   * later edit, because genesis seeds the roster on the first run only. A
+   * board member written into config afterwards was hireable while still
+   * carrying board authority — the gate reads standing from config and the
+   * roster had never heard of them. Founding a company the way the operator
+   * meant it therefore has to be one call, which is why every one of these
+   * was previously done by editing config.json by hand.
    */
-  found(input: { name: string; business: string; ceo: string; chair: string }):
-    { ok: true; company: Company } | { ok: false; reason: string } {
+  found(input: {
+    name: string; business: string; ceo: string; chair: string;
+    board?: readonly { name: string; role?: string }[];
+    policy?: unknown;
+    release?: unknown;
+  }): { ok: true; company: Company } | { ok: false; reason: string } {
     const name = input.name.trim();
     if (!name) return { ok: false, reason: 'a company needs a name' };
     const slug = slugId(name);
@@ -107,6 +117,27 @@ export class Registry {
 
     const chair = input.chair.trim() || 'Chair';
     const ceo = input.ceo.trim() || 'CEO';
+    const ceoId = slugId(ceo);
+    const board = [
+      { id: slugId(chair), name: chair, role: 'Chairman' },
+      ...(input.board ?? []).map((m) => {
+        const n = m.name.trim();
+        return { id: slugId(n), name: n, role: m.role?.trim() || 'Board' };
+      }),
+    ];
+
+    // genesis seeds the board and then the CEO, both with upsertAgent, so a
+    // shared id does not collide loudly — it replaces the board row with an
+    // executive one and leaves the gate granting board standing to a seat the
+    // roster says is the CEO.
+    const seen = new Set<string>();
+    for (const m of board) {
+      if (!m.id) return { ok: false, reason: 'a board member needs a name' };
+      if (m.id === ceoId) return { ok: false, reason: `${m.id} cannot be both the CEO and on the board` };
+      if (seen.has(m.id)) return { ok: false, reason: `two board members would both answer to ${m.id}` };
+      seen.add(m.id);
+    }
+
     const home = companyHome(slug);
     const cfg: RiffConfig = {
       version: 1,
@@ -114,11 +145,13 @@ export class Registry {
       worldDir: `${home}/world`,
       ledgerPath: `${home}/ledger.db`,
       company: { name, business: input.business.trim() },
-      board: [{ id: slugId(chair), name: chair, role: 'Chairman' }],
-      ceo: { id: slugId(ceo), name: ceo },
+      board,
+      ceo: { id: ceoId, name: ceo },
       connectors: {},
-      release: 'none',
-      policy: DEFAULT_POLICY,
+      release: input.release === 'bundle' ? 'bundle' : 'none',
+      // Absent means every default, and every named field is clamped, so a
+      // request cannot ask for a thousand concurrent agents.
+      policy: input.policy === undefined ? DEFAULT_POLICY : readPolicy(input.policy),
     };
     scaffoldConfig(cfg);
     return { ok: true, company: this.#build(slug, cfg) };

@@ -149,6 +149,31 @@ const serveDesk = async (res: ServerResponse, urlPath: string): Promise<void> =>
   }
 };
 
+/**
+ * A brief used to be a line of business, so 2000 characters was generous and
+ * quietly dropping the rest was harmless. It is now the thing that steers the
+ * company: Fathom's fifth brief is 3755 characters, and the cut landed
+ * mid-word, four paragraphs before the one naming the acceptance test. A
+ * company founded on half its instructions reads as a company that ignored
+ * them. Refuse, and say by how much.
+ */
+const BRIEF_MAX = 20_000;
+const briefTooLong = (s: string): string | null =>
+  s.length > BRIEF_MAX
+    ? `brief is ${s.length} characters; a company will hold ${BRIEF_MAX}`
+    : null;
+
+/** A board reaches the API as names or as {name, role}; both mean a seat. */
+const boardFrom = (raw: readonly unknown[]): Array<{ name: string; role?: string }> =>
+  raw.flatMap((m) => {
+    if (typeof m === 'string') return m.trim() ? [{ name: m }] : [];
+    if (!m || typeof m !== 'object') return [];
+    const o = m as Record<string, unknown>;
+    const name = typeof o['name'] === 'string' ? o['name'] : '';
+    if (!name.trim()) return [];
+    return [typeof o['role'] === 'string' ? { name, role: o['role'] } : { name }];
+  });
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
   const p = url.pathname;
@@ -162,24 +187,33 @@ const server = createServer(async (req, res) => {
 
     if (p === '/api/companies' && method === 'POST') {
       const b = await readBody(req);
+      const business = String(b['business'] ?? '');
+      const tooLong = briefTooLong(business);
+      if (tooLong) return json(res, { error: tooLong }, 400);
       const r = registry.found({
         name: String(b['name'] ?? ''),
-        // Room for a paragraph of founding context, not a novel: this is
-        // copied verbatim into the constitution and the CEO's brief.
-        business: String(b['business'] ?? '').slice(0, 2000),
+        business,
         ceo: String(b['ceo'] ?? ''),
         chair: String(b['chair'] ?? guessKeeperName()),
+        ...(Array.isArray(b['board']) ? { board: boardFrom(b['board']) } : {}),
+        ...(b['policy'] && typeof b['policy'] === 'object' ? { policy: b['policy'] } : {}),
+        ...(typeof b['release'] === 'string' ? { release: b['release'] } : {}),
       });
       if (!r.ok) return json(res, { error: r.reason }, 409);
       // A company founded on purpose starts working on purpose. Its CEO has an
       // empty world and a mandate, and the first thing anyone wants to see is
-      // what it does with them.
-      await registry.setRunning(r.company.slug, true);
+      // what it does with them. `running: false` is for the caller founding
+      // several and reading them over before any of them spends anything.
+      const start = b['running'] !== false;
+      if (start) await registry.setRunning(r.company.slug, true);
       return json(res, {
         slug: r.company.slug,
         company: r.company.cfg.company,
         ceo: r.company.cfg.ceo,
-        running: true,
+        board: r.company.cfg.board,
+        policy: r.company.cfg.policy,
+        release: r.company.cfg.release,
+        running: start,
       }, 201);
     }
 
@@ -267,10 +301,14 @@ const server = createServer(async (req, res) => {
       }
 
       const b = await readBody(req);
+      if (typeof b['business'] === 'string') {
+        const tooLong = briefTooLong(b['business']);
+        if (tooLong) return json(res, { error: tooLong }, 400);
+      }
       const was = registry.list().find((c) => c.slug === target)?.business ?? '';
       const r = await registry.update(target, {
         ...(typeof b['name'] === 'string' ? { name: b['name'] } : {}),
-        ...(typeof b['business'] === 'string' ? { business: b['business'].slice(0, 2000) } : {}),
+        ...(typeof b['business'] === 'string' ? { business: b['business'] } : {}),
         ...(typeof b['slug'] === 'string' ? { slug: b['slug'] } : {}),
         // Clamped in readPolicy, so a hand-written value cannot ask for a
         // thousand concurrent agents or a turn ceiling of zero.
