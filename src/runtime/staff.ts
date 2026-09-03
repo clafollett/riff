@@ -769,12 +769,27 @@ export const tick = async (
   });
   const gated: CanUseTool = (name, input, opts) => { gateCalls++; return gate2(name, input, opts); };
 
-  /** One controller for the whole shift, so an abort ends it rather than one leg. */
-  const stop = new AbortController();
-  if (d.signal) {
+  /**
+   * One controller per LEG, chained to the shift's own signal.
+   *
+   * It used to be one for the whole shift, and two of the three ways a leg
+   * ends early fire it: the blind watch and the missing-tools check both call
+   * stop.abort() to break out of the stream. Blind ends the shift, so that was
+   * harmless. Missing tools is supposed to be worth one cold retry — and the
+   * retry handed the SDK the same, already-aborted controller, so it died on
+   * the spot with "Operation aborted" and the shift was lost anyway.
+   *
+   * Rafe, 2026-09-03 23:36:26: tools_missing on a resumed session, session
+   * reset two seconds later, and `agent.failed: Operation aborted` in the same
+   * second. The retry the comment below promises had never once run.
+   */
+  let stop = new AbortController();
+  const armStop = (): void => {
+    stop = new AbortController();
+    if (!d.signal) return;
     if (d.signal.aborted) stop.abort();
     else d.signal.addEventListener('abort', () => stop.abort(), { once: true });
-  }
+  };
   const watch = blindWatch();
   let wentBlind = false;
   /** The tail of what the CLI said on its way out, kept only for a failure. */
@@ -849,6 +864,8 @@ export const tick = async (
   const runLeg = async (prompt: string, maxTurns: number, handover = false): Promise<void> => {
     atCeiling = false;
     let toolTurns = 0;
+    // A leg that ended by aborting must not hand its dead controller to the next.
+    armStop();
     // The hand-over's own context is not the shift's context — it is measured
     // against the conversation we have already decided to discard — and its
     // closing words are about note-taking rather than about the work.

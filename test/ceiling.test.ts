@@ -82,3 +82,31 @@ describe('a shift that dies for some other reason says what the CLI said', () =>
     assert.match(staff(), /noise\.trim\(\) \? \{ stderr:/);
   });
 });
+
+describe('a leg that aborted itself does not hand the dead controller to the retry', () => {
+  test('every leg arms its own controller', () => {
+    // One controller for the whole shift meant the missing-tools retry — the
+    // one the comment calls "worth exactly one cold retry" — handed the SDK a
+    // controller that was already aborted, and died on the spot.
+    const src = staff();
+    const leg = src.indexOf('const runLeg');
+    assert.match(src.slice(leg, leg + 400), /armStop\(\);/,
+      'the retry inherits a live controller or it is not a retry');
+    assert.doesNotMatch(src, /const stop = new AbortController\(\)/,
+      'a shift-long controller cannot survive a leg that aborts');
+  });
+
+  test('the shift signal is chained on every leg, not only the first', () => {
+    // Otherwise a company stopping mid-retry would not reach the new leg.
+    const src = staff();
+    const arm = src.slice(src.indexOf('const armStop'), src.indexOf('const watch = blindWatch'));
+    assert.match(arm, /d\.signal\.aborted\) stop\.abort\(\)/);
+    assert.match(arm, /addEventListener\('abort'/);
+  });
+
+  test('both early exits still abort — the point was the retry, not the exit', () => {
+    // shift.blind and shift.tools_missing each break the stream this way.
+    assert.equal((staff().match(/stop\.abort\(\);/g) ?? []).length, 3,
+      'two early exits plus the signal chain');
+  });
+});
