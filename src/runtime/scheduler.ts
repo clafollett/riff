@@ -169,6 +169,22 @@ export class Scheduler {
   get binding(): SDKRateLimitInfo | null { return worstWindow(this.#windows); }
 
   /**
+   * Every window by name, for the console.
+   *
+   * `rateLimit` alone is whichever window reported last, so a front page built
+   * on it showed one number and could not say which window it was — and the
+   * five-hour one, the only figure that decides whether the operator can work
+   * this afternoon, was usually not it.
+   */
+  get windows(): Array<{ kind: string; utilization: number | null; resetsAt: number | null }> {
+    return [...this.#windows].map(([kind, w]) => ({
+      kind,
+      utilization: w.utilization ?? null,
+      resetsAt: w.resetsAt ?? null,
+    }));
+  }
+
+  /**
    * The weekly window specifically. It is the one an operator plans around:
    * a five-hour window spent at lunchtime is back by dinner, and a seven-day
    * one spent on Tuesday is gone for the week.

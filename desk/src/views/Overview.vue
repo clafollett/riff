@@ -119,6 +119,30 @@ const used = computed(() => {
   return u == null ? null : Math.round(u * 100);
 });
 
+/**
+ * What the plan has left, by window.
+ *
+ * The five-hour one first: it is the window that decides whether the operator
+ * can do their own work this afternoon, and it was invisible here until now —
+ * the page showed one figure, taken from whichever window reported last, and
+ * that was usually the seven-day.
+ */
+const NAMED: Array<[string, string]> = [
+  ['five_hour', 'five-hour'],
+  ['seven_day', 'seven-day'],
+];
+const plan = computed(() => NAMED.flatMap(([kind, label]) => {
+  const w = props.state.windows?.find((x) => x.kind === kind);
+  if (!w || w.utilization == null) return [];
+  const mins = w.resetsAt == null ? null : Math.round((w.resetsAt * 1000 - Date.now()) / 60_000);
+  return [{
+    kind, label,
+    pct: Math.round(w.utilization * 100),
+    hot: w.utilization >= 0.75,
+    back: mins == null || mins <= 0 ? '' : mins < 90 ? `back in ${mins}m` : `back in ${(mins / 60).toFixed(1)}h`,
+  }];
+}));
+
 const facts = computed(() => [
   { label: 'staff', value: String(props.state.headcount) },
   { label: 'commons', value: `${props.state.commons.held}/${props.state.commons.ceiling}` },
@@ -176,6 +200,24 @@ const working = computed(() => props.state.awake.length);
         <span class="n mono">{{ f.value }}</span>
         <span class="l faint">{{ f.label }}</span>
       </div>
+    </section>
+
+    <section v-if="plan.length" class="plan">
+      <h2>What the plan has left</h2>
+      <div class="meters">
+        <div v-for="w in plan" :key="w.kind" class="meter">
+          <div class="mtop">
+            <span class="l faint">{{ w.label }}</span>
+            <span class="n mono" :class="{ hot: w.hot }">{{ w.pct }}%</span>
+          </div>
+          <div class="track"><div class="fill" :class="{ hot: w.hot }" :style="{ width: w.pct + '%' }" /></div>
+          <span class="l faint">{{ w.back }}</span>
+        </div>
+      </div>
+      <p class="muted note">
+        The subscription window, not money. This is what runs out, and running it
+        out stops your own work as well as the company's.
+      </p>
     </section>
 
     <section class="dials">
@@ -245,6 +287,18 @@ const working = computed(() => props.state.awake.length);
 </template>
 
 <style scoped>
+.plan { margin-bottom: 22px; }
+.plan h2 { font-size: 15px; margin-bottom: 12px; }
+.meters { display: flex; gap: 20px; flex-wrap: wrap; }
+.meter { flex: 1 1 200px; display: flex; flex-direction: column; gap: 5px; }
+.mtop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.meter .n { font-size: 22px; color: var(--ink); }
+.meter .n.hot { color: var(--alert); }
+.meter .l { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.track { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.fill { height: 100%; background: var(--accent); }
+.fill.hot { background: var(--alert); }
+.plan .note { font-size: 12px; margin-top: 12px; max-width: 58ch; }
 .wrap { padding: 34px 44px 60px; max-width: 820px; }
 h1 { font-size: 30px; }
 h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }

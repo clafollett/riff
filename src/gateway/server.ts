@@ -5,6 +5,7 @@ import {
 } from '../core/config.ts';
 import { Registry, type Company } from '../company/registry.ts';
 import { vitals } from '../analytics/vitals.ts';
+import { windowsFromShift } from '../runtime/limits.ts';
 import { exportCompany, exportName, importCompany } from '../company/transfer.ts';
 import { isOperatorError, installRoot } from '../core/config.ts';
 import { takeInstallationLock, type Lock } from '../core/lock.ts';
@@ -157,6 +158,13 @@ const serveDesk = async (res: ServerResponse, urlPath: string): Promise<void> =>
  * company founded on half its instructions reads as a company that ignored
  * them. Refuse, and say by how much.
  */
+/** The meter off the last shift that ended, however it ended. */
+const lastShiftMeter = (ledger: Company['ledger']): unknown => {
+  const raw = ledger.lastEvent(['agent.slept', 'agent.failed'])?.dataJson;
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+};
+
 const BRIEF_MAX = 20_000;
 const briefTooLong = (s: string): string | null =>
   s.length > BRIEF_MAX
@@ -387,6 +395,12 @@ const server = createServer(async (req, res) => {
           pausedUntil: scheduler.pausedUntil || null,
           ticks: scheduler.ticks,
           rateLimit: scheduler.rateLimit,
+          // In memory while the company runs; off the last finished shift when
+          // it does not, which is when an operator is deciding whether to
+          // start it and most wants to know what is left.
+          windows: scheduler.windows.length
+            ? scheduler.windows
+            : windowsFromShift(lastShiftMeter(ledger)),
         });
       }
 

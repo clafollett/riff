@@ -881,6 +881,11 @@ test.describe('many companies, one console', () => {
     const listing = await (await page.request.get('/api/companies')).json();
     expect(listing.companies.find((c: { slug: string }) => c.slug === 'halyard-works').running)
       .toBe(false);
+
+    // The suite runs in order and the archiving test counts what is left, so
+    // a company founded here has to be cleared here.
+    await page.request.delete('/api/companies/halyard-works');
+    await page.goto('/');
   });
 
   test('a founded company starts with a CEO and nothing else', async ({ page }) => {
@@ -986,6 +991,24 @@ test.describe('many companies, one console', () => {
     await expect(page.locator('.card')).toHaveCount(1);
     await expect(page.locator('.card')).toContainText('Testwright Co');
   });
+});
+
+test('the front page says what the plan has left, by window', async ({ page }) => {
+  // The page used to show one percentage taken from whichever window reported
+  // last — usually the seven-day — so the five-hour window, the one that
+  // decides whether the operator can work this afternoon, was never on it.
+  await page.goto('/');
+  await go(page, 'Overview', 'Testwright');
+
+  const plan = page.locator('.plan');
+  await expect(plan.getByText('five-hour')).toBeVisible();
+  await expect(plan.getByText('seven-day')).toBeVisible();
+  await expect(plan).toContainText('84%');
+  await expect(plan).toContainText('78%');
+  // Past three quarters is the operator's problem, not only the company's.
+  await expect(plan.locator('.n.hot').first()).toBeVisible();
+  // And when it comes back, since a five-hour window at 84% is an afternoon.
+  await expect(plan).toContainText('back in');
 });
 
 test('vitals reports what the week cost and what it produced', async ({ page }) => {

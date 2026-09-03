@@ -96,11 +96,19 @@ export default async function globalSetup(): Promise<void> {
     tokens: 1_240_000, tokensIn: 40_000, tokensOut: 200_000,
     cacheRead: 900_000, cacheWrite: 100_000,
     utilization: 0.84, limitType: 'five_hour', weekUtilization: 0.78,
+    used_five_hour: 0.84, used_seven_day: 0.78,
   });
   // A shift that woke, spent and left nothing behind. Barren shifts are the
   // expensive failure the report exists to name, and one has to exist.
   ledger.emit(cfg.ceo.id, 'agent.woke', null, {});
-  ledger.emit(cfg.ceo.id, 'agent.slept', null, { turns: 2, costUsd: 0.18, ceiling: 30 });
+  // It carries the window readings even though it produced nothing: spending
+  // the plan and leaving nothing behind is what a barren shift IS, and the
+  // console reads the last shift's meter when no scheduler is running.
+  ledger.emit(cfg.ceo.id, 'agent.slept', null, {
+    turns: 2, costUsd: 0.18, ceiling: 30,
+    used_five_hour: 0.84, used_seven_day: 0.78,
+    resets_five_hour: Math.round(Date.now() / 1000) + 45 * 60,
+  });
   // A rule that bit. Without one, the table of refusals renders empty and
   // proves only that it can render nothing.
   ledger.emit('fen', 'gate.deny', 'commons/overflow.md',
