@@ -773,6 +773,29 @@ describe('a shift records the ceiling it ran under', () => {
     assert.match(slept[0]!, /ceiling/);
     assert.match(slept[0]!, /truncated/, 'and whether the ceiling is what ended it');
   });
+
+  test('the ceiling is caught where it actually arrives — the result, not the catch', () => {
+    // SDK 0.3.243 does not throw on the turn ceiling. It returns a result with
+    // subtype 'error_max_turns' and num_turns = maxTurns + 1; measured at
+    // budgets of 3 and 6, with and without adaptive thinking. Watching only
+    // the catch for /Reached maximum number of turns/ meant every truncated
+    // shift was recorded as one that chose to stop: 119 shifts in
+    // lafollett-labs, three of them cut at the ceiling, truncated never set.
+    const staff = readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+    assert.match(staff, /m\.subtype === 'error_max_turns'\) truncated = true/,
+      'a returned error_max_turns must mark the shift truncated');
+  });
+
+  test('a shift that ran more than one leg says so, so turns over ceiling explains itself', () => {
+    // juno finished at 61 turns under a ceiling of 30 with no rotation and no
+    // truncation, and the shift kept nothing that could say how. One leg
+    // cannot do that, so more than one ran and left no trace.
+    const staff = readFileSync(new URL('../src/runtime/staff.ts', import.meta.url), 'utf8');
+    assert.match(staff, /legs\.push\(\{ budget: maxTurns, turns: m\.num_turns, subtype: m\.subtype \}\)/);
+    const slept = (staff.match(/'agent\.slept'[^;]*/g) ?? [])[0]!;
+    assert.match(slept, /legs\.length > 1 \|\| turns > ceiling/,
+      'recorded only when the single number cannot explain the shift');
+  });
 });
 
 describe('the house style is a cost control, not a preference', () => {

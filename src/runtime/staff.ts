@@ -683,6 +683,18 @@ export const tick = async (
    * result, so legs add and turns within a leg do not.
    */
   const tokens: TokenCount = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+  /**
+   * What each leg was allowed and what it came back having spent.
+   *
+   * Recorded because the two stopped agreeing and nothing in the shift said
+   * why: juno finished a shift at 61 turns under a ceiling of 30, with no
+   * rotation and no truncation, and the run's own work.started proves the
+   * ceiling was 30. A single leg cannot do that — the SDK honours maxTurns
+   * exactly, returning num_turns = maxTurns + 1 — so more than one leg ran and
+   * the shift kept no record of it. Now it does.
+   */
+  const legs: Array<{ budget: number; turns: number; subtype: string }> = [];
   const spentAny = (): boolean =>
     tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite > 0;
 
@@ -913,6 +925,21 @@ export const tick = async (
       if (m.type === 'result') {
         turns += m.num_turns;
         costUsd += m.total_cost_usd;
+        legs.push({ budget: maxTurns, turns: m.num_turns, subtype: m.subtype });
+
+        // The turn ceiling arrives as a result, not as a throw.
+        //
+        // OUT_OF_TURNS below watches the catch for 'Reached maximum number of
+        // turns', and this SDK never throws it: a leg that exhausts its budget
+        // returns subtype 'error_max_turns' with num_turns = maxTurns + 1.
+        // Measured against 0.3.243 at budgets of 3 and 6, with and without
+        // adaptive thinking. So every shift the ceiling cut off was journalled
+        // as one that chose to stop, the agent never got its 'resumes next
+        // shift' note, and vitals reported truncated: 0 for 119 shifts.
+        // A hand-over is excluded: its budget is four turns by design, so
+        // spending all four is the hand-over working, not the shift being cut.
+        if (!handover && m.subtype === 'error_max_turns') truncated = true;
+
         // Counted before the hand-over guard below: a hand-over leg spends the
         // operator's window like any other, even though its context is the
         // conversation we are about to throw away.
@@ -1053,6 +1080,10 @@ export const tick = async (
     turns, costUsd, ceiling,
     ...(truncated ? { truncated: true } : {}),
     ...(rotations ? { rotations } : {}),
+    // Only when the shift did something the single number cannot explain: more
+    // than one leg ran, or the total passed the ceiling. A shift that took its
+    // one leg and stopped is fully described by turns and ceiling already.
+    ...(legs.length > 1 || turns > ceiling ? { legs } : {}),
     ...context(),
     ...meter(),
   });
