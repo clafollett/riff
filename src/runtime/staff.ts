@@ -8,7 +8,7 @@ import type { Clock } from '../core/clock.ts';
 import { createTools, TOOL_NAMESPACE } from './tools.ts';
 import { makeCanUseTool, shellIsContained } from './permissions.ts';
 import { DEFAULT_POLICY } from '../core/config.ts';
-import { worstWindow, isWeekly, windowsFromUsage } from './limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage, limitsReadable } from './limits.ts';
 import { RULES_TEXT } from '../policy/rules.ts';
 
 export type TickDeps = {
@@ -634,6 +634,9 @@ export const tick = async (
       // planning: five hours spent by lunch is back by dinner, a week spent on
       // Tuesday is gone until Tuesday.
       ...(weekly?.utilization != null ? { weekUtilization: weekly.utilization } : {}),
+      // False means the throttle has nothing to pace on, which is not the same
+      // as a plan with room. Absent means nothing asked.
+      ...(planVisible === false ? { planVisible: 'no' } : {}),
     };
   };
 
@@ -717,6 +720,8 @@ export const tick = async (
   /** Did the company's own MCP server come up for this leg? */
   let toolsUp = true;
   let toolRetries = 0;
+  /** Null until a usage call answers either way. See limitsReadable. */
+  let planVisible: boolean | null = null;
 
   /**
    * Ask what is left of the subscription, rather than waiting to be told.
@@ -735,7 +740,9 @@ export const tick = async (
     try {
       const fn = q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET;
       if (typeof fn !== 'function') return;
-      for (const [kind, w] of windowsFromUsage(await fn.call(q) as never)) {
+      const reading = await fn.call(q) as never;
+      planVisible = limitsReadable(reading);
+      for (const [kind, w] of windowsFromUsage(reading)) {
         windows.set(kind, w);
         rateLimit = w;
       }

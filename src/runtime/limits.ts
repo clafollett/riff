@@ -76,3 +76,17 @@ export const windowsFromUsage = (u: UsageReading | null | undefined): Array<[str
   }
   return out;
 };
+
+/**
+ * Whether the plan's windows can be read at all.
+ *
+ * A `claude setup-token` credential carries `user:inference` but not
+ * `user:profile`, so a container holding one can spend the subscription and
+ * cannot see what is left of it: `rate_limits_available` comes back false and
+ * every window is missing. That is indistinguishable, downstream, from a plan
+ * with plenty of room — which is how a night's run got paced off token counts
+ * that nobody is billed for. Recorded per shift so the console can say the
+ * throttle is flying blind rather than implying it is satisfied.
+ */
+export const limitsReadable = (u: UsageReading | null | undefined): boolean =>
+  u != null && u.rate_limits_available !== false;

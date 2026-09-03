@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
-import { worstWindow, isWeekly, windowsFromUsage } from '../src/runtime/limits.ts';
+import { worstWindow, isWeekly, windowsFromUsage, limitsReadable } from '../src/runtime/limits.ts';
 
 const at = (utilization: number, rateLimitType?: string): SDKRateLimitInfo => ({
   status: 'allowed',
@@ -148,5 +148,26 @@ describe('a usage reading asked for, rather than waited for', () => {
   test('a reset time is carried through as epoch seconds', () => {
     const w = new Map(windowsFromUsage(reading));
     assert.equal(w.get('five_hour')?.resetsAt, Date.parse('2026-09-03T11:00:00.000Z') / 1000);
+  });
+});
+
+/**
+ * A `setup-token` credential carries `user:inference` and not `user:profile`,
+ * so a container holding one spends the subscription without being able to see
+ * what is left. Downstream that is indistinguishable from a plan with room —
+ * which is how a whole night got paced off token counts nobody is billed for.
+ */
+describe('a plan the runtime cannot see is not a plan with room', () => {
+  test('a scopeless credential is reported as unreadable, not as empty', () => {
+    assert.equal(limitsReadable({ rate_limits_available: false, rate_limits: null }), false);
+  });
+
+  test('a reading that answers is readable even when every window is null', () => {
+    assert.equal(limitsReadable({ rate_limits_available: true, rate_limits: { five_hour: null } }), true);
+  });
+
+  test('no reading at all is not a claim either way about the plan', () => {
+    assert.equal(limitsReadable(null), false);
+    assert.equal(limitsReadable(undefined), false);
   });
 });

@@ -43,4 +43,32 @@ MSG
 fi
 rm -f /data/.write-test
 
+# Wait for the credentials record, when that is how this stack is being run.
+#
+# A bare token in CLAUDE_CODE_OAUTH_TOKEN can spend the subscription and cannot
+# read what is left of it: the CLI has no subscription record to ask about, so
+# every rate-limit window comes back empty and the throttle has nothing to pace
+# on. The record carries the plan alongside the token and fixes that — but it
+# only exists on a tmpfs that is created with this container, so `up.sh` has to
+# push it in after we are already running.
+#
+# Starting the server first would mean the companies left running wake up,
+# spend a shift with no credentials at all and log the failure. So block here.
+# Nothing is running yet, and there is nothing to lose by waiting.
+if [ "${RIFF_WAIT_FOR_CREDENTIALS:-}" = 1 ]; then
+  creds="$HOME/.claude/.credentials.json"
+  waited=0
+  while [ ! -s "$creds" ]; do
+    if [ "$waited" -ge 60 ]; then
+      echo "riff: no credentials record after ${waited}s at $creds." >&2
+      echo "  up.sh should have written one. Start again, or unset" >&2
+      echo "  RIFF_WAIT_FOR_CREDENTIALS to run on CLAUDE_CODE_OAUTH_TOKEN alone." >&2
+      exit 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  echo "riff: credentials record present after ${waited}s"
+fi
+
 exec "$@"

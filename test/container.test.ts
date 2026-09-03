@@ -103,10 +103,19 @@ describe('the container only sets variables the code reads', () => {
     }
     // Consumed by compose itself, before the container exists.
     const composeOnly = new Set(['RIFF_DATA']);
+    // The entrypoint runs before the server and reads some of these itself,
+    // so it counts as a reader. Exempting them instead would let a variable
+    // nothing reads at all slip through under the same excuse.
+    // The launcher and the entrypoint both run before the server and read
+    // some of these themselves, so they count as readers. Exempting the names
+    // instead would let a variable nothing reads at all through on the same
+    // excuse.
+    const shell = ['../docker/entrypoint.sh', '../docker/up.sh']
+      .map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
     for (const name of set) {
       if (composeOnly.has(name)) continue;
-      assert.ok(allSource.includes(`'${name}'`),
-        `${name} is set for the container but nothing under src/ reads it`);
+      assert.ok(allSource.includes(`'${name}'`) || shell.includes(name),
+        `${name} is named for the container but nothing under src/, the entrypoint or up.sh reads it`);
     }
   });
 });
@@ -211,7 +220,7 @@ describe('the example env file describes this container, not an imagined one', (
    * prints nothing. Guessing at intent from a regex is the wrong tool: run it,
    * and look at what actually came out.
    */
-  const launch = (args: string[] = ['up']): { out: string; argv: string; env: string; asked: boolean } => {
+  const launch = (args: string[] = ['up'], credentialsCmd: string | null = null): { out: string; argv: string; env: string; asked: boolean } => {
     const dir = mkdtempSync(join(tmpdir(), 'riff-launch-'));
     // A stub `docker` that records how it was called, so the test can prove
     // the token was passed by environment and never as an argument.
@@ -227,6 +236,10 @@ describe('the example env file describes this container, not an imagined one', (
         RIFF_TOKEN_CMD: `sh -c 'echo VAULT-OPENED >&2; printf %s ${SENTINEL}'`,
         CLAUDE_CODE_OAUTH_TOKEN: '',
         RIFF_ENV: '',
+        // Explicitly off, or these reach past the fixture into the operator's
+        // own docker/.env and resolve their real credential — which is how
+        // this suite once delivered a live record to a running container.
+        ...(credentialsCmd != null ? { RIFF_CREDENTIALS_CMD: credentialsCmd } : { RIFF_CREDENTIALS_CMD: '' }),
       },
     });
     assert.equal(r.status, 0, `up.sh ${args.join(' ')} failed: ${r.stderr}`);
@@ -266,12 +279,54 @@ describe('the example env file describes this container, not an imagined one', (
     }
   });
 
+  /**
+   * A bare token can spend the subscription and cannot read what is left of
+   * it — the CLI has no subscription record to ask about, so every rate-limit
+   * window comes back empty and the throttle has nothing to govern on. A
+   * whole night's run was paced off token counts nobody is billed for before
+   * anyone noticed, because "no reading" and "plenty of room" looked the same.
+   */
+  const RECORD = '{"claudeAiOauth":{"accessToken":"sentinel-record-token","subscriptionType":"max"}}';
+  const withRecord = (args: string[] = ['up']) =>
+    launch(args, `sh -c 'echo VAULT-OPENED >&2; printf %s ${RECORD}'`);
+
+  test('a credentials record is preferred, and never printed', () => {
+    const { out } = withRecord();
+    assert.ok(!out.includes('sentinel-record-token'), `the record appeared in the output:\n${out}`);
+    // A length, not the record: enough to tell "the vault gave me something"
+    // from "the vault gave me an error message", with nothing on screen. The
+    // exact count is the shell's business, not this test's.
+    assert.match(out, /credentials record resolved \(\d+ characters\)/);
+  });
+
+  test('the record never reaches docker as an argument', () => {
+    const { argv } = withRecord();
+    assert.ok(!argv.includes('sentinel-record-token'), `the record was passed on the command line: ${argv}`);
+  });
+
+  test('check says plainly which mode you are in', () => {
+    assert.match(withRecord(['check']).out, /credentials record is available/);
+    assert.match(launch(['check']).out, /plan will NOT be readable/);
+  });
+
+  test('something that is not a credentials record is refused, not shipped', () => {
+    // Refused before compose is reached, so no docker stub is needed here.
+    const r = spawnSync('sh', ['docker/up.sh', 'up'], {
+      cwd: new URL('..', import.meta.url).pathname,
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: '', RIFF_ENV: '',
+             RIFF_CREDENTIALS_CMD: "sh -c 'printf %s not-a-record'" },
+    });
+    assert.equal(r.status, 1, 'a bad record must stop the launch');
+    assert.match(r.stderr, /without a\n?\s*claudeAiOauth record/);
+  });
+
   test('check proves the wiring and starts nothing', () => {
     // Worth having before an overnight run: everything a start does, right up
     // to the point of starting anything.
     const { out, asked, argv } = launch(['check']);
     assert.equal(asked, true, 'check must actually resolve the token');
-    assert.match(out, new RegExp(`a token is available \\(${SENTINEL.length} characters\\)`));
+    assert.match(out, new RegExp(`a bare token is available \\(${SENTINEL.length} characters\\)`));
     assert.ok(!out.includes(SENTINEL), 'check must not print the token');
     assert.equal(argv, '', 'check must not invoke docker at all');
   });
