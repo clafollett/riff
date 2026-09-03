@@ -166,7 +166,8 @@ const working = computed(() => props.state.awake.length);
       <h1>{{ state.company.name }}</h1>
       <p class="faint mono line">
         {{ state.slug }} · {{ ceo }}, CEO ·
-        {{ working ? `${working} working now` : (state.running ? 'idle' : 'paused') }}
+        {{ state.draining ? `finishing ${working}`
+         : working ? `${working} working now` : (state.running ? 'idle' : 'paused') }}
       </p>
     </header>
 

@@ -295,9 +295,16 @@ const server = createServer(async (req, res) => {
         maxTicks: Number.isFinite(ticks) && ticks > 0 ? Math.round(ticks) : null,
       };
       const run = b['running'] === true;
-      const ok = await registry.setRunning(target, run, bounds);
+      // Pausing kills whoever is mid-shift; draining lets them finish first.
+      // Both are wanted: the operator waiting to rebuild wants the journal
+      // written, and the operator watching a run go wrong wants it to stop
+      // now. The default stays the immediate one, because that is what every
+      // existing caller of this endpoint already means by it.
+      const drain = !run && b['drain'] === true;
+      const ok = await registry.setRunning(target, run, bounds, { drain });
       return ok ? json(res, {
         slug: target, running: run,
+        ...(drain ? { draining: true } : {}),
         ...(run && bounds.until ? { until: new Date(bounds.until).toISOString() } : {}),
         ...(run && bounds.maxTicks ? { maxTicks: bounds.maxTicks } : {}),
       }) : json(res, { error: `no company '${target}'` }, 404);
@@ -411,6 +418,9 @@ const server = createServer(async (req, res) => {
           // Without this the console can say the company is running but not
           // that anything is actually happening.
           awake: scheduler.awake,
+          // Paused, but the last shifts are still finishing. Neither running
+          // nor stopped, and the operator is usually waiting on exactly this.
+          draining: scheduler.draining,
           dueAt: scheduler.dueAt(),
           pausedUntil: scheduler.pausedUntil || null,
           ticks: scheduler.ticks,

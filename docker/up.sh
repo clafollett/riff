@@ -274,9 +274,14 @@ drain() {
   [ -n "$running" ] || return 0
 
   for slug in $running; do
-    echo "riff: pausing $slug so its shift is not killed by the rebuild"
+    echo "riff: draining $slug so its shift is not killed by the rebuild"
+    # drain:true is the difference between waiting for a shift and killing it.
+    # Without it this POST aborts whoever is mid-shift and the rebuild it was
+    # meant to protect them from is beside the point — the pause did the
+    # damage. It answers at once and the company reports `draining` until the
+    # last journal is written, which is what the wait below watches.
     curl -sf -m 10 -X POST "$base/companies/$slug/running" \
-      -H 'content-type: application/json' -d '{"running":false}' >/dev/null 2>&1 || true
+      -H 'content-type: application/json' -d '{"running":false,"drain":true}' >/dev/null 2>&1 || true
   done
 
   waited=0

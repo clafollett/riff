@@ -132,6 +132,7 @@ export class Scheduler {
   /** In-flight shifts, so stop() can wait for them rather than abandoning them. */
   #flights = new Set<Promise<void>>();
   #inFlight = new Set<AgentId>();
+  #draining = false;
   #spentToday = 0;
   #spendDay: string;
   #ticks = 0;
@@ -203,6 +204,15 @@ export class Scheduler {
 
   /** Who is mid-shift this second. The console shows it live. */
   get awake(): AgentId[] { return [...this.#inFlight]; }
+
+  /**
+   * Paused, but still letting the last shifts finish on their own.
+   *
+   * The console needs to tell this apart from both running and stopped: it is
+   * the only state where nobody new will be woken and yet somebody is still
+   * working, and the operator is usually waiting on it before a rebuild.
+   */
+  get draining(): boolean { return this.#draining; }
 
   /** When each active agent is next due, so the console can say "in 4 min". */
   dueAt(): Record<string, number> {
@@ -308,8 +318,16 @@ export class Scheduler {
    * before those settle means the caller closes the ledger underneath them,
    * and the shift crashes the process on its closing `agent.slept` — which is
    * exactly what a server shutdown used to do to whoever was working.
+   *
+   * `drain` is the difference between waiting for a shift and killing it.
+   * Without it the abort reaches the SDK and the shift dies where it stands,
+   * losing the work and writing `agent.failed: Claude Code process aborted by
+   * user` — three of those in Fathom's log on 2026-09-03 are the operator
+   * pressing Pause, not anything going wrong. Draining leaves the abort alone
+   * and simply stops waking anybody, so the loop falls out within its 2s sleep
+   * and the shifts already running end by writing their journals.
    */
-  async stop(): Promise<void> {
+  async stop(opts?: { drain?: boolean }): Promise<void> {
     // Stopping what was never started is not an event. `start` has always
     // guarded against announcing itself twice; `stop` did not, so every open
     // and close of a paused company appended a `work.paused` describing
@@ -318,9 +336,17 @@ export class Scheduler {
     // caller must not return while a shift is in flight.
     const wasRunning = this.#running;
     this.#running = false;
-    this.#abort.abort();
-    if (this.#flights.size) await Promise.allSettled([...this.#flights]);
-    if (wasRunning) {
+    if (!opts?.drain) this.#abort.abort();
+    this.#draining = opts?.drain === true && this.#flights.size > 0;
+    try {
+      if (this.#flights.size) await Promise.allSettled([...this.#flights]);
+    } finally {
+      this.#draining = false;
+    }
+    // A drain can be overtaken: the operator waits out a long shift, changes
+    // their mind and presses Start before it lands. Announcing a pause then
+    // would put `work.paused` after the `work.started` that is now true.
+    if (wasRunning && !this.#running) {
       this.#d.ledger.emit('company', 'work.paused', null, { spentTodayUsd: this.#spentToday });
     }
   }

@@ -47,13 +47,14 @@ export class Registry {
    * A company that has never been opened cannot be running, so the absence of
    * an entry in #open is itself the answer — no need to touch its ledger.
    */
-  list(): Array<CompanyRef & { running: boolean; awake: string[] }> {
+  list(): Array<CompanyRef & { running: boolean; awake: string[]; draining: boolean }> {
     return listCompanies().map((c) => {
       const open = this.#open.get(c.slug);
       return {
         ...c,
         running: open?.scheduler.running ?? false,
         awake: open ? open.scheduler.awake : [],
+        draining: open?.scheduler.draining ?? false,
       };
     });
   }
@@ -64,10 +65,22 @@ export class Registry {
   async setRunning(
     slug: string, run: boolean,
     bounds?: { until?: number | null; maxTicks?: number | null },
+    opts?: { drain?: boolean },
   ): Promise<boolean> {
     const c = this.get(slug);
     if (!c) return false;
-    if (run) c.scheduler.start(bounds); else await c.scheduler.stop();
+    if (run) {
+      c.scheduler.start(bounds);
+    } else if (opts?.drain) {
+      // Answer now, finish later. A drain waits out a whole shift — up to ten
+      // minutes at 30 turns — and a request held open that long is a request
+      // that times out somewhere between the console and here. The scheduler
+      // reports `draining` until the last shift lands, which is what the
+      // console watches and what up.sh polls.
+      void c.scheduler.stop({ drain: true }).catch(() => { /* stop reports its own */ });
+    } else {
+      await c.scheduler.stop();
+    }
     setRunningFlag(c.cfg.home, run);
     return true;
   }

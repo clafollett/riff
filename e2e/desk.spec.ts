@@ -948,6 +948,76 @@ test.describe('many companies, one console', () => {
     await expect(arrived.locator('.state')).toHaveText('paused');
   });
 
+  test('pausing waits for the shift; killing it is a separate, named choice', async ({ page }) => {
+    // Pause used to abort whoever was mid-shift, losing the work and writing
+    // `Claude Code process aborted by user`. up.sh called the same endpoint
+    // before a rebuild to protect those shifts, and killed them itself.
+    // Shown as running rather than actually started: a company one test leaves
+    // running is a company the next three find in a state they did not set.
+    await page.route('**/api/companies', async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      const cos = (body.companies ?? []).map((c: Record<string, unknown>, i: number) =>
+        i === 0 ? { ...c, running: true, draining: false, awake: ['ceo'] } : c);
+      await route.fulfill({ json: { ...body, companies: cos } });
+    });
+    // beforeEach already loaded the page, so the listing in the DOM predates
+    // the route. Take it again under the stub.
+    await page.reload();
+    await expect(page.locator('.co')).not.toBeEmpty();
+
+    await page.locator('.switcher').click();
+    await page.getByRole('button', { name: 'Manage companies…' }).click();
+    await expect(page.getByRole('heading', { name: 'Companies' })).toBeVisible();
+
+    const card = page.locator('.card').first();
+    const slug = (await card.locator('.meta').innerText()).split('·').pop()!.trim();
+    await expect(card.getByRole('button', { name: 'Pause' })).toBeVisible();
+
+    const [request] = await Promise.all([
+      page.waitForRequest((r) => r.url().includes(`/running`) && r.method() === 'POST'),
+      card.getByRole('button', { name: 'Pause' }).click(),
+    ]);
+    expect(request.postDataJSON()).toMatchObject({ running: false, drain: true });
+    expect(request.url()).toContain(slug);
+  });
+
+  test('a company still finishing its last shift says so, and can be cut short', async ({ page }) => {
+    // Draining is neither running nor paused, and it is the state an operator
+    // waits on before a rebuild — so it must not read as either of the others.
+    await page.route('**/api/companies', async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      const cos = (body.companies ?? []).map((c: Record<string, unknown>, i: number) =>
+        i === 0 ? { ...c, running: false, draining: true, awake: ['ceo', 'ada'] } : c);
+      await route.fulfill({ json: { ...body, companies: cos } });
+    });
+    // beforeEach already loaded the page, so the listing in the DOM predates
+    // the route. Take it again under the stub.
+    await page.reload();
+    await expect(page.locator('.co')).not.toBeEmpty();
+
+    await page.locator('.switcher').click();
+    await page.getByRole('button', { name: 'Manage companies…' }).click();
+    await expect(page.getByRole('heading', { name: 'Companies' })).toBeVisible();
+
+    const card = page.locator('.card').first();
+    await expect(card.locator('.state')).toHaveText('finishing 2');
+    await expect(card.getByRole('button', { name: 'Stop now' })).toBeVisible();
+    // Neither of the two states it is not.
+    await expect(card.getByRole('button', { name: 'Pause' })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Start' })).toHaveCount(0);
+    // And a run that is ending cannot be handed a deadline.
+    await expect(card.getByRole('button', { name: 'Run for…' })).toHaveCount(0);
+
+    // Stop now is the abort: it asks for no drain.
+    const [request] = await Promise.all([
+      page.waitForRequest((r) => r.url().includes('/running') && r.method() === 'POST'),
+      card.getByRole('button', { name: 'Stop now' }).click(),
+    ]);
+    expect(request.postDataJSON()).toEqual({ running: false });
+  });
+
   test('a file that is not a company is refused in words', async ({ page }) => {
     await page.locator('.switcher').click();
     await page.getByRole('button', { name: 'Manage companies…' }).click();
@@ -1030,7 +1100,13 @@ test('a run can be given a deadline from the console', async ({ page }) => {
 
   await expect(card.locator('.state')).not.toContainText('paused');
   // Stop it again: a fixture left running spends a real subscription window.
+  // Pause drains, so a company with shifts in flight goes to "finishing N"
+  // and stays there until they land — which is the point of it, and no good
+  // to a fixture. Cut them short.
   await card.getByRole('button', { name: 'Pause' }).click();
+  const stopNow = card.getByRole('button', { name: 'Stop now' });
+  await expect(stopNow).toBeVisible();
+  await stopNow.click();
   await expect(card.locator('.state')).toContainText('paused');
 });
 

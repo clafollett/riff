@@ -307,15 +307,20 @@ describe('the example env file describes this container, not an imagined one', (
     assert.match(env, new RegExp(`^CLAUDE_CODE_OAUTH_TOKEN=${SENTINEL}$`, 'm'));
   });
 
-  test('a rebuild pauses what is working before it recreates the container', () => {
+  test('a rebuild drains what is working before it recreates the container', () => {
     // Compose sends SIGTERM and waits ten seconds; a shift runs for minutes,
     // so recreating under one killed it and the ledger recorded "Claude Code
     // process aborted by user" for work that was going fine.
+    //
+    // Asking for the pause alone did the same damage a step earlier: it aborts
+    // whoever is mid-shift, so the guard against the rebuild became the thing
+    // that killed the shift, and the wait afterwards watched an empty room.
     const { curl, out } = launch(['up', '--build', '-d']);
     assert.match(curl, /-X POST[^\n]*companies\/testco\/running/,
-      `the running company should have been paused first:\n${curl}`);
-    assert.match(curl, /"running":false/);
-    assert.match(out, /pausing testco/);
+      `the running company should have been drained first:\n${curl}`);
+    assert.match(curl, /"running":false,"drain":true/,
+      `without drain:true this kills the shift it is protecting:\n${curl}`);
+    assert.match(out, /draining testco/);
   });
 
   test('reading logs does not pause anybody', () => {

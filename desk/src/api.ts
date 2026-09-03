@@ -94,6 +94,8 @@ export type State = {
   seq: number;
   running: boolean;
   awake: string[];
+  /** Paused, with the last shifts still finishing on their own. */
+  draining: boolean;
   dueAt: Record<string, number>;
   pausedUntil: number | null;
   ticks: number;
@@ -113,7 +115,8 @@ export type State = {
  * — `release` was added to the config side and this copy never heard about it,
  * so the field existed on the wire and not in the type.
  */
-export type CompanyRef = ConfigCompanyRef & { running: boolean; awake: string[] };
+export type CompanyRef = ConfigCompanyRef &
+  { running: boolean; awake: string[]; draining: boolean };
 
 /**
  * Which company the console is looking at.
@@ -163,9 +166,17 @@ export const api = {
                          release?: 'none' | 'bundle';
                          running?: boolean }) =>
     send<{ slug: string }>('/api/companies', 'POST', input),
+  /**
+   * Start, pause or drain a company.
+   *
+   * `drain` pauses without killing whoever is mid-shift: it answers at once
+   * and the company reports `draining` until the last journal is written.
+   * Plain pause aborts them, which is what the log's `Claude Code process
+   * aborted by user` entries are.
+   */
   setCompanyRunning: (slug: string, running: boolean,
-                      bounds?: { hours?: number; maxTicks?: number }) =>
-    send<{ running: boolean; until?: string; maxTicks?: number }>(
+                      bounds?: { hours?: number; maxTicks?: number; drain?: boolean }) =>
+    send<{ running: boolean; draining?: boolean; until?: string; maxTicks?: number }>(
       `/api/companies/${encodeURIComponent(slug)}/running`, 'POST', { running, ...bounds }),
   renameAgent: (company: string, who: string, name: string) =>
     send<{ from: string; to: string; name: string }>('/api/agents/rename', 'POST',
