@@ -95,6 +95,8 @@ describe('the container writes where the volume is', () => {
   });
 });
 
+const entrypointSrc = readFileSync(new URL('../docker/entrypoint.sh', import.meta.url), 'utf8');
+
 describe('the container only sets variables the code reads', () => {
   test('every RIFF_* it sets is one config.ts looks up', () => {
     const set = new Set<string>();
@@ -110,8 +112,8 @@ describe('the container only sets variables the code reads', () => {
     // some of these themselves, so they count as readers. Exempting the names
     // instead would let a variable nothing reads at all through on the same
     // excuse.
-    const shell = ['../docker/entrypoint.sh', '../docker/up.sh']
-      .map((f) => readFileSync(new URL(f, import.meta.url), 'utf8')).join('\n');
+    const shell = entrypointSrc
+      + readFileSync(new URL('../docker/up.sh', import.meta.url), 'utf8');
     for (const name of set) {
       if (composeOnly.has(name)) continue;
       assert.ok(allSource.includes(`'${name}'`) || shell.includes(name),
@@ -319,6 +321,37 @@ describe('the example env file describes this container, not an imagined one', (
     });
     assert.equal(r.status, 1, 'a bad record must stop the launch');
     assert.match(r.stderr, /without a\n?\s*claudeAiOauth record/);
+  });
+
+  /**
+   * The record lives on a tmpfs, so ANY restart loses it — `docker restart`,
+   * a Docker Desktop reboot, a crash and respawn. An entrypoint that gave up
+   * on a deadline turned that into a crash loop which took the API down with
+   * it, so the launcher could not even be asked to deliver a new one.
+   */
+  test('the entrypoint waits for a record instead of giving up on it', () => {
+    const wait = entrypointSrc.slice(entrypointSrc.indexOf('RIFF_WAIT_FOR_CREDENTIALS'));
+    const loop = wait.slice(0, wait.indexOf('exec "$@"'));
+    assert.ok(!/\bexit 1\b/.test(loop),
+      'the credentials wait must not exit — that is a restart loop, not a diagnosis');
+    assert.match(loop, /up\.sh creds/, 'it must say how to recover');
+  });
+
+  test('creds re-delivers to a running factory and starts nothing', () => {
+    const { out, argv } = withRecord(['creds']);
+    assert.match(out, /credentials delivered/);
+    assert.ok(!/\bup\b/.test(argv.split('\n')[0] ?? ''), `creds must not start anything: ${argv}`);
+  });
+
+  test('creds with nothing configured says so rather than starting', () => {
+    const r = spawnSync('sh', ['docker/up.sh', 'creds'], {
+      cwd: new URL('..', import.meta.url).pathname,
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: '', RIFF_ENV: '',
+             RIFF_CREDENTIALS_CMD: '' },
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /nothing configured to fetch a credentials record/);
   });
 
   test('check proves the wiring and starts nothing', () => {

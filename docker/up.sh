@@ -3,6 +3,11 @@
 #
 #   docker/up.sh up --build    start it
 #   docker/up.sh check         prove the token wiring works, and start nothing
+#   docker/up.sh creds        re-deliver the credentials record to a factory
+#                              that is already running. Needed after any
+#                              restart that did not come through this script:
+#                              the record lives on a tmpfs and does not
+#                              survive one. The container waits and says so.
 #   docker/up.sh logs -f       anything else compose understands
 #
 # WHERE THE TOKEN LIVES: in your password manager, and nowhere else. Not in
@@ -89,7 +94,7 @@ for a in "$@"; do
   break
 done
 case $subcommand in
-  up|run|start|restart|create|check) needs_token=yes ;;
+  up|run|start|restart|create|check|creds) needs_token=yes ;;
 esac
 
 if [ "$needs_token" = no ] && [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
@@ -206,6 +211,24 @@ else
   compose() { exec docker compose -f "$here/compose.yaml" "$@"; }
 fi
 
+# Hand the record to a running factory. Idempotent, and safe to repeat.
+deliver() {
+  waited=0
+  until printf '%s' "$record" \
+      | run_compose exec -T factory sh -c \
+          'mkdir -p "$HOME/.claude" && cat > "$HOME/.claude/.credentials.json" \
+           && chmod 600 "$HOME/.claude/.credentials.json"' 2>/dev/null; do
+    waited=$((waited + 1))
+    if [ "$waited" -ge 30 ]; then
+      echo "riff: could not hand the credentials record to the factory." >&2
+      echo "  Is it running? docker/up.sh ps" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  echo "riff: credentials delivered to the factory (tmpfs only, never on disk)"
+}
+
 run_compose() {
   if [ -n "$outside_env" ] && [ -f "$local_env" ]; then
     compose --env-file "$local_env" --env-file "$outside_env" "$@"
@@ -216,23 +239,24 @@ run_compose() {
   fi
 }
 
+# `creds` exists because the record lives on a tmpfs: any restart that did not
+# come through this script loses it, and the factory then waits for a new one.
+# This hands it over without starting or recreating anything.
+if [ "$subcommand" = creds ]; then
+  if [ -z "$record" ]; then
+    echo "riff: nothing configured to fetch a credentials record." >&2
+    echo "  Set RIFF_CREDENTIALS_CMD in $local_env${outside_env:+ or $outside_env}." >&2
+    exit 1
+  fi
+  deliver || exit 1
+  exit 0
+fi
+
 run_compose "$@" || exit $?
 
 # Push the record in. The home directory is a tmpfs created with the container,
 # so this cannot happen before start — the entrypoint waits for it rather than
 # letting companies wake with no credentials.
 if [ -n "$record" ]; then
-  waited=0
-  until printf '%s' "$record" \
-      | run_compose exec -T factory sh -c \
-          'mkdir -p "$HOME/.claude" && cat > "$HOME/.claude/.credentials.json" \
-           && chmod 600 "$HOME/.claude/.credentials.json"' 2>/dev/null; do
-    waited=$((waited + 1))
-    if [ "$waited" -ge 30 ]; then
-      echo "riff: could not hand the credentials record to the factory." >&2
-      exit 1
-    fi
-    sleep 1
-  done
-  echo "riff: credentials delivered to the factory (tmpfs only, never on disk)"
+  deliver || exit 1
 fi

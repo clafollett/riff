@@ -55,15 +55,20 @@ rm -f /data/.write-test
 # Starting the server first would mean the companies left running wake up,
 # spend a shift with no credentials at all and log the failure. So block here.
 # Nothing is running yet, and there is nothing to lose by waiting.
+#
+# Waits rather than gives up, and that is the whole point. The home directory
+# is a tmpfs, so it is recreated by ANY restart — `docker restart`, a Docker
+# Desktop reboot, a crash and respawn — and the record is gone every time.
+# Exiting on a deadline turned that into a crash loop that took the API down
+# with it, so `up.sh` could not even be asked to deliver a new one. Sitting
+# here logging is diagnosable; a restart loop is not.
 if [ "${RIFF_WAIT_FOR_CREDENTIALS:-}" = 1 ]; then
   creds="$HOME/.claude/.credentials.json"
   waited=0
   while [ ! -s "$creds" ]; do
-    if [ "$waited" -ge 60 ]; then
-      echo "riff: no credentials record after ${waited}s at $creds." >&2
-      echo "  up.sh should have written one. Start again, or unset" >&2
-      echo "  RIFF_WAIT_FOR_CREDENTIALS to run on CLAUDE_CODE_OAUTH_TOKEN alone." >&2
-      exit 1
+    if [ "$waited" -gt 0 ] && [ $((waited % 15)) -eq 0 ]; then
+      echo "riff: still waiting for a credentials record at $creds (${waited}s)."
+      echo "  Deliver one with: docker/up.sh creds"
     fi
     sleep 1
     waited=$((waited + 1))
