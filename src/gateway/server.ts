@@ -364,6 +364,10 @@ const server = createServer(async (req, res) => {
           policy: cfg.policy,
           board: cfg.board,
           ceo: cfg.ceo,
+          // Settable at founding and by PATCH, and until now readable nowhere:
+          // an operator could turn a company's releases on and have no way to
+          // confirm it had happened.
+          release: cfg.release,
           agents,
           headcount: agents.filter((a) => a.tier !== 'board').length,
           pending: ledger.listApprovals('pending').length,

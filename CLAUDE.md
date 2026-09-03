@@ -58,6 +58,26 @@ env: { ...process.env, HOME: tmp, RIFF_ROOT: join(tmp, '.riff'),
 
 `HOME` alone is not enough. See `test/registry.test.ts`.
 
+## Never touch a running company's ledger from the host
+
+The ledger is SQLite in WAL mode, and the container reaches it through a bind
+mount. WAL coordinates readers and writers through a memory-mapped `-shm`
+file, and that mapping is not coherent across the VM boundary — a host
+`sqlite3` read of a database the container is writing is the unsupported case,
+not a shortcut. `~/.riff/companies/fathom` was read this way through a session
+of debugging and ended with `integrity_check` reporting a malformed image, a
+zero-length `-wal`, and a live `-shm`.
+
+```
+reading a company:
+    running   -> the API: /api/state, /api/events, /api/vitals
+    stopped   -> sqlite3 on the host is fine
+    either    -> docker/up.sh exec -T factory node -e '...'   # inside, always safe
+```
+
+Stop a company before `docker/up.sh up --build` or `restart`, for the same
+reason: recreating the container kills a shift mid-write.
+
 ## The gate is the security boundary
 
 `makeCanUseTool` in `src/runtime/permissions.ts` is the single chokepoint every

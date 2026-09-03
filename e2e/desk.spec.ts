@@ -841,6 +841,48 @@ test.describe('many companies, one console', () => {
     await expect(page.locator('.menuitem').filter({ hasText: 'Testwright' })).toHaveCount(1);
   });
 
+  test('a founding sets the board, the rate and the release route, not just the name', async ({ page }) => {
+    // Every one of these used to be a config.json edit on a live installation.
+    // Board seats especially: genesis seeds the roster once, so a name added
+    // afterwards carried board standing the roster had never granted.
+    await page.locator('.switcher').click();
+    await page.getByRole('button', { name: 'Manage companies…' }).click();
+    await page.getByRole('button', { name: 'Found a company' }).click();
+
+    await page.getByLabel('Company name').fill('Halyard Works');
+    await page.getByLabel('Line of business').fill('Rigging, and the paperwork that follows it.');
+    await page.getByLabel("CEO's name").fill('Perrin');
+    await page.getByLabel('Chairman').fill('Tester');
+    await page.getByLabel('Other board seats').fill('Marlowe, Board');
+    await page.getByLabel('How work leaves').selectOption('bundle');
+    await page.getByLabel('Working at once').fill('2');
+    await page.getByLabel('Minutes between shifts').fill('45');
+    // Founded paused: nothing should spend the subscription window while the
+    // founder is still reading it over.
+    await page.getByLabel('Found it paused', { exact: false }).check();
+    await page.getByRole('button', { name: 'Found it' }).click();
+
+    await expect(page.locator('.co')).toHaveText('Halyard Works');
+
+    // The rate is readable on the company's own page.
+    await go(page, 'Overview', 'Halyard Works');
+    await expect(page.locator('.dials .summary')).toContainText('2 working at once');
+    await expect(page.locator('.dials .summary')).toContainText('every 45 min');
+
+    // The board seat has to be on the roster, not merely in a config file: the
+    // gate reads standing from config, so a name the roster never had was
+    // hireable while still carrying board authority.
+    const state = await (await page.request.get('/api/state?c=halyard-works')).json();
+    expect(state.board.map((b: { id: string }) => b.id)).toEqual(['tester', 'marlowe']);
+    expect(state.agents.map((a: { id: string }) => a.id)).toContain('marlowe');
+    expect(state.release).toBe('bundle');
+
+    // Founded paused: nothing spends the window while the founder reads it over.
+    const listing = await (await page.request.get('/api/companies')).json();
+    expect(listing.companies.find((c: { slug: string }) => c.slug === 'halyard-works').running)
+      .toBe(false);
+  });
+
   test('a founded company starts with a CEO and nothing else', async ({ page }) => {
     await useCompany(page, 'Kestrel Provisioning');
     // One agent, no commons, no roster. The CEO builds the rest.

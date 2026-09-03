@@ -11,12 +11,19 @@ const mode = ref<Mode>(null);
 const busy = ref(false);
 const err = ref('');
 
-const draft = ref({ name: '', business: '', ceo: '', chair: '', board: '', release: 'none' as 'none' | 'bundle' });
+// Concurrency and interval are here rather than only on the dials because
+// they set the rate a company spends the subscription window from its first
+// tick. Everything else in the policy has a default worth keeping and can be
+// turned while the company runs.
+const draft = ref({ name: '', business: '', ceo: '', chair: '', board: '',
+                    release: 'none' as 'none' | 'bundle',
+                    concurrency: 3, baseIntervalMinutes: 10, paused: false });
 const rename = ref({ name: '', business: '', slug: '' });
 const confirmName = ref('');
 
 const openFound = () => {
-  draft.value = { name: '', business: '', ceo: '', chair: '', board: '', release: 'none' };
+  draft.value = { name: '', business: '', ceo: '', chair: '', board: '', release: 'none',
+                  concurrency: 3, baseIntervalMinutes: 10, paused: false };
   err.value = '';
   mode.value = { kind: 'found' };
 };
@@ -61,9 +68,13 @@ const found = () => run(async () => {
       return role ? { name: (name ?? '').trim(), role } : { name: (name ?? '').trim() };
     })
     .filter((m) => m.name);
-  const { name, business, ceo, chair, release } = draft.value;
-  return (await api.foundCompany({ name, business, ceo, chair, release,
-                                   ...(board.length ? { board } : {}) })).slug;
+  const { name, business, ceo, chair, release, concurrency, baseIntervalMinutes, paused } = draft.value;
+  return (await api.foundCompany({
+    name, business, ceo, chair, release,
+    policy: { concurrency: Number(concurrency), baseIntervalMinutes: Number(baseIntervalMinutes) },
+    running: !paused,
+    ...(board.length ? { board } : {}),
+  })).slug;
 });
 
 /** Start or pause without switching to it — several can run at once. */
@@ -218,6 +229,20 @@ const receive = async (e: Event) => {
               <option value="bundle">A bundle the board collects by hand</option>
             </select>
           </label>
+          <div class="pair">
+            <label>Working at once
+              <input v-model.number="draft.concurrency" type="number" min="1" max="16" step="1" /></label>
+            <label>Minutes between shifts
+              <input v-model.number="draft.baseIntervalMinutes" type="number" min="0.5" max="720" step="0.5" /></label>
+          </div>
+          <span class="hint faint standalone">
+            What the company spends the subscription window at. The rest of the plan
+            keeps its defaults and is adjustable while it runs.
+          </span>
+          <label class="check">
+            <input v-model="draft.paused" type="checkbox" />
+            Found it paused, so you can read it over before it spends anything
+          </label>
           <p v-if="err" class="err">{{ err }}</p>
           <div class="row">
             <button class="go" :disabled="busy || !draft.name.trim()" @click="found">Found it</button>
@@ -314,6 +339,18 @@ textarea { font: inherit; font-size: 14px; line-height: 1.5; background: #15100d
   border: 1px solid var(--line-2); border-radius: 5px; padding: 8px 10px; resize: vertical;
   min-height: 96px; }
 .hint { font-size: 11.5px; line-height: 1.5; }
+.standalone { display: block; margin: -6px 0 13px; }
+select { font: inherit; font-size: 14px; background: #15100d; color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 5px; padding: 8px 10px; }
+select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+/* Two dials side by side. Not `.row`, which is the button strip and carries a
+   top margin that would double the gap under the field above. */
+.pair { display: flex; gap: 10px; }
+.pair label { flex: 1; }
+/* A checkbox is the one control whose text sits beside it, so it opts out of
+   the column layout every other label in this dialog uses. */
+.check { flex-direction: row; align-items: center; gap: 8px; }
+.check input { flex: none; width: 15px; height: 15px; accent-color: var(--accent); }
 .row { display: flex; gap: 8px; margin-top: 18px; }
 .err { color: var(--alert); font-size: 13px; margin-top: 4px; }
 </style>
