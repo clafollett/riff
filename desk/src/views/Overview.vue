@@ -135,11 +135,17 @@ const plan = computed(() => NAMED.flatMap(([kind, label]) => {
   const w = props.state.windows?.find((x) => x.kind === kind);
   if (!w || w.utilization == null) return [];
   const mins = w.resetsAt == null ? null : Math.round((w.resetsAt * 1000 - Date.now()) / 60_000);
+  const age = w.readAt ? Math.round((Date.now() - w.readAt) / 60_000) : null;
   return [{
     kind, label,
     pct: Math.round(w.utilization * 100),
     hot: w.utilization >= 0.75,
     back: mins == null || mins <= 0 ? '' : mins < 90 ? `back in ${mins}m` : `back in ${(mins / 60).toFixed(1)}h`,
+    // A paused company keeps its last reading, and a five-hour window resets
+    // under it. The age is what tells a live figure from one taken before the
+    // window it describes came back.
+    age: age == null ? '' : age < 1 ? 'just read' : age < 90 ? `read ${age}m ago` : `read ${(age / 60).toFixed(1)}h ago`,
+    stale: mins != null && mins <= 0,
   }];
 }));
 
@@ -210,13 +216,16 @@ const working = computed(() => props.state.awake.length);
             <span class="l faint">{{ w.label }}</span>
             <span class="n mono" :class="{ hot: w.hot }">{{ w.pct }}%</span>
           </div>
-          <div class="track"><div class="fill" :class="{ hot: w.hot }" :style="{ width: w.pct + '%' }" /></div>
-          <span class="l faint">{{ w.back }}</span>
+          <div class="track"><div class="fill" :class="{ hot: w.hot, stale: w.stale }"
+                                  :style="{ width: w.pct + '%' }" /></div>
+          <span class="l faint">{{ w.stale ? 'window has since reset' : [w.back, w.age].filter(Boolean).join(' · ') }}</span>
         </div>
       </div>
       <p class="muted note">
         The subscription window, not money. This is what runs out, and running it
-        out stops your own work as well as the company's.
+        out stops your own work as well as the company's. Read while the company
+        works — a paused one keeps whatever it last saw, so the age is part of
+        the figure. The record over time is in Vitals.
       </p>
     </section>
 
@@ -298,6 +307,7 @@ const working = computed(() => props.state.awake.length);
 .track { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
 .fill { height: 100%; background: var(--accent); }
 .fill.hot { background: var(--alert); }
+.fill.stale { background: var(--line-2); }
 .plan .note { font-size: 12px; margin-top: 12px; max-width: 58ch; }
 .wrap { padding: 34px 44px 60px; max-width: 820px; }
 h1 { font-size: 30px; }

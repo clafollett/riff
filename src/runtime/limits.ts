@@ -110,26 +110,3 @@ export const mergeWindow = (
   ...(next.rateLimitType == null && had?.rateLimitType != null
     ? { rateLimitType: had.rateLimitType } : {}),
 });
-
-export type PlanWindow = { kind: string; utilization: number | null; resetsAt: number | null };
-
-/**
- * The windows a finished shift recorded, for a company nothing is running.
- *
- * A scheduler holds its readings in memory, so a console opened on a company
- * that has not woken in this process shows no plan usage at all — which is
- * exactly when an operator asks what the plan has left, because the company
- * is stopped and they are deciding whether to start it.
- */
-export const windowsFromShift = (data: unknown): PlanWindow[] => {
-  if (!data || typeof data !== 'object') return [];
-  const d = data as Record<string, unknown>;
-  const out: PlanWindow[] = [];
-  for (const [k, v] of Object.entries(d)) {
-    if (!k.startsWith('used_') || typeof v !== 'number') continue;
-    const kind = k.slice('used_'.length);
-    const at = d[`resets_${kind}`];
-    out.push({ kind, utilization: v, resetsAt: typeof at === 'number' ? at : null });
-  }
-  return out;
-};

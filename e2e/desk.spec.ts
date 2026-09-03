@@ -993,22 +993,22 @@ test.describe('many companies, one console', () => {
   });
 });
 
-test('the front page says what the plan has left, by window', async ({ page }) => {
-  // The page used to show one percentage taken from whichever window reported
-  // last — usually the seven-day — so the five-hour window, the one that
-  // decides whether the operator can work this afternoon, was never on it.
+test('the report gives both windows, not whichever one was tightest', async ({ page }) => {
+  // The five-hour reading used to be recorded only when it was the binding
+  // window, so it disappeared from the record exactly as the week filled up —
+  // and it is the one that decides whether the operator can work this
+  // afternoon. The front page shows live readings; the record is here.
   await page.goto('/');
-  await go(page, 'Overview', 'Testwright');
+  await go(page, 'Vitals');
 
-  const plan = page.locator('.plan');
-  await expect(plan.getByText('five-hour')).toBeVisible();
-  await expect(plan.getByText('seven-day')).toBeVisible();
-  await expect(plan).toContainText('84%');
-  await expect(plan).toContainText('78%');
+  await expect(page.getByText('five-hour usage')).toBeVisible();
+  await expect(page.getByText('seven-day usage')).toBeVisible();
+  const five = page.locator('dt', { hasText: 'five-hour usage' }).locator('+ dd');
+  const week = page.locator('dt', { hasText: 'seven-day usage' }).locator('+ dd');
+  await expect(five).toContainText('84%');
+  await expect(week).toContainText('78%');
   // Past three quarters is the operator's problem, not only the company's.
-  await expect(plan.locator('.n.hot').first()).toBeVisible();
-  // And when it comes back, since a five-hour window at 84% is an afternoon.
-  await expect(plan).toContainText('back in');
+  await expect(five).toHaveClass(/hot/);
 });
 
 test('vitals reports what the week cost and what it produced', async ({ page }) => {

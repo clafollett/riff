@@ -150,6 +150,7 @@ export class Scheduler {
    * days rather than hours to recover.
    */
   #windows = new Map<string, SDKRateLimitInfo>();
+  #readAt = new Map<string, number>();
 
   constructor(d: Deps) {
     this.#d = d;
@@ -176,11 +177,16 @@ export class Scheduler {
    * five-hour one, the only figure that decides whether the operator can work
    * this afternoon, was usually not it.
    */
-  get windows(): Array<{ kind: string; utilization: number | null; resetsAt: number | null }> {
+  get windows(): Array<{ kind: string; utilization: number | null; resetsAt: number | null;
+                        readAt: number }> {
     return [...this.#windows].map(([kind, w]) => ({
       kind,
       utilization: w.utilization ?? null,
       resetsAt: w.resetsAt ?? null,
+      // When it was read, because a paused company keeps its last reading and
+      // a five-hour window resets. Without this the console cannot tell a
+      // figure from a minute ago apart from one from before the reset.
+      readAt: this.#readAt.get(kind) ?? 0,
     }));
   }
 
@@ -213,6 +219,7 @@ export class Scheduler {
   #applyRateLimit(info: SDKRateLimitInfo): void {
     this.#lastRateLimit = info;
     this.#windows.set(info.rateLimitType ?? 'unknown', info);
+    this.#readAt.set(info.rateLimitType ?? 'unknown', Date.now());
 
     // A refusal is about the window that refused, whether or not it is the
     // fullest one — there is nothing to pace, the door is shut.

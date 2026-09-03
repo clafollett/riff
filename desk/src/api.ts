@@ -100,7 +100,8 @@ export type State = {
   /** Every rate-limit window by name. The five-hour one is the figure that
    *  decides whether the operator can work this afternoon; rateLimit alone is
    *  whichever reported last and is usually the other one. */
-  windows: Array<{ kind: string; utilization: number | null; resetsAt: number | null }>;
+  windows: Array<{ kind: string; utilization: number | null; resetsAt: number | null;
+                  readAt: number }>;
 };
 
 export type CompanyRef = {
