@@ -27,7 +27,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 ENV CHROME_PATH=/usr/bin/chromium \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@latest
 RUN useradd -m -u 10001 -s /bin/bash labs && mkdir -p /data /app && chown -R labs:labs /data /app
@@ -71,9 +70,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # nothing ever loaded the page.
 #
 # Debian's chromium rather than Playwright's own download: the bundled build
-# pulls its system libraries with apt as root, and agents are uid 10001. The
-# PLAYWRIGHT_/PUPPETEER_ variables stop `npm i playwright` fetching a second
-# copy that then cannot launch, and point both drivers at this one.
+# pulls its system libraries with apt as root, and agents are uid 10001.
+# Installing the package pulls the libraries in as its own dependencies —
+# libnss3, libatk, libgbm, libxkbcommon, libasound, libcups and libpango are
+# all present after this line, with nothing unresolved in the binary.
+#
+# Playwright reads NO environment variable for the executable — it looks only
+# in its own versioned cache and fails with "Executable doesn't exist at
+# ~/.cache/ms-playwright/...". It must be told explicitly:
+#
+#     chromium.launch({ executablePath: process.env.CHROME_PATH,
+#                       args: ['--no-sandbox'] })
+#
+# SKIP_BROWSER_DOWNLOAD stops `npm i playwright` fetching a second copy that
+# would then need the same libraries again. puppeteer-core does honour its
+# variable, and needs nothing further.
 #
 # Chromium's namespace sandbox needs privileges this container does not grant,
 # so launches pass --no-sandbox. That is not a weakening: the container IS the
@@ -83,7 +94,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 ENV CHROME_PATH=/usr/bin/chromium \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # The Agent SDK drives the Claude Code runtime; install it in the image so no
