@@ -23,8 +23,12 @@ RUN npx vite build --config desk/vite.config.ts
 # /app, which is the whole point — edit on the host, reload in the box.
 FROM node:26-slim AS dev
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates curl ripgrep jq less procps tini \
+      git ca-certificates curl ripgrep jq less procps tini chromium fonts-liberation \
  && rm -rf /var/lib/apt/lists/*
+ENV CHROME_PATH=/usr/bin/chromium \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@latest
 RUN useradd -m -u 10001 -s /bin/bash labs && mkdir -p /data /app && chown -R labs:labs /data /app
 WORKDIR /app
@@ -57,6 +61,30 @@ FROM node:26-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates curl ripgrep jq less procps tini \
  && rm -rf /var/lib/apt/lists/*
+
+# A headless browser, and the fonts it needs to draw text at all.
+#
+# Every artefact a company here ships is a single HTML file a stranger opens,
+# and without a browser nothing anyone builds is ever looked at before it
+# reaches the board. Lathe shipped a corrupt dist/plate.html for a whole shift
+# with every test passing, because the tests ran the logic in a Node vm and
+# nothing ever loaded the page.
+#
+# Debian's chromium rather than Playwright's own download: the bundled build
+# pulls its system libraries with apt as root, and agents are uid 10001. The
+# PLAYWRIGHT_/PUPPETEER_ variables stop `npm i playwright` fetching a second
+# copy that then cannot launch, and point both drivers at this one.
+#
+# Chromium's namespace sandbox needs privileges this container does not grant,
+# so launches pass --no-sandbox. That is not a weakening: the container IS the
+# sandbox, and the page being rendered is one the company just wrote itself.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium fonts-liberation \
+ && rm -rf /var/lib/apt/lists/*
+ENV CHROME_PATH=/usr/bin/chromium \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # The Agent SDK drives the Claude Code runtime; install it in the image so no
 # agent ever needs to fetch its own toolchain at run time.
