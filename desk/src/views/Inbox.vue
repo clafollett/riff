@@ -262,6 +262,7 @@ const recipients = (m: Message) => [m.to, ...(m.alsoTo ?? [])].filter(Boolean);
 const toLabel = (m: Message) =>
   recipients(m).map((id) => (id === box.value?.me ? 'you' : nameOf.value(id))).join(', ');
 const toMe = (m: Message) => !m.broadcast && recipients(m).includes(box.value?.me ?? '');
+const fromMe = (m: Message) => m.from === box.value?.me;
 
 /**
  * Everyone a reply has to reach.
@@ -314,9 +315,9 @@ const when = (iso: string) => {
       <div>
         <h1>Inbox</h1>
         <p class="muted lede">
-          What the staff have written to you. Unread ones are marked
-          <span class="new inline">New</span>, and you can put one back to
-          unread to keep it in front of you.
+          What the staff have written to you, and what you have written to
+          them. Unread ones are marked <span class="new inline">New</span>, and
+          you can put one back to unread to keep it in front of you.
         </p>
       </div>
       <button class="go compose-open" @click="composing ? discard() : (composing = true)">
@@ -370,7 +371,7 @@ const when = (iso: string) => {
       </div>
     </section>
 
-    <Toolbar v-if="all.length" v-model:filter="filter" v-model:sort="sort"
+    <Toolbar v-if="box" v-model:filter="filter" v-model:sort="sort"
              v-model:per-page="perPage" :sizes="SIZES"
              :sorts="SORTS" label="Filter messages"
              :count="`${matching.length} message${matching.length === 1 ? '' : 's'}`
@@ -386,7 +387,11 @@ const when = (iso: string) => {
     </Toolbar>
 
     <p v-if="box && !all.length" class="muted empty">
-      Nothing yet. Anything a staff member addresses to you arrives here.
+      <template v-if="mine">
+        Nothing addressed to you, and nothing sent by you.
+        <b>Everyone's</b> shows the whole company's mail.
+      </template>
+      <template v-else>Nothing yet. Nobody here has written to anyone.</template>
     </p>
     <p v-else-if="box && !matching.length" class="muted empty">
       No message matches “{{ filter }}”.
@@ -402,6 +407,8 @@ const when = (iso: string) => {
               title="Sent to the whole company.">→ everyone</span>
         <span v-else-if="toMe(m)" class="addressed you"
               title="Written to you specifically.">→ {{ toLabel(m) }}</span>
+        <span v-else-if="fromMe(m)" class="addressed sent"
+              title="You wrote this.">→ {{ toLabel(m) }}</span>
         <span v-else class="addressed other"
               title="Between colleagues. You are reading over their shoulder.">
           → {{ toLabel(m) }}
@@ -518,6 +525,7 @@ input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
 .addressed.you { color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .addressed.all { color: var(--faint); border: 1px solid var(--line-2); }
 .addressed.other { color: var(--muted); border: 1px solid var(--line); }
+.addressed.sent { color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent); }
 .scope { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
   border: 1px solid transparent; border-radius: 4px; padding: 3px 7px; }
 .scope.on { color: var(--gold); border-color: var(--line-2); }

@@ -952,6 +952,47 @@ describe('the whole company is readable, not only the board\'s slice', () => {
     assert.equal(r['unreadCount'], 1, 'and the sidebar agrees');
   });
 
+  test('mail you sent is in your own inbox, not only in the whole-company view', () => {
+    // Filtering the inbox on to_agent alone meant a message the board wrote
+    // vanished the instant it was sent: an empty inbox, no evidence the send
+    // had happened, and the scope toggle that would have shown it was itself
+    // hidden by the empty list.
+    const out = run(`
+      const { Registry } = await import('${process.cwd()}/src/company/registry.ts');
+      const { systemClock } = await import('${process.cwd()}/src/core/clock.ts');
+      const r = new Registry(systemClock);
+      const a = r.found({ name: 'Outbox', business: 'x', ceo: 'Vale', chair: 'Cali' });
+      if (!a.ok) throw new Error('found failed');
+      const l = a.company.ledger;
+      l.upsertAgent({ id: 'ora', name: 'Ora', tier: 'lead', role: 'Head', department: '',
+        reportsTo: 'vale', status: 'active', activity: '', mandate: '',
+        hiredAt: systemClock.iso(), hiredBy: 'vale', model: 'm' });
+
+      l.sendMessage('cali', 'vale', 'section one, before anything else');
+      l.sendMessage('cali', ['vale', 'ora'], 'and hire someone');
+      l.sendMessage('vale', 'ora', 'between colleagues');
+
+      const mine = l.messagesFor('cali');
+      console.log(JSON.stringify({
+        bodies: mine.map((m) => m.body).sort(),
+        fanoutCollapsed: mine.filter((m) => m.body === 'and hire someone').length,
+        recipients: mine.find((m) => m.body === 'and hire someone'),
+        sentIsNotYours: mine.find((m) => m.body === 'section one, before anything else').yours,
+        unreadCount: l.unreadCount('cali'),
+      }));
+    `);
+    const r = JSON.parse(out) as Record<string, unknown>;
+    assert.deepEqual(r['bodies'], ['and hire someone', 'section one, before anything else'],
+      'both of the things you sent, and none of the mail between colleagues');
+    assert.equal(r['fanoutCollapsed'], 1, 'two recipients is still one message you wrote');
+    const fanout = r['recipients'] as Record<string, unknown>;
+    assert.equal(fanout['to'], 'ora');
+    assert.deepEqual(fanout['alsoTo'], ['vale'], 'and it names everyone it went to');
+    assert.equal(r['sentIsNotYours'], false,
+      'a message you sent carries the recipient\'s read state, so it is not yours to mark');
+    assert.equal(r['unreadCount'], 0, 'and writing to someone does not make you unread mail');
+  });
+
   test('answering mail between two colleagues reaches both of them', () => {
     // Nobody can read a conversation they were left out of, so a reply that
     // went to the sender alone left the other half never knowing.

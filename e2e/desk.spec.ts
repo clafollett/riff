@@ -302,7 +302,10 @@ test('mail addressed to the board is readable, and says so before you look', asy
   await expect(page.locator('.navitem').filter({ hasText: 'Inbox' }).locator('.pill')).toHaveText('19');
 
   await go(page, 'Inbox');
-  await expect(page.locator('.toolbar')).toContainText('19 messages');
+  // The pill counts unread mail addressed to you. The list is wider than that
+  // — it carries what you sent as well — so the total moves with whatever an
+  // earlier test wrote, and the unread figure is the one that is fixed.
+  await expect(page.locator('.toolbar')).toContainText('19 unread');
   // Opened, the body renders as prose rather than raw markdown.
   await page.getByLabel('Filter messages').fill('noise floor');
   await page.locator('.msg').first().locator('.row').click();
@@ -358,8 +361,18 @@ test('the whole company can be read, not only what reached you', async ({ page }
   await page.getByRole('button', { name: "Everyone's" }).click();
   await expect(page.locator('.toolbar .count')).not.toHaveText(mine);
 
-  // Mail between two colleagues appears, named for its real recipient.
-  await expect(page.locator('.msg .addressed.other').first()).toBeVisible();
+  // Mail between two colleagues appears, named for its real recipient — and
+  // named explicitly, because the fixture's colleague mail is older than
+  // sixteen routine reports. The only one on the first page was a message an
+  // earlier test had sent, so this used to pass for the wrong reason.
+  await page.getByLabel('Filter messages').fill('pricing page');
+  const overheard = page.locator('.msg').filter({ has: page.locator('.addressed.other') }).first();
+  await expect(overheard).toBeVisible();
+  // A colleague's mail offers no read control, because you cannot read it on
+  // their behalf.
+  await overheard.locator('.row').click();
+  await expect(overheard.getByRole('button', { name: /Mark (read|unread)/ })).toHaveCount(0);
+  await page.getByLabel('Filter messages').fill('');
 
   // Read state belongs to a recipient. A colleague's mail to another
   // colleague has none that means anything here — but your own does, and
@@ -371,21 +384,26 @@ test('the whole company can be read, not only what reached you', async ({ page }
   const orange = await yours.count();
   expect(orange).toBeGreaterThan(0);
   expect(orange).toBeLessThan(await page.locator('.msg').count());
-  // And a colleague's mail offers no read control, because you cannot read it
-  // on their behalf.
-  const overheard = page.locator('.msg').filter({ has: page.locator('.addressed.other') }).first();
-  await overheard.locator('.row').click();
-  await expect(overheard.getByRole('button', { name: /Mark (read|unread)/ })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'To you' }).click();
   await expect(page.locator('.toolbar .count')).toHaveText(mine);
   await expect(page.locator('.msg.unread').first()).toBeVisible();
+
+  // And your own side of the conversation is here, not only in the wide view.
+  // Filtering on the recipient alone meant a message the board had just sent
+  // vanished the instant it was sent: an empty-looking inbox, no evidence the
+  // send had happened, and the scope toggle that would have shown it hidden
+  // by the empty list.
+  await expect(page.locator('.msg .addressed.sent').first()).toBeVisible();
 });
 
 test('the inbox can put what needs you at the top', async ({ page }) => {
   await go(page, 'Inbox');
-  await page.locator('.msg').first().locator('.row').click();
-  await page.locator('.msg').first().getByRole('button', { name: 'Mark read' }).click();
+  // Addressed to you: mail you sent carries the recipient's read state, so it
+  // offers no read control and is never the row this is about.
+  const addressed = page.locator('.msg').filter({ has: page.locator('.addressed.you') });
+  await addressed.first().locator('.row').click();
+  await addressed.first().getByRole('button', { name: 'Mark read' }).click();
   await expect(page.locator('.msg.unread')).not.toHaveCount(await page.locator('.msg').count());
 
   await page.locator('.toolbar .chip', { hasText: 'Unread first' }).click();
@@ -399,10 +417,10 @@ test('the inbox can put what needs you at the top', async ({ page }) => {
 
   // Put it back: the tests after this one expect the fixture's read state.
   await page.locator('.toolbar .chip', { hasText: 'Newest' }).click();
-  const read = page.locator('.msg:not(.unread)').first();
+  const read = addressed.filter({ hasNot: page.locator('.new') }).first();
   await read.locator('.row').click();
   await read.getByRole('button', { name: 'Mark unread' }).click();
-  await expect(page.locator('.msg:not(.unread)')).toHaveCount(0);
+  await expect(addressed.filter({ hasNot: page.locator('.new') })).toHaveCount(0);
 });
 
 test('every message says who it was written to', async ({ page }) => {
@@ -413,8 +431,10 @@ test('every message says who it was written to', async ({ page }) => {
   // Every message carries one, direct mail included — that is the point.
   const marks = await page.locator('.msg .addressed').allInnerTexts();
   expect(marks.length).toBe(await page.locator('.msg').count());
-  // CSS uppercases these, and allInnerTexts returns what is rendered.
-  expect(marks.every((m) => ['→ you', '→ everyone'].includes(m.trim().toLowerCase()))).toBe(true);
+  // CSS uppercases these, and allInnerTexts returns what is rendered. Mail you
+  // sent names the person you sent it to, which is neither of the other two.
+  expect(marks.every((m) => ['→ you', '→ everyone', '→ fen'].includes(m.trim().toLowerCase())))
+    .toBe(true);
 
   // And the broadcast is marked differently, so the two are told apart.
   await page.getByLabel('Filter messages').fill('whole company');
@@ -424,7 +444,7 @@ test('every message says who it was written to', async ({ page }) => {
 test('a message can be put back to unread, to keep it in front of you', async ({ page }) => {
   // Reading something at a moment you cannot act on it should not lose it.
   await go(page, 'Inbox');
-  const m = page.locator('.msg').first();
+  const m = page.locator('.msg').filter({ has: page.locator('.addressed.you') }).first();
   await expect(m).toBeVisible();
   await m.locator('.row').click();
   await m.getByRole('button', { name: 'Mark read' }).click();

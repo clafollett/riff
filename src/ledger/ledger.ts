@@ -544,22 +544,18 @@ export class Ledger {
   }
 
   /**
-   * Everything addressed to someone, read or not.
+   * Your side of the conversation: what reached you, and what you sent.
    *
    * inbox() deliberately returns only what is unread, because an agent waking
    * up wants what it has not seen. A person reading their own mail wants the
    * conversation, so this is the other half.
+   *
+   * Sent mail belongs here. Filtering on to_agent alone meant a message the
+   * board wrote vanished the instant it was sent — the console showed an empty
+   * inbox and no evidence the send had happened at all.
    */
   messagesFor(agentId: AgentId, limit = 200): Message[] {
-    const rows = this.#db.prepare(
-      'SELECT * FROM messages WHERE to_agent=? ORDER BY sent_at DESC, id DESC LIMIT ?'
-    ).all(agentId, limit) as Row[];
-    return rows.map((r) => ({
-      id: str(r['id']), from: str(r['from_agent']), to: str(r['to_agent']), alsoTo: [],
-      yours: true,
-      body: str(r['body']), broadcast: num(r['broadcast']) === 1,
-      sentAt: str(r['sent_at']), readAt: nstr(r['read_at']),
-    }));
+    return this.#thread(agentId, limit, true);
   }
 
   /**
@@ -574,14 +570,21 @@ export class Ledger {
    * does that; direct messages group on their own id, which groups nothing.
    */
   allMessages(viewer: AgentId, limit = 500): Message[] {
+    return this.#thread(viewer, limit, false);
+  }
+
+  /**
+   * The folded message list, either whole or narrowed to one person's threads.
+   *
+   * Read state is per row, and a collapsed message has several. The only one
+   * that means anything to the reader is their own — so the viewer's row
+   * supplies both the read mark and the id, because marking read is scoped to
+   * to_agent and the group's MIN(id) is usually somebody else's row. Reading
+   * the whole company used to drop read state entirely, which hid your own
+   * unread mail the moment you widened the view.
+   */
+  #thread(viewer: AgentId, limit: number, mineOnly: boolean): Message[] {
     const rows = this.#db.prepare(
-      // Read state is per row, and a collapsed message has several. The only
-      // one that means anything to the reader is their own — so the viewer's
-      // row supplies both the read mark and the id, because marking read is
-      // scoped to to_agent and the group's MIN(id) is usually somebody
-      // else's row. Reading the whole company used to drop read state
-      // entirely, which hid your own unread mail the moment you widened the
-      // view.
       `SELECT MIN(id) AS id, from_agent, body, broadcast, sent_at,
               MAX(CASE WHEN to_agent=? THEN id END) AS my_id,
               MAX(CASE WHEN to_agent=? THEN 1 ELSE 0 END) AS mine,
@@ -589,8 +592,11 @@ export class Ledger {
               CASE WHEN broadcast=1 THEN NULL ELSE group_concat(to_agent) END AS to_agent
        FROM messages
        GROUP BY from_agent || sent_at || body
+       ${mineOnly ? 'HAVING from_agent=? OR MAX(CASE WHEN to_agent=? THEN 1 ELSE 0 END)=1' : ''}
        ORDER BY sent_at DESC, id DESC LIMIT ?`
-    ).all(viewer, viewer, viewer, limit) as Row[];
+    ).all(...(mineOnly
+      ? [viewer, viewer, viewer, viewer, viewer, limit]
+      : [viewer, viewer, viewer, limit])) as Row[];
     return rows.map((r) => {
       // group_concat has no defined order, and a list that reshuffles between
       // reads makes the same message look like a different one each time.
