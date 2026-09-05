@@ -23,6 +23,15 @@ export default async function globalSetup(): Promise<void> {
     mandate: 'Find out whether the thing we say happened actually happened.',
   });
 
+  // A seat that exists to be closed. Retiring is destructive and irreversible
+  // from the console, so the test that proves the control works cannot spend
+  // Fen — every view after it still expects to find her.
+  fillSeat(ledger, world, systemClock, {
+    name: 'Wick', tier: 'member', role: 'Ledger clerk', department: 'assurance',
+    reportsTo: 'fen', proposedBy: cfg.ceo.id,
+    mandate: 'Hold a seat that a later test closes.',
+  });
+
   world.writeCommons('doctrine/what-we-are-for.md',
     { title: 'What we are for', author: cfg.ceo.id, updated: systemClock.iso() },
     '# What we are for\n\nOne claim, **testable**, or it does not go in here.\n\n- Evidence over recollection\n- Removal is a first-class act\n');

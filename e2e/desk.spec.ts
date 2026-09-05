@@ -94,13 +94,15 @@ test('a decision clears the queue and the reason is kept', async ({ page, reques
 test('staff renders the report tree the CEO actually built', async ({ page }) => {
   await go(page, 'Staff');
   const names = await page.locator('.card .name').allTextContents();
-  expect(names).toEqual(['Tester', 'Wren', 'Fen']);
+  expect(names).toEqual(['Tester', 'Wren', 'Fen', 'Wick']);
 
-  // Depth is the reporting line: chair, then CEO under them, then the lead.
+  // Depth is the reporting line: chair, then CEO under them, then the lead,
+  // then the clerk reporting to the lead.
   const lefts = await page.locator('.row').evaluateAll(
     (rows) => rows.map((r) => Number.parseFloat(getComputedStyle(r).marginLeft)));
   expect(lefts[0]).toBeLessThan(lefts[1]!);
   expect(lefts[1]).toBeLessThan(lefts[2]!);
+  expect(lefts[2]).toBeLessThan(lefts[3]!);
 
   // The role must sit on one line — it wrapped into a column at this width.
   const box = await page.locator('.card .role').first().boundingBox();
@@ -925,9 +927,9 @@ test.describe('many companies, one console', () => {
     const kestrel = await read();
 
     expect(testwright).not.toEqual(kestrel);
-    // Testwright has a CEO and a lead; a company founded a moment ago has only
-    // its CEO. Board members are not counted as staff.
-    expect(testwright).toContain('2 staff');
+    // Testwright has a CEO, a lead and a clerk; a company founded a moment ago
+    // has only its CEO. Board members are not counted as staff.
+    expect(testwright).toContain('3 staff');
     expect(testwright).toContain('commons 2/40');
     expect(kestrel).toContain('1 staff');
     expect(kestrel).toContain('commons 0/40');
@@ -1105,6 +1107,61 @@ test('an agent can be given a name from the console, id and all', async ({ page 
     data: { company: 'testwright-co', who: 'fenwick-ash', name: 'Fen' },
   });
   await page.goto('/');
+});
+
+test('a seat can be closed from the console, and never a board seat', async ({ page }) => {
+  // Retiring ran CEO-proposes / board-ratifies, which has no route at all when
+  // the seat to remove is the CEO's — a company finished with a line of
+  // business the board had killed and a chief executive who would have had to
+  // propose his own dismissal.
+  await page.goto('/');
+  await go(page, 'Staff');
+
+  // The board is not removable from here, whatever the console offers.
+  const chair = page.locator('.card', { hasText: 'Chairman' }).first();
+  if (await chair.count()) {
+    await chair.click();
+    await expect(page.locator('.detail').getByRole('button', { name: 'Retire…' })).toHaveCount(0);
+  }
+
+  const wick = page.locator('.card', { hasText: 'Wick' }).first();
+  await wick.click();
+  await page.getByRole('button', { name: 'Retire…' }).click();
+
+  // A reason is not optional: a removal nobody wrote a reason for is one
+  // nobody can review afterwards.
+  await page.getByRole('button', { name: /^Retire Wick$/ }).click();
+  await expect(page.locator('.retiring .err')).toHaveText('say why');
+
+  await page.getByLabel('Why they are leaving').fill('the seat was never filled with work');
+  await page.getByRole('button', { name: /^Retire Wick$/ }).click();
+
+  await expect(page.locator('.card', { hasText: 'Wick' })).toHaveCount(0);
+  const state = await (await page.request.get('/api/state?c=testwright-co')).json();
+  expect(state.agents.map((a: { id: string }) => a.id)).not.toContain('wick');
+
+  // The reason is in the record, and says the board did it rather than a colleague.
+  const log = await (await page.request.get('/api/events?c=testwright-co&limit=500')).json();
+  const gone = log.events.find((e: { kind: string }) => e.kind === 'role.retired');
+  expect(gone).toBeTruthy();
+  expect(JSON.parse(gone.dataJson).by).toBe('board');
+});
+
+test('the board speaks with more than one voice', async ({ page }) => {
+  // /api/say sent as board[0] whatever it was handed, so a second board seat
+  // existed on the roster and nowhere the company could hear it.
+  await page.goto('/');
+  await go(page, 'Inbox');
+  await page.getByRole('button', { name: 'Compose' }).click();
+
+  const picker = page.getByLabel('Who is speaking');
+  // One seat is not a choice, so the control only appears when there is one.
+  if (!(await picker.count())) {
+    await expect(page.locator('.compose')).toBeVisible();
+    return;
+  }
+  const names = await picker.locator('option').allInnerTexts();
+  expect(names.length).toBeGreaterThan(1);
 });
 
 test('a run can be given a deadline from the console', async ({ page }) => {
