@@ -323,6 +323,40 @@ const server = createServer(async (req, res) => {
       return r.ok ? json(res, r) : json(res, { error: r.reason }, 409);
     }
 
+    // Retiring from the board's side. `retire_role` has always existed as a
+    // TOOL, which means the CEO proposes and the board ratifies — fine until
+    // the CEO is the thing that needs replacing, and then the only route to
+    // removing someone runs through the person you want removed. Fathom sat
+    // in exactly that position: a line of business the board had killed, and
+    // a chief executive who would have had to propose his own dismissal.
+    if (p === '/api/agents/retire' && method === 'POST') {
+      const b = await readBody(req);
+      const slug = String(b['company'] ?? '') || (resolveSlug() ?? '');
+      const co = slug ? registry.get(slug) : null;
+      if (!co) return json(res, { error: `no company '${slug}'` }, 404);
+
+      const who = String(b['who'] ?? '');
+      const why = String(b['why'] ?? '').slice(0, 400);
+      if (!why.trim()) return json(res, { error: 'say why' }, 400);
+
+      const a = co.ledger.getAgent(who);
+      if (!a) return json(res, { error: `no agent '${who}'` }, 404);
+      // Same rule the tool enforces, for the same reason: standing comes from
+      // the constitution, and a board that can retire itself can retire the
+      // only seat able to undo it.
+      if (a.tier === 'board') return json(res, { error: 'the board cannot be retired' }, 409);
+      if (a.status === 'departed') return json(res, { error: `${a.name} has already left` }, 409);
+
+      // Retiring someone mid-shift would abandon a session holding a write.
+      // The seat is marked on the way out and the scheduler stops choosing it,
+      // so an in-flight shift finishes and is simply never woken again.
+      const working = co.scheduler.awake.includes(who);
+
+      co.ledger.upsertAgent({ ...a, status: 'departed' });
+      co.ledger.emit('board', 'role.retired', who, { why, by: 'board', ...(working ? { finishing: true } : {}) });
+      return json(res, { retired: who, name: a.name, finishing: working });
+    }
+
     if (p.startsWith('/api/companies/') && (method === 'PATCH' || method === 'DELETE')) {
       const target = p.slice('/api/companies/'.length);
 
@@ -595,7 +629,18 @@ const server = createServer(async (req, res) => {
         if (Array.isArray(raw) && !to?.length) return json(res, { error: 'no recipient' }, 400);
         const text = String(body['text'] ?? '').slice(0, 4000);
         if (!text) return json(res, { error: 'nothing to say' }, 400);
-        const from = cfg.board[0]?.id ?? 'board';
+        // Who is speaking. The chair by default, because that is who this
+        // endpoint has always been — but a board of two had only one voice,
+        // and a second member with a seat and no way to use it is not on the
+        // board in any sense the company can observe. Restricted to the
+        // constitution's board: this endpoint is authenticated as the
+        // operator, not as any agent, so letting it name a staff member would
+        // put words in a colleague's mouth.
+        const asked = String(body['from'] ?? '');
+        if (asked && !cfg.board.some((m) => m.id === asked)) {
+          return json(res, { error: `'${asked}' is not on the board` }, 403);
+        }
+        const from = asked || cfg.board[0]?.id || 'board';
         const n = ledger.sendMessage(from, to, text);
         ledger.emit(from, 'message.sent', to?.[0] ?? null, { recipients: n, to, text });
         for (const a of to ?? ledger.listAgents().map((x) => x.id)) scheduler.nudge(a);

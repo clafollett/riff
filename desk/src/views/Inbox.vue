@@ -247,10 +247,25 @@ const discard = () => {
   menuOpen.value = false;
 };
 
+// Which board member is speaking. A board of two had one voice, because this
+// view always sent as board[0] — so the second seat existed on the roster and
+// nowhere the company could hear it. Only the board is offered: the console is
+// authenticated as the operator, not as any agent, and speaking as a colleague
+// would be putting words in their mouth.
+const speaker = ref<string>(
+  localStorage.getItem('riff.speaker') ?? '');
+watch(speaker, (v) => {
+  try { localStorage.setItem('riff.speaker', v); } catch { /* no storage */ }
+});
+const speakers = computed(() => props.state.board ?? []);
+/** The chair unless someone else is chosen, and never a seat that has gone. */
+const speakingAs = computed(() =>
+  speakers.value.find((m) => m.id === speaker.value)?.id ?? speakers.value[0]?.id ?? '');
+
 const post = async () => {
   if (!canPost.value || posting.value) return;
   posting.value = true;
-  await api.say(toEveryone.value ? null : audience.value, note.value.trim());
+  await api.say(toEveryone.value ? null : audience.value, note.value.trim(), speakingAs.value);
   posting.value = false;
   discard();
   await load();
@@ -292,7 +307,7 @@ const startReply = (m: Message) => {
 const send = async (m: Message) => {
   if (!draft.value.trim()) return;
   sending.value = true;
-  await api.say(replyAudience(m), draft.value.trim());
+  await api.say(replyAudience(m), draft.value.trim(), speakingAs.value);
   draft.value = '';
   replyTo.value = null;
   sending.value = false;
@@ -361,6 +376,12 @@ const when = (iso: string) => {
           {{ posting ? 'Sending…' : 'Send' }}
         </button>
         <button class="ghost" @click="discard">Discard</button>
+        <label v-if="speakers.length > 1" class="as faint mono">
+          as
+          <select v-model="speaker" aria-label="Who is speaking">
+            <option v-for="m in speakers" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+        </label>
         <span class="faint mono hint">
           <template v-if="toEveryone">One broadcast to all {{ roster.length }}.</template>
           <template v-else-if="audience.length">
@@ -526,6 +547,9 @@ input { background: #15100d; color: var(--ink); border: 1px solid var(--line-2);
 .addressed.all { color: var(--faint); border: 1px solid var(--line-2); }
 .addressed.other { color: var(--muted); border: 1px solid var(--line); }
 .addressed.sent { color: var(--gold); border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent); }
+.as { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.as select { font: inherit; font-size: 11.5px; background: #15100d; color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 4px; padding: 3px 6px; }
 .scope { font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
   border: 1px solid transparent; border-radius: 4px; padding: 3px 7px; }
 .scope.on { color: var(--gold); border-color: var(--line-2); }

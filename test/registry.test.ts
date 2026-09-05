@@ -641,6 +641,112 @@ describe('what a script used to do, the API does', () => {
     } finally { kill(); }
   });
 
+  test('the board can retire a seat without the CEO proposing it first', async () => {
+    // retire_role is a TOOL, so removal ran CEO-proposes / board-ratifies —
+    // which has no route at all when the CEO is the seat to remove. A company
+    // whose line of business the board had killed was left with a chief
+    // executive who would have had to propose his own dismissal.
+    const { port, kill } = await serve();
+    try {
+      await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Payroll Co', ceo: 'Juno', chair: 'Cali', running: false }),
+      });
+      const r = await fetch(`http://localhost:${port}/api/agents/retire`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ company: 'payroll-co', who: 'juno', why: 'the line of business is closed' }),
+      });
+      const body = await r.json() as { retired?: string; finishing?: boolean; error?: string };
+      assert.equal(r.status, 200, JSON.stringify(body));
+      assert.equal(body.retired, 'juno');
+      assert.equal(body.finishing, false, 'nobody was mid-shift');
+
+      const state = await (await fetch(`http://localhost:${port}/api/state?c=payroll-co`)).json() as
+        { agents: Array<{ id: string }> };
+      assert.ok(!state.agents.some((a) => a.id === 'juno'), 'a departed seat is off the roster');
+
+      // The reason is the point of the record — a removal nobody wrote a
+      // reason for is one nobody can review afterwards.
+      const events = await (await fetch(`http://localhost:${port}/api/events?c=payroll-co`)).json() as
+        { events: Array<{ kind: string; subject: string | null; dataJson: string | null }> };
+      const gone = events.events.find((e) => e.kind === 'role.retired');
+      assert.ok(gone, 'the ledger says it happened');
+      assert.equal(gone?.subject, 'juno');
+      const said = JSON.parse(gone?.dataJson ?? '{}') as Record<string, unknown>;
+      assert.equal(said['why'], 'the line of business is closed');
+      assert.equal(said['by'], 'board', 'and says the board did it, not a colleague');
+    } finally { kill(); }
+  });
+
+  test('retiring refuses the board, a stranger, and a removal with no reason', async () => {
+    // Standing comes from the constitution, so a board that can retire itself
+    // can retire the only seat able to undo the retirement.
+    const { port, kill } = await serve();
+    try {
+      await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Guarded Co', ceo: 'Juno', chair: 'Cali', running: false }),
+      });
+      const ask = (b: Record<string, string>) =>
+        fetch(`http://localhost:${port}/api/agents/retire`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ company: 'guarded-co', ...b }),
+        });
+
+      assert.equal((await ask({ who: 'cali', why: 'no' })).status, 409, 'the board cannot be retired');
+      assert.equal((await ask({ who: 'nobody', why: 'no' })).status, 404);
+      assert.equal((await ask({ who: 'juno', why: '   ' })).status, 400, 'a reason is not optional');
+
+      const state = await (await fetch(`http://localhost:${port}/api/state?c=guarded-co`)).json() as
+        { agents: Array<{ id: string }> };
+      assert.ok(state.agents.some((a) => a.id === 'juno'), 'and none of that removed anyone');
+
+      // Twice is not a second removal.
+      assert.equal((await ask({ who: 'juno', why: 'closing the seat' })).status, 200);
+      assert.equal((await ask({ who: 'juno', why: 'again' })).status, 409);
+    } finally { kill(); }
+  });
+
+  test('a second board member can speak, and nobody else can be spoken for', async () => {
+    // /api/say sent as board[0] whatever it was told, so a board of two had
+    // one voice and the second seat existed nowhere the company could hear it.
+    const { port, kill } = await serve();
+    try {
+      const found = await fetch(`http://localhost:${port}/api/companies`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Two Voices', ceo: 'Juno',
+                               board: [{ name: 'Cali' }, { name: 'Marvin' }], running: false }),
+      });
+      const founded = await found.json() as { board?: Array<{ id: string }>; error?: string };
+      assert.equal(found.status, 201, JSON.stringify(founded));
+      // Read the seats back rather than naming them: founding seeds a chair of
+      // its own when none is given, so the ids are the server's to decide.
+      const seats = founded.board?.map((m) => m.id) ?? [];
+      assert.ok(seats.includes('cali') && seats.includes('marvin'), JSON.stringify(seats));
+      const second = seats[seats.length - 1]!;
+
+      const say = (b: Record<string, unknown>) =>
+        fetch(`http://localhost:${port}/api/say?c=two-voices`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ to: 'juno', ...b }),
+        });
+
+      assert.equal((await say({ text: 'from the chair' })).status, 200);
+      assert.equal((await say({ text: 'from the other seat', from: second })).status, 200);
+      // The console authenticates as the operator, not as any agent, so naming
+      // a staff member here would put words in a colleague's mouth.
+      const impostor = await say({ text: 'not mine to send', from: 'juno' });
+      assert.equal(impostor.status, 403);
+      assert.match((await impostor.json() as { error: string }).error, /not on the board/);
+
+      const box = await (await fetch(`http://localhost:${port}/api/inbox?c=two-voices&scope=all`)).json() as
+        { messages: Array<{ from: string; body: string }> };
+      const senders = [...new Set(box.messages.map((m) => m.from))].sort();
+      assert.deepEqual(senders, [seats[0]!, second].sort(),
+        'both seats are heard, and the impostor sent nothing');
+    } finally { kill(); }
+  });
+
   test('a run can be given a deadline and a wake-up budget', async () => {
     // An unattended run on somebody else's machine gets hard stops, because a
     // subscription window is shared with the person who owns it.

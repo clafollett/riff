@@ -70,6 +70,37 @@ const doRename = async (a: Agent) => {
   } catch (e) { renameErr.value = e instanceof Error ? e.message : String(e); }
 };
 
+// Retiring from here, rather than waiting for the CEO to propose it. A tool
+// the staff hold is the wrong instrument when the seat in question is the one
+// that would have to hold it. Two clicks and a stated reason, because a
+// removal nobody wrote a reason for is one nobody can review later.
+const retiring = ref<string | null>(null);
+const why = ref('');
+const retireErr = ref('');
+
+const openRetire = (a: Agent) => {
+  retiring.value = retiring.value === a.id ? null : a.id;
+  why.value = '';
+  retireErr.value = '';
+};
+
+const doRetire = async (a: Agent) => {
+  const reason = why.value.trim();
+  if (!reason) { retireErr.value = 'say why'; return; }
+  retireErr.value = '';
+  try {
+    const r = await api.retireAgent(props.state.slug, a.id, reason);
+    retiring.value = null;
+    open.value = null;
+    // Mid-shift they are not stopped, only never woken again — say so, because
+    // the feed will show them finishing and that looks like the click failed.
+    renamed.value = r.finishing
+      ? `${r.name} has left; their shift is still finishing`
+      : `${r.name} has left the company`;
+    emit('changed');
+  } catch (e) { retireErr.value = e instanceof Error ? e.message : String(e); }
+};
+
 const send = async (a: Agent) => {
   if (!draft.value.trim()) return;
   sending.value = true;
@@ -119,8 +150,23 @@ const send = async (a: Agent) => {
             </span>
           </template>
           <button v-else class="ghost" @click="openRename(a)">Rename…</button>
+          <button v-if="a.tier !== 'board' && renaming !== a.id" class="ghost danger"
+                  @click="openRetire(a)">
+            {{ retiring === a.id ? 'Keep them' : 'Retire…' }}
+          </button>
           <span v-if="renameErr" class="err">{{ renameErr }}</span>
           <span v-else-if="renamed" class="faint mono hint">{{ renamed }}</span>
+        </div>
+        <div v-if="retiring === a.id" class="retiring">
+          <input v-model="why" class="rn grow" aria-label="Why they are leaving"
+                 placeholder="Why — this goes in the record, and outlives the decision"
+                 @keyup.enter="doRetire(a)" @keyup.esc="retiring = null" />
+          <button class="go danger" @click="doRetire(a)">Retire {{ a.name }}</button>
+          <span class="faint hint">
+            The seat closes now. Work already written stays; a shift in flight
+            finishes and they are not woken again.
+          </span>
+          <span v-if="retireErr" class="err">{{ retireErr }}</span>
         </div>
       </div>
     </div>
@@ -134,6 +180,12 @@ const send = async (a: Agent) => {
   border: 1px solid var(--line-2); border-radius: 5px; padding: 6px 9px; }
 .renaming .hint { font-size: 11.5px; }
 .renaming .err { color: var(--alert); font-size: 12px; }
+.retiring { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.retiring .hint { font-size: 11.5px; flex-basis: 100%; }
+.retiring .err { color: var(--alert); font-size: 12px; }
+.retiring .grow { flex: 1; min-width: 260px; }
+.danger { color: var(--alert); }
+.go.danger { border-color: color-mix(in srgb, var(--alert) 45%, transparent); }
 h1 { font-size: 30px; }
 .lede { margin: 6px 0 26px; font-size: 14px; max-width: 64ch; }
 .row { margin-bottom: 6px; }

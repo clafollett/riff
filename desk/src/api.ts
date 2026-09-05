@@ -181,6 +181,9 @@ export const api = {
   renameAgent: (company: string, who: string, name: string) =>
     send<{ from: string; to: string; name: string }>('/api/agents/rename', 'POST',
       { company, who, name }),
+  retireAgent: (company: string, who: string, why: string) =>
+    send<{ retired: string; name: string; finishing: boolean }>('/api/agents/retire', 'POST',
+      { company, who, why }),
   renameCompany: (slug: string,
                   patch: { name?: string; business?: string; slug?: string;
                            policy?: Partial<CompanyPolicy>; release?: 'none' | 'bundle' }) =>
@@ -232,10 +235,10 @@ export const api = {
     });
     return r.ok;
   },
-  say: async (to: string | string[] | null, text: string) => {
+  say: async (to: string | string[] | null, text: string, from?: string) => {
     const r = await fetch(withCompany('/api/say'), {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ to, text }),
+      body: JSON.stringify({ to, text, ...(from ? { from } : {}) }),
     });
     return r.ok;
   },
