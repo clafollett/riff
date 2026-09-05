@@ -90,7 +90,19 @@ const resetDials = () => {
   pausePct.value = Math.round(props.state.policy.pauseAboveUtilization * 100);
   perr.value = '';
 };
-watch(() => props.state.policy, resetDials, { deep: true });
+// The poll in App.vue replaces the whole state object every twenty seconds, so
+// this fires on identity even when the policy came back byte-identical.
+// Resetting from it wiped whatever had been typed the moment the operator
+// paused between moving a dial and saving — and Save greyed out with it,
+// because `dirty` compares against the value that had just been restored.
+//
+// Only an open panel is protected. Once it closes the dials are display again,
+// and the reset is what shows the clamped figures the server actually kept
+// rather than the ones that were typed at it.
+watch(() => props.state.policy, () => {
+  if (tuning.value && dirty.value) return;
+  resetDials();
+}, { deep: true });
 watch(() => props.state.slug, () => { tuning.value = false; resetDials(); });
 
 const saveDials = async () => {

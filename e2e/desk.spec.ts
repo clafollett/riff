@@ -1109,6 +1109,38 @@ test('an agent can be given a name from the console, id and all', async ({ page 
   await page.goto('/');
 });
 
+test('a dial keeps what you typed while the console refreshes under it', async ({ page }) => {
+  // App.vue polls state every twenty seconds and replaces the whole object, so
+  // the deep watch on policy fired on identity even when nothing had changed.
+  // Whatever had been typed was reset from the server on the next poll, and
+  // Save greyed out with it — a setting could only be changed by someone
+  // faster than the timer.
+  await page.clock.install();
+  await page.goto('/');
+  await go(page, 'Overview', 'Testwright Co');
+
+  const panel = page.locator('section.dials');
+  await panel.getByRole('button', { name: 'Tune' }).click();
+
+  const turns = panel.getByRole('spinbutton').first();
+  const was = await turns.inputValue();
+  await turns.fill(String(Number(was) + 3));
+  const save = panel.getByRole('button', { name: 'Save' });
+  await expect(save).toBeEnabled();
+
+  // Two full poll intervals, which is where the value used to disappear.
+  await page.clock.fastForward('00:45');
+  await expect(turns).toHaveValue(String(Number(was) + 3));
+  await expect(save).toBeEnabled();
+
+  // Done discards, so the panel still shows what the server holds rather than
+  // what was typed at it — and the fixture is left as the rest found it.
+  await panel.getByRole('button', { name: 'Done' }).click();
+  await panel.getByRole('button', { name: 'Tune' }).click();
+  await expect(panel.getByRole('spinbutton').first()).toHaveValue(was);
+  await panel.getByRole('button', { name: 'Done' }).click();
+});
+
 test('a seat can be closed from the console, and never a board seat', async ({ page }) => {
   // Retiring ran CEO-proposes / board-ratifies, which has no route at all when
   // the seat to remove is the CEO's — a company finished with a line of
